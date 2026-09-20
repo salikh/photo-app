@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a metadata database for a photo library's hash catalog.
+"""Build a metadata database for a photo library's hash catalog (per-image).
 
 Reads the 'hashes' table of a sqlite3 image database (filename TEXT,
 hash TEXT -- see compare.py/cleanup.py) and --root_dir (the directory on
