@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+lxml
+Pillow
+absl-py
+pytest
+httpx

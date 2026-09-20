@@ -7,7 +7,7 @@ Check items off here when the ticket's status is done.
 
 ## Build order
 
-- [ ] [001](docs/tickets/001.md) Skeleton and schema
+- [x] [001](docs/tickets/001.md) Skeleton and schema
 - [ ] [002](docs/tickets/002.md) Scan and files table
 - [ ] [003](docs/tickets/003.md) Grouping
 - [ ] [004](docs/tickets/004.md) Thumbs inspection and lookup
@@ -35,4 +35,4 @@ Independent of each other, can start now:
 - [x] [011](docs/tickets/011.md) Extract reusable logic from `file_metadata.py`
 - [ ] [016](docs/tickets/016.md) Inspect `/zoo/Thumbs` layout (read-only)
 - [ ] [018](docs/tickets/018.md) XMP sidecar discovery and read
-- [ ] [001](docs/tickets/001.md) Skeleton and schema
+- [x] [001](docs/tickets/001.md) Skeleton and schema
