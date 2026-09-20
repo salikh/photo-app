@@ -20,7 +20,7 @@ Check items off here when the ticket's status is done.
 
 ## Cross-cutting
 
-- [ ] [040](docs/tickets/040.md) Test infrastructure and fixtures
+- [x] [040](docs/tickets/040.md) Test infrastructure and fixtures
 - [x] [041](docs/tickets/041.md) start.sh to bring up a local server
 - [ ] [048](docs/tickets/048.md) First full library scan and reports (long-running; run with the user's go-ahead)
 - [ ] [047](docs/tickets/047.md) Dark theme (CSS variables in place; pages must use them as they are built)
