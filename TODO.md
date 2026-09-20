@@ -29,6 +29,8 @@ Check items off here when the ticket's status is done.
 - [ ] [023](docs/tickets/023.md) Review the conflict survey before any XMP write (after it runs)
 - [ ] [015](docs/tickets/015.md) Confirm JSONL mirror as the durability answer for manual links
 
+- [ ] [042](docs/tickets/042.md) Naming of new sidecars for RAW originals (survey says the library is darktable full-filename style)
+
 ## Suggested first moves
 
 Independent of each other, can start now:
