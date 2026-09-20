@@ -94,9 +94,14 @@ a new file, GPS/caption editing, multi-user features, remote access.
 
 ### XMP handling
 - XMP sidecars are the source of truth. The sqlite DB is a rebuildable cache.
-- The shared rating is written to the original's XMP only. Other sidecars are
-  read. If they disagree, the most recently modified one wins and the UI shows
-  a conflict badge. Other sidecars are not modified.
+- Rating, fav and tags are written to the sidecars of both the original (DNG)
+  and its camera JPG, creating the JPG's sidecar if it has none, so the two stay
+  in sync in darktable (decided 2026-09-21, ticket 023; this replaces "original
+  only"). Other files' sidecars (exports, tunings) are not modified. When
+  reading, if sidecars disagree the most recently modified one wins and the UI
+  shows a conflict badge until a write brings them back in sync.
+- v2 idea: a function to delete DNG files to save space (most likely for
+  rating 1); the rating then lives on in the JPG's sidecar.
 - Existing sidecars (`.XMP`, `.JPG.xmp`, ...) are read in any naming style and
   edited in place; there is no mass rename. New sidecars use the full-filename
   style for every file, including RAW originals: `foo.DNG.xmp`, `foo.jpg.xmp`

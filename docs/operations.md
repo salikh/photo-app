@@ -37,6 +37,6 @@ Only the undo history is lost.
 
 - Originals are never moved, renamed or deleted. The only files it writes in the library are XMP
   sidecars, atomically (temp file + rename), after saving a first-seen backup.
-- Only the original's sidecar is written for a rating; other sidecars of the same Photo are read
-  and shown as a conflict, never modified.
+- A rating, fav or tag change is written to the sidecars of the original and its camera JPG (so they
+  stay in sync in darktable); sidecars of exports and other tunings are never modified.
 - Every change is in the activity log and can be undone; undo refuses if the value changed since.

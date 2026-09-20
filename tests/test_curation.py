@@ -30,26 +30,101 @@ def setup_pair(conn, settings, rating_dng=1, rating_jpg=1):
   return photo_id(conn, "y/K1.DNG")
 
 
-def test_rating_writes_only_the_originals_sidecar_and_backs_it_up(conn, settings):
-  pid = setup_pair(conn, settings)
-  jpg_before = open(os.path.join(settings.pictures_dir, "y/K1.JPG.xmp"), "rb").read()
-  dng_before = open(os.path.join(settings.pictures_dir, "y/K1.DNG.xmp"), "rb").read()
+def read(settings, rel):
+  return open(os.path.join(settings.pictures_dir, rel), "rb").read()
+
+
+def test_rating_is_written_to_both_dng_and_jpg_sidecars_with_backups(conn, settings):
+  pid = setup_pair(conn, settings, rating_dng=1, rating_jpg=3)   # they disagree
+  assert curation.photo_state(conn, pid)["conflict"]
+  dng_before, jpg_before = read(settings, "y/K1.DNG.xmp"), read(settings, "y/K1.JPG.xmp")
   r = curation.set_rating(conn, settings, pid, 4)
-  assert r["sidecar"] == "y/K1.DNG.xmp" and r["changes"]["rating"] == {"old": "1", "new": "4"}
-  dng = open(os.path.join(settings.pictures_dir, "y/K1.DNG.xmp"), "rb").read()
-  assert xmp.parse(dng).rating == 4
-  assert open(os.path.join(settings.pictures_dir, "y/K1.JPG.xmp"), "rb").read() == jpg_before
-  backups = [os.path.join(dp, f) for dp, _, fs in os.walk(settings.state_dir) for f in fs
-             if "xmp_backups" in dp]
-  assert len(backups) == 1 and open(backups[0], "rb").read() == dng_before
+  assert r["sidecar"] == "y/K1.DNG.xmp"
+  assert r["sidecars"] == ["y/K1.DNG.xmp", "y/K1.JPG.xmp"]
+  assert xmp.parse(read(settings, "y/K1.DNG.xmp")).rating == 4
+  assert xmp.parse(read(settings, "y/K1.JPG.xmp")).rating == 4
   state = curation.photo_state(conn, pid)
-  assert state["rating"] == 4 and state["conflict"]          # JPG sidecar still says 1
+  assert state["rating"] == 4 and not state["conflict"]          # in sync again
+  backups = {os.path.basename(f): open(os.path.join(dp, f), "rb").read()
+             for dp, _, fs in os.walk(settings.state_dir) for f in fs if "xmp_backups" in dp}
+  assert len(backups) == 2
+  assert sorted(v for v in backups.values()) == sorted([dng_before, jpg_before])
   assert conn.execute("SELECT rating_source FROM photos WHERE id = ?", (pid,)).fetchone()[0] == "xmp"
   log = curation.recent_activity(conn)
-  assert [(l["field"], l["old"], l["new"], l["cause"]) for l in log] == [("rating", "1", "4", "user")]
-  # second edit: no new backup
-  curation.set_rating(conn, settings, pid, 5)
-  assert len([f for dp, _, fs in os.walk(settings.state_dir) for f in fs if "xmp_backups" in dp]) == 1
+  assert [(l["field"], l["old"], l["new"], l["cause"]) for l in log] == [("rating", "1", "4", "user")]   # tie on mtime: the DNG sidecar (1) was shown
+  curation.set_rating(conn, settings, pid, 5)                     # no new backups
+  assert len([f for dp, _, fs in os.walk(settings.state_dir) for f in fs if "xmp_backups" in dp]) == 2
+
+
+def test_missing_jpg_sidecar_is_created_and_bare_shared_sidecar_written_once(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.DNG"))
+  make_jpeg(os.path.join(d, "a.JPG"))
+  write(os.path.join(d, "a.DNG.xmp"), XMP % (1, ""), mtime=1_000_000)     # JPG has none
+  touch(os.path.join(d, "b.DNG"))
+  make_jpeg(os.path.join(d, "b.JPG"))
+  write(os.path.join(d, "b.xmp"), XMP % (1, ""), mtime=1_000_000)         # RAW-style, shared
+  scan.scan(conn, d)
+  r = curation.set_rating(conn, settings, photo_id(conn, "a.DNG"), 3)
+  assert r["sidecars"] == ["a.DNG.xmp", "a.JPG.xmp"]
+  assert xmp.parse(read(settings, "a.JPG.xmp")).rating == 3
+  r = curation.set_rating(conn, settings, photo_id(conn, "b.DNG"), 2)
+  assert r["sidecars"] == ["b.xmp"]                                       # one file, written once
+  assert not os.path.exists(os.path.join(d, "b.JPG.xmp"))
+  assert len([f for dp, _, fs in os.walk(settings.state_dir) for f in fs if "xmp_backups" in dp]) == 2   # a new sidecar needs no backup
+
+
+def test_fav_edit_also_syncs_a_disagreeing_rating_and_keeps_unknown_tags(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.DNG"))
+  make_jpeg(os.path.join(d, "a.JPG"))
+  write(os.path.join(d, "a.DNG.xmp"), XMP % (1, ""), mtime=1_000_000)
+  write(os.path.join(d, "a.JPG.xmp"), XMP % (3, "<dc:subject><rdf:Bag><rdf:li>known</rdf:li></rdf:Bag></dc:subject>"), mtime=2_000_000)
+  scan.scan(conn, d)
+  pid = photo_id(conn, "a.DNG")
+  # a tag added in darktable after the last scan: the app does not know it yet
+  edited = xmp.edit_bytes(read(settings, "a.DNG.xmp"), add_tags=["darktable-only"])
+  with open(os.path.join(d, "a.DNG.xmp"), "wb") as f:
+    f.write(edited)
+  curation.set_fav(conn, settings, pid, True)
+  for rel in ("a.DNG.xmp", "a.JPG.xmp"):
+    s = xmp.parse(read(settings, rel))
+    assert s.rating == 3 and s.fav and "known" in s.tags, rel
+  assert "darktable-only" in xmp.parse(read(settings, "a.DNG.xmp")).tags   # never wiped
+
+
+def test_exports_and_missing_camera_are_not_written(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.DNG"))
+  make_jpeg(os.path.join(d, "a.JPG"))
+  make_jpeg(os.path.join(d, "a-edit.jpg"))
+  scan.scan(conn, d)
+  from photoapp import manual_links
+  manual_links.link(conn, settings.state_dir, "a-edit.jpg", "a.DNG", role="export")
+  pid = photo_id(conn, "a.DNG")
+  conn.execute("UPDATE files SET missing = 1 WHERE path = 'a.JPG'")
+  r = curation.set_rating(conn, settings, pid, 2)
+  assert r["sidecars"] == ["a.DNG.xmp"]
+  assert not os.path.exists(os.path.join(d, "a-edit.jpg.xmp"))
+  assert not os.path.exists(os.path.join(d, "a.JPG.xmp"))
+
+
+def test_partial_failure_reports_and_keeps_cache_truthful(conn, settings, monkeypatch):
+  pid = setup_pair(conn, settings, 1, 1)
+  real = xmp.update_file
+
+  def flaky(path, **kw):
+    if path.endswith("K1.JPG.xmp"):
+      raise OSError("disk full")
+    return real(path, **kw)
+
+  monkeypatch.setattr(xmp, "update_file", flaky)
+  with pytest.raises(curation.CurationError) as e:
+    curation.set_rating(conn, settings, pid, 5)
+  assert "K1.JPG.xmp" in str(e.value) and "already written: y/K1.DNG.xmp" in str(e.value)
+  assert xmp.parse(read(settings, "y/K1.DNG.xmp")).rating == 5
+  assert xmp.parse(read(settings, "y/K1.JPG.xmp")).rating == 1
+  assert curation.photo_state(conn, pid)["conflict"]        # the cache says so too
 
 
 def test_reject_remembers_previous_stars_and_undo_restores(conn, settings):
@@ -123,6 +198,7 @@ def test_dry_run_changes_nothing(conn, settings):
   before = open(os.path.join(settings.pictures_dir, "y/K1.DNG.xmp"), "rb").read()
   r = curation.set_rating(conn, dry, pid, 5)
   assert r["dry_run"] and r["changes"]["rating"]["new"] == "5"
+  assert r["sidecars"] == ["y/K1.DNG.xmp", "y/K1.JPG.xmp"]
   assert open(os.path.join(settings.pictures_dir, "y/K1.DNG.xmp"), "rb").read() == before
   assert curation.photo_state(conn, pid)["rating"] == 1
   assert curation.recent_activity(conn) == []

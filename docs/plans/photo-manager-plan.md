@@ -193,10 +193,14 @@ Design notes:
 - Read path (scan and on demand): parse every sidecar belonging to the Photo's
   files. If values agree, that is the Photo's value. If they differ, the
   sidecar with the newest mtime wins, `photos.conflict=1`, and the UI shows a
-  badge. No other sidecar is modified.
-- Write path: only the original's sidecar is written (see 4.4). Writing
-  clears the conflict flag only if the other sidecars are left unchanged and
-  the user has accepted the resolution.
+  badge on reading.
+- Write path (decided in ticket 023): rating, fav and tags are written to the
+  sidecars of the original and its camera JPG (a missing JPG sidecar is
+  created), each with its own first-seen backup. Writing therefore brings the
+  two back in sync and clears the conflict flag. Sidecars of exports and other
+  tunings are not modified. Tags are converged conservatively: only tags the
+  app knew about are removed. If the second write fails, the first stays, the
+  cache reflects the truth, and the error names what was written.
 - Hash recovery: when a scan finds a file that has no rating anywhere, whose
   hash has exactly one row in `rating_by_hash` whose `last_path` is missing,
   apply that rating and fav (and tags, if kept), write the sidecar, and log it

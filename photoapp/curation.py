@@ -1,9 +1,10 @@
-"""Changing rating, fav and tags: write the original's sidecar, update the
-cache, log the change, undo.
+"""Changing rating, fav and tags: write the sidecars, update the cache, log
+the change, undo.
 
-Only the sidecar of the Photo's original file is ever written. The cache is
-updated from what was written, then the Photo is re-resolved from all its
-sidecars so a conflict with other sidecars stays visible.
+The sidecars of the Photo's original and of its camera JPG are both written
+(decided in ticket 023), so the two stay in sync in darktable; reading still
+uses "newest sidecar wins". The cache is updated from what was written, then
+the Photo is re-resolved from all its sidecars.
 """
 
 import datetime
@@ -55,25 +56,43 @@ def _clean_tags(tags):
   return list(dict.fromkeys(out))
 
 
-def _sidecar_target(conn, settings, photo):
-  """(relative path, exists) of the sidecar to write for a Photo."""
-  original = conn.execute(
-      "SELECT id, path, missing FROM files WHERE id = ?",
-      (photo["original_file_id"],)).fetchone()
-  if original is None or original["missing"]:
+def _sidecar_targets(conn, settings, photo):
+  """Sidecars to write for a Photo: the original's and the camera JPG's.
+
+  Returns [{"file_id", "rel", "exists"}], original first, deduplicated by
+  sidecar path (a bare NAME.xmp can serve both files). Raises if the original
+  is missing on disk.
+  """
+  files = conn.execute(
+      "SELECT id, path, missing, role FROM files WHERE photo_id = ? AND "
+      "(id = ? OR role = 'camera') ORDER BY (id = ?) DESC, path",
+      (photo["id"], photo["original_file_id"], photo["original_file_id"])
+  ).fetchall()
+  if not files or files[0]["id"] != photo["original_file_id"] or files[0]["missing"]:
     raise CurationError("the original file is missing on disk")
-  directory, _, name = original["path"].rpartition("/")
-  abs_dir = os.path.join(settings.pictures_dir, directory)
-  try:
-    listing = os.listdir(abs_dir)
-  except OSError as e:
-    raise CurationError(f"cannot list {directory or '.'}: {e}")
-  existing = xmp.find_sidecars(name, listing)
-  prefix = directory + "/" if directory else ""
-  if existing:
-    return prefix + existing[0], True, original["id"]
-  new_name = xmp.preferred_sidecar_name(name, settings.new_raw_sidecar_style)
-  return prefix + new_name, False, original["id"]
+  targets, seen = [], set()
+  listings = {}
+  for f in files:
+    if f["missing"]:
+      continue
+    directory, _, name = f["path"].rpartition("/")
+    if directory not in listings:
+      try:
+        listings[directory] = os.listdir(os.path.join(settings.pictures_dir, directory))
+      except OSError as e:
+        raise CurationError(f"cannot list {directory or '.'}: {e}")
+    prefix = directory + "/" if directory else ""
+    existing = xmp.find_sidecars(name, listings[directory])
+    if existing:
+      rel, exists = prefix + existing[0], True
+    else:
+      rel = prefix + xmp.preferred_sidecar_name(name, settings.new_raw_sidecar_style)
+      exists = False
+    if rel in seen:
+      continue
+    seen.add(rel)
+    targets.append({"file_id": f["id"], "rel": rel, "exists": exists})
+  return targets
 
 
 def _backup_path(settings, rel_sidecar):
@@ -116,58 +135,71 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
   if new_tags != old_tags:
     changes["tags"] = (json.dumps(old_tags), json.dumps(new_tags))
 
-  rel_sidecar, exists, original_id = _sidecar_target(conn, settings, photo)
-  result = {"photo_id": photo_id, "sidecar": rel_sidecar, "activity_ids": [],
+  targets = _sidecar_targets(conn, settings, photo)
+  original = targets[0]
+  result = {"photo_id": photo_id, "sidecar": original["rel"],
+            "sidecars": [t["rel"] for t in targets], "activity_ids": [],
             "changes": {k: {"old": o, "new": n}
                         for k, (o, n) in changes.items()},
-            "dry_run": settings.xmp_dry_run, "created": not exists}
-  abs_sidecar = os.path.join(settings.pictures_dir, rel_sidecar)
-  if not changes and (exists or photo["rating_source"] != "import"):
+            "dry_run": settings.xmp_dry_run, "created": not original["exists"]}
+  if (not changes and not any(t["exists"] for t in targets)
+      and photo["rating_source"] != "import"):
     return result   # nothing to do (an imported rating still gets written)
 
-  edit = {}
-  if rating is not None:
-    edit["rating"] = new_rating
-  edit["add_tags"] = [t for t in add if t not in remove]
-  edit["remove_tags"] = remove
+  # The desired state is written to every target so that a DNG and its camera
+  # JPG stay in sync (e.g. in darktable). Tags are converged conservatively:
+  # only tags the app knew about are removed, others in a sidecar are kept.
+  desired = list(new_tags) + ([xmp.FAV_TAG] if new_fav else [])
+  known = set(old_tags) | ({xmp.FAV_TAG} if old_fav else set()) | set(remove)
+  edit = {"rating": new_rating, "add_tags": desired,
+          "remove_tags": [t for t in known if t not in desired]}
+  default_state = new_rating == 0 and not desired
   if settings.xmp_dry_run:
-    logging.info("xmp_dry_run: would %s %s with %s",
-                 "create" if not exists else "edit", rel_sidecar, result["changes"])
+    logging.info("xmp_dry_run: would write %s with %s",
+                 [t["rel"] for t in targets], result["changes"])
     return result
 
-  backup = None
-  if exists:
-    known = conn.execute("SELECT backup_path FROM xmp_sidecars WHERE path = ?",
-                         (rel_sidecar,)).fetchone()
-    backup = (known["backup_path"] if known and known["backup_path"]
-              else _backup_path(settings, rel_sidecar))
+  written, error = [], None
+  for t in targets:
+    abs_sidecar = os.path.join(settings.pictures_dir, t["rel"])
+    backup = None
     try:
-      upd = xmp.update_file(abs_sidecar, backup_path=backup, **edit)
+      if t["exists"]:
+        known_backup = conn.execute(
+            "SELECT backup_path FROM xmp_sidecars WHERE path = ?",
+            (t["rel"],)).fetchone()
+        backup = (known_backup["backup_path"] if known_backup and
+                  known_backup["backup_path"] else _backup_path(settings, t["rel"]))
+        upd = xmp.update_file(abs_sidecar, backup_path=backup, **edit)
+        if upd.backup_path is None and not os.path.exists(backup):
+          backup = None
+      elif default_state:
+        continue          # nothing worth a new file (unrated, no tags)
+      else:
+        xmp.create_file(abs_sidecar, rating=new_rating, tags=desired)
     except (xmp.XmpEditError, OSError) as e:
-      raise CurationError(f"cannot write {rel_sidecar}: {e}")
-    if upd.backup_path is None and not os.path.exists(backup):
-      backup = None
-  else:
-    try:
-      xmp.create_file(abs_sidecar, rating=new_rating,
-                      tags=[t for t in edit["add_tags"]])
-    except OSError as e:
-      raise CurationError(f"cannot create {rel_sidecar}: {e}")
-
-  # Update the cache from what is now on disk.
-  with open(abs_sidecar, "rb") as f:
-    data = f.read()
-  parsed = xmp.parse(data)
-  conn.execute(
-      "INSERT INTO xmp_sidecars (path, file_id, mtime, hash, rating, has_fav,"
-      " tags, backup_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-      "ON CONFLICT(path) DO UPDATE SET file_id = excluded.file_id,"
-      " mtime = excluded.mtime, hash = excluded.hash, rating = excluded.rating,"
-      " has_fav = excluded.has_fav, tags = excluded.tags,"
-      " backup_path = COALESCE(xmp_sidecars.backup_path, excluded.backup_path)",
-      (rel_sidecar, original_id, os.stat(abs_sidecar).st_mtime,
-       hashlib.sha224(data).hexdigest(), parsed.rating, int(parsed.fav),
-       json.dumps(list(parsed.tags)), backup))
+      error = f"cannot write {t['rel']}: {e}"
+      break
+    with open(abs_sidecar, "rb") as f:
+      data = f.read()
+    parsed = xmp.parse(data)
+    conn.execute(
+        "INSERT INTO xmp_sidecars (path, file_id, mtime, hash, rating, has_fav,"
+        " tags, backup_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(path) DO UPDATE SET file_id = excluded.file_id,"
+        " mtime = excluded.mtime, hash = excluded.hash, rating = excluded.rating,"
+        " has_fav = excluded.has_fav, tags = excluded.tags,"
+        " backup_path = COALESCE(xmp_sidecars.backup_path, excluded.backup_path)",
+        (t["rel"], t["file_id"], os.stat(abs_sidecar).st_mtime,
+         hashlib.sha224(data).hexdigest(), parsed.rating, int(parsed.fav),
+         json.dumps(list(parsed.tags)), backup))
+    written.append(t["rel"])
+  if error:
+    # Keep the cache truthful about what did get written, then report.
+    ratings.refresh_photo(conn, photo_id)
+    conn.commit()
+    raise CurationError(error + (f" (already written: {', '.join(written)})"
+                                 if written else ""))
   if "rating" in changes:
     # Rejecting erases the star count in the sidecar; remember it for un-reject.
     prev = photo["previous_stars"]
@@ -184,7 +216,7 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
     conn.executemany("INSERT OR IGNORE INTO tags (photo_id, tag) VALUES (?, ?)",
                      [(photo_id, t) for t in new_tags])
   result["activity_ids"] = [
-      _log(conn, photo_id, rel_sidecar, field, o, n, cause, batch_id)
+      _log(conn, photo_id, original["rel"], field, o, n, cause, batch_id)
       for field, (o, n) in changes.items()]
   ratings.refresh_photo(conn, photo_id)
   ratings.remember(conn, photo_id)
