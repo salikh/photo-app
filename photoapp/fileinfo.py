@@ -122,23 +122,53 @@ def read_exif_date_from_path(filepath):
     return None
 
 
+def read_raw_size(filepath):
+  """(width, height, mime_type) of a RAW file in display orientation, or None.
+
+  Pillow opens DNG/TIFF-based RAW files but returns only the tiny IFD0
+  thumbnail (for example 160x120), so RAW dimensions come from LibRaw. The
+  crop size is used: it is the size viewers show and matches the camera JPEG.
+  """
+  try:
+    import rawpy
+    with rawpy.imread(filepath) as raw:
+      sizes = raw.sizes
+      width = sizes.crop_width or sizes.width
+      height = sizes.crop_height or sizes.height
+      if sizes.flip in (5, 6):
+        width, height = height, width
+  except Exception as e:  # rawpy raises LibRawError and OSError subclasses
+    logging.vlog(3, "LibRaw could not read %s: %s", filepath, e)
+    return None
+  mime_type, _ = mimetypes.guess_type(filepath)
+  if os.path.splitext(filepath)[1].lower() == ".dng":
+    mime_type = "image/x-adobe-dng"
+  return width, height, mime_type or "image/x-raw"
+
+
 def read_image_metadata(filepath):
   """Return (mime_type, width, height, exif_date) for filepath.
 
   width/height/exif_date are None, and mime_type falls back to a
-  best-effort guess from the extension, when Pillow can't decode the
-  file (e.g. RAW formats like CR3/RAF that aren't valid TIFF and have no
-  Pillow plugin). exif_date is also None if the image has no EXIF date.
+  best-effort guess from the extension, when the file cannot be decoded
+  (e.g. RAW formats LibRaw does not know). exif_date is also None if the
+  image has no EXIF date. RAW files get their real dimensions from LibRaw
+  (see read_raw_size), not Pillow's IFD0 thumbnail.
   """
+  mime_type = width = height = exif_date = None
   try:
     with Image.open(filepath) as img:
       width, height = img.size
       mime_type = Image.MIME.get(img.format)
-      return mime_type, width, height, read_exif_date(img)
+      exif_date = read_exif_date(img)
   except Exception as e:
     logging.warning("Could not decode image %s: %s", filepath, e)
     mime_type, _ = mimetypes.guess_type(filepath)
-    return mime_type, None, None, None
+  if is_raw(filepath):
+    raw_size = read_raw_size(filepath)
+    if raw_size is not None:
+      width, height, mime_type = raw_size
+  return mime_type, width, height, exif_date
 
 
 def load_precomputed_hashes(db_path):

@@ -5,3 +5,4 @@ Pillow
 absl-py
 pytest
 httpx
+rawpy

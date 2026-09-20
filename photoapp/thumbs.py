@@ -12,6 +12,9 @@ from absl import logging
 from PIL import Image
 from PIL import ImageOps
 
+from photoapp import fileinfo
+from photoapp import previews
+
 # Smallest to largest. Huge is the full size of the source.
 SIZES = ("Thumb", "Small", "Medium", "Huge")
 LONG_EDGE = {"Thumb": 300, "Small": 1000, "Medium": 2000, "Huge": None}
@@ -53,19 +56,28 @@ def best_available(thumbs_dir, size, file_path):
   return None
 
 
-def render(source, dest, long_edge):
-  """Write a JPEG of source, at most long_edge on its long side, to dest.
+def _open(source):
+  """Decode source to an RGB PIL image.
 
-  Never upscales. long_edge None keeps the full size. The write is atomic.
-  Raises Unsupported if Pillow cannot decode source.
+  RAW files use their embedded preview: Pillow would "succeed" on a DNG but
+  only return its tiny IFD0 thumbnail. Raises Unsupported if nothing decodes.
   """
+  if fileinfo.is_raw(source):
+    preview = previews.embedded_preview(source)
+    if preview is None:
+      raise Unsupported(f"{source}: no usable embedded preview")
+    return preview.convert("RGB")
   try:
     with Image.open(source) as img:
-      img = ImageOps.exif_transpose(img)
-      img = img.convert("RGB")
+      return ImageOps.exif_transpose(img).convert("RGB")
   except Exception as e:  # Pillow raises many kinds of errors
     raise Unsupported(f"{source}: {e}")
+
+
+def save(img, dest, long_edge):
+  """Write img as a JPEG at most long_edge on its long side (None: full)."""
   if long_edge:
+    img = img.copy()
     img.thumbnail((long_edge, long_edge), Image.LANCZOS)
   os.makedirs(os.path.dirname(dest), exist_ok=True)
   fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest), suffix=".tmp")
@@ -78,6 +90,30 @@ def render(source, dest, long_edge):
       os.unlink(tmp)
     raise
   return dest
+
+
+def render(source, dest, long_edge):
+  """Write a JPEG of source, at most long_edge on its long side, to dest.
+
+  Never upscales. long_edge None keeps the full size. The write is atomic.
+  Raises Unsupported if source cannot be decoded (a RAW file without a
+  usable embedded preview needs render_raw_sizes()).
+  """
+  return save(_open(source), dest, long_edge)
+
+
+def render_raw_sizes(pictures_dir, thumbs_dir, file_path):
+  """Demosaic a RAW and write Thumb/Small/Medium. Returns {size: path}.
+
+  Slow (about a second); used by the background job when a RAW has no
+  usable embedded preview. Returns {} if the file cannot be decoded.
+  """
+  img = previews.render(os.path.join(pictures_dir, file_path))
+  if img is None:
+    return {}
+  return {size: save(img, thumb_path(thumbs_dir, size, file_path),
+                     LONG_EDGE[size])
+          for size in SIZES if LONG_EDGE[size]}
 
 
 def _record(conn, file_id, size, path, source):
