@@ -360,8 +360,27 @@ def resolve_rating(image, prod_sources, root_dir, log):
     return rating, reject, source, path
 
 
+# Per-copy popularity bonus for physical files that live under these path
+# components -- an old backup location surviving under this name is a sign
+# the image is worth keeping, and the bonus scales with how many copies
+# live there rather than applying just once per image.
+PHOTO_ARCHIVE_BONUS_PER_COPY = 200
+EXPORTED_BONUS_PER_COPY = 100
+
+
+def compute_archive_bonus(image):
+    photo_archive_copies = sum(
+        1 for p in image['merged_paths'] if 'Photo Archive' in p.split('/'))
+    exported_copies = sum(
+        1 for p in image['merged_paths'] if 'Exported' in p.split('/'))
+    return (photo_archive_copies * PHOTO_ARCHIVE_BONUS_PER_COPY
+            + exported_copies * EXPORTED_BONUS_PER_COPY)
+
+
 def compute_popularity(image, exported_bonus):
-    return image['copies'] + (exported_bonus if image['has_exported_copy'] else 0)
+    return (image['copies']
+            + (exported_bonus if image['has_exported_copy'] else 0)
+            + compute_archive_bonus(image))
 
 
 def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus, log):

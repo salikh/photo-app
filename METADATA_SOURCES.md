@@ -139,7 +139,10 @@ review even though the database only stores the resolved value.
 `popularity` is a fine-grained duplication score, not a boolean:
 
 ```
-popularity = copies + (exported_bonus if any copy is under '/Exported/' else 0)
+popularity = copies
+            + (exported_bonus if any copy is under '/Exported/' else 0)
+            + 200 * (number of copies under a 'Photo Archive' path)
+            + 100 * (number of copies under an 'Exported' path)
 ```
 
 `copies` is the total number of physical files (across every merged
@@ -150,6 +153,13 @@ deliberately dominant bonus: a photo that has survived into an old
 `/Exported/.../` backup is considered significantly more "popular"
 (worth preserving) regardless of how many plain duplicate copies it
 has elsewhere.
+
+On top of that flat, once-per-image bonus, two smaller *per-copy*
+bonuses reward images with several surviving backup copies rather than
+just one: 200 points for every physical copy that lives under a
+`Photo Archive` path component, and 100 points for every physical copy
+under an `Exported` path component (both counted independently, so a
+copy nested under both adds both bonuses).
 
 ## Output schema
 

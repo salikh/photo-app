@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Generate a shell script that deletes redundant duplicate files.
 
-Reads the 'hashes' table of a sqlite3 database (filename TEXT, hash TEXT)
-and, for every hash shared by more than one file, picks a single
-"canonical" copy to keep and emits `rm` commands for the rest.
+Reads the 'hashes' table of a sqlite3 database (filename TEXT, hash TEXT,
+mtime REAL -- see hash_dir.py) and, for every hash shared by more than
+one file, picks a single "canonical" copy to keep and emits `rm`
+commands for the rest.
 
-This tool only WRITES a shell script. It never deletes anything itself;
-review the generated script before running it.
+This tool only WRITES a shell script, to stdout. It never deletes
+anything itself; review the generated script before running it.
 
 See ranking.py for the canonical-copy ranking heuristic (shared with
 metadata_db.py).
@@ -48,6 +49,8 @@ def build_script(db_path, hash_to_files):
     groups = [(h, files) for h, files in hash_to_files.items() if len(files) > 1]
     groups.sort(key=lambda hf: rank(hf[1])[0])
 
+    total_dup_files = sum(len(files) - 1 for _, files in groups)
+
     num_deleted = 0
     for h, files in groups:
         ranked = rank(files)
@@ -56,8 +59,12 @@ def build_script(db_path, hash_to_files):
         lines.append(f"# hash {h} -- keeping: {canonical}")
         for dup in duplicates:
             lines.append(f"# duplicate of: {canonical}  (hash {h})")
-            lines.append(f"rm -- {shlex.quote(dup)}")
+            lines.append(f"rm -vf -- {shlex.quote(dup)}")
             num_deleted += 1
+
+            if num_deleted % 100 == 0:
+                pct = num_deleted / total_dup_files * 100
+                lines.append(f"echo ======= Progress {pct:.2f}% ========")
         lines.append("")
 
     return "\n".join(lines) + "\n", len(groups), num_deleted
@@ -69,22 +76,15 @@ def main():
                     "found via the 'hashes' table of a sqlite3 database."
     )
     parser.add_argument("database", help="path to the sqlite3 database")
-    parser.add_argument(
-        "-o", "--output",
-        default="cleanup.sh",
-        help="path to write the generated shell script to (default: cleanup.sh)",
-    )
     args = parser.parse_args()
 
     hash_to_files = load_hashes(args.database)
     script, num_groups, num_deleted = build_script(args.database, hash_to_files)
 
-    with open(args.output, "w") as f:
-        f.write(script)
+    sys.stdout.write(script)
 
-    print(f"Wrote {args.output}", file=sys.stderr)
-    print(f"  duplicate hash groups: {num_groups}", file=sys.stderr)
-    print(f"  files marked for deletion: {num_deleted}", file=sys.stderr)
+    print(f"INFO: duplicate hash groups: {num_groups}", file=sys.stderr)
+    print(f"INFO: files marked for deletion: {num_deleted}", file=sys.stderr)
     print("Review the script before running it -- nothing was deleted.", file=sys.stderr)
 
 
