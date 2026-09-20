@@ -9,7 +9,7 @@ Check items off here when the ticket's status is done.
 
 - [x] [001](docs/tickets/001.md) Skeleton and schema
 - [x] [002](docs/tickets/002.md) Scan and files table
-- [ ] [003](docs/tickets/003.md) Grouping
+- [x] [003](docs/tickets/003.md) Grouping
 - [ ] [004](docs/tickets/004.md) Thumbs inspection and lookup
 - [ ] [005](docs/tickets/005.md) XMP module and tests
 - [ ] [006](docs/tickets/006.md) Import and ratings
