@@ -1,10 +1,11 @@
 """Group files into Photos.
 
 Automatic rule: within one directory, files with the same case-insensitive
-basename that are a RAW and a JPG form one Photo. The RAW is the
-'original'; the JPG is the 'camera' tuning derived from it. Any other file
-is a Photo of its own. Manual overrides (link_source = 'manual') are never
-touched here; see manual links.
+basename form one Photo when they include at least two of RAW, JPG, TIFF,
+PNG. The original is the first of RAW > JPG > TIFF > PNG; a JPG beside a RAW
+is the 'camera' file, the others are 'tuning' files derived from the
+original. Any other file is a Photo of its own. Manual overrides
+(link_source = 'manual') are never touched here; see manual links.
 
 Photos keep their identity across regrouping, so ratings and flags stored on
 the Photo survive: a group reuses the Photo of its original, else the Photo
@@ -16,6 +17,8 @@ import os
 from photoapp import fileinfo
 
 _JPEG_EXTENSIONS = {".jpg", ".jpeg"}
+_TIFF_EXTENSIONS = {".tif", ".tiff"}
+_PNG_EXTENSIONS = {".png"}
 
 
 def _dirname(path):
@@ -23,29 +26,48 @@ def _dirname(path):
 
 
 def _split_groups(members):
-  """Split one directory's auto files into groups of (original, camera).
+  """Split one directory's auto files into groups.
 
-  members: [(id, name)] of files in one directory. Returns a list of
-  (original_id, [camera_ids], [all ids]) tuples in a deterministic order.
+  members: [(id, name)] of files in one directory. Files with the same
+  case-insensitive stem are one Photo when they include at least two of: a
+  RAW, a JPEG, a TIFF, a PNG. The original is the first available of
+  RAW > JPEG > TIFF > PNG; a JPEG next to a RAW is its 'camera' file; all
+  other TIFF/PNG (and JPEG without a RAW) are 'tuning' files derived from the
+  original. Extra RAW/JPEG duplicates and any other type stay on their own.
+
+  Returns [(original_id, camera_ids, tuning_ids, all_ids)] in a stable order.
   """
   by_stem = {}
   for file_id, name in sorted(members, key=lambda m: m[1]):
     by_stem.setdefault(os.path.splitext(name)[0].lower(), []).append(
         (file_id, name))
+
+  def ext(m):
+    return os.path.splitext(m[1])[1].lower()
+
   groups = []
   for stem in sorted(by_stem):
-    raws = [m for m in by_stem[stem] if fileinfo.is_raw(m[1])]
-    jpgs = [m for m in by_stem[stem]
-            if os.path.splitext(m[1])[1].lower() in _JPEG_EXTENSIONS]
-    others = [m for m in by_stem[stem] if m not in raws and m not in jpgs]
-    if raws and jpgs:
-      groups.append((raws[0][0], [jpgs[0][0]],
-                     [raws[0][0], jpgs[0][0]]))
-      singles = raws[1:] + jpgs[1:] + others
-    else:
-      singles = by_stem[stem]
-    for file_id, _ in singles:
-      groups.append((file_id, [], [file_id]))
+    files = by_stem[stem]
+    raws = [m for m in files if fileinfo.is_raw(m[1])]
+    jpgs = [m for m in files if ext(m) in _JPEG_EXTENSIONS]
+    tiffs = [m for m in files if ext(m) in _TIFF_EXTENSIONS]
+    pngs = [m for m in files if ext(m) in _PNG_EXTENSIONS]
+    kinds = [k for k in (raws, jpgs, tiffs, pngs) if k]
+    if len(kinds) < 2:
+      for m in files:
+        groups.append((m[0], [], [], [m[0]]))
+      continue
+    # first of each kind takes part; duplicates of a kind stay single
+    taking = [k[0] for k in kinds]
+    singles = [m for k in kinds for m in k[1:]]
+    singles += [m for m in files if m not in raws + jpgs + tiffs + pngs]
+    original = taking[0]
+    camera = [m[0] for m in taking[1:] if m in jpgs] if raws else []
+    tunings = [m[0] for m in taking[1:] if m[0] not in camera]
+    groups.append((original[0], camera, tunings,
+                   [original[0]] + camera + tunings))
+    for m in singles:
+      groups.append((m[0], [], [], [m[0]]))
   return groups
 
 
@@ -90,7 +112,7 @@ def regroup(conn, rel_dirs=None):
   for d in dirs:
     auto = [r for r in by_dir[d] if r["link_source"] == "auto"]
     members = [(r["id"], r["path"].rpartition("/")[2]) for r in auto]
-    for original_id, camera_ids, all_ids in _split_groups(members):
+    for original_id, camera_ids, tuning_ids, all_ids in _split_groups(members):
       photo_id = _choose_photo(conn, original_id, all_ids, attached)
       default_rep = camera_ids[0] if camera_ids else original_id
       if photo_id is None:
@@ -120,6 +142,11 @@ def regroup(conn, rel_dirs=None):
             "UPDATE files SET photo_id = ?, role = 'camera', "
             "derived_from = ?, link_source = 'auto' WHERE id = ?",
             (photo_id, original_id, cid))
+      for tid in tuning_ids:
+        conn.execute(
+            "UPDATE files SET photo_id = ?, role = 'tuning', "
+            "derived_from = ?, link_source = 'auto' WHERE id = ?",
+            (photo_id, original_id, tid))
   _delete_empty_photos(conn)
   fix_representatives(conn)
   conn.commit()

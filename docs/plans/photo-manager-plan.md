@@ -175,9 +175,13 @@ Design notes:
 
 ### 4.2 Grouping
 1. Automatic: within one directory, files with the same case-insensitive
-   basename and extensions in {DNG or another RAW, JPG/JPEG} form one Photo.
-   The RAW is `original`; the JPG is `camera`, `derived_from` the RAW,
-   `link_source='auto'`. Lone JPG or lone RAW becomes a Photo of its own.
+   basename form one Photo when they include at least two of: a RAW (DNG,
+   ...), a JPG/JPEG, a TIF/TIFF, a PNG (extended 2026-09-21, ticket 015). The
+   original is the first of RAW > JPG > TIF > PNG. A JPG beside a RAW is
+   `camera`; every other member is a `tuning`; all are `derived_from` the
+   original with `link_source='auto'`. A lone file, a second file of the same
+   kind (`a.tif` and `a.TIF`) and other types (GIF, WebP, HEIC...) are Photos
+   of their own.
 2. Manual overrides from `manual_links` are applied after the automatic rule
    and win on every rescan:
    - `link`: attach a file as a `tuning`/`export` of a target Photo.

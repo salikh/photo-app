@@ -68,10 +68,13 @@ a new file, GPS/caption editing, multi-user features, remote access.
   rendered copies) attach the same way.
 - One representative tuning is chosen per Photo for display. By default it is
   the camera JPG.
-- Grouping: same directory and same basename DNG/JPG pairs are grouped
-  automatically at index time (the rule `image_metadata.py` uses). Manual
-  link/unlink is available for everything else and always overrides the
-  automatic rule on rescan.
+- Grouping: files in the same directory with the same basename are grouped
+  automatically at index time when they include at least two of RAW (DNG),
+  JPG, TIF and PNG (extended 2026-09-21, ticket 015; originally only DNG/JPG
+  pairs, the rule `image_metadata.py` uses). The original is the first of
+  RAW > JPG > TIF > PNG; a JPG beside a RAW is the camera file, the rest are
+  tunings. Manual link/unlink is available for everything else and always
+  overrides the automatic rule on rescan.
 - Pick/reject and star rating are **per Photo**, shared across the DNG and
   camera JPG.
 - Later (future work, not v1): "hard promotion" of a tuning into an

@@ -54,15 +54,103 @@ def test_lone_files_and_same_name_in_other_dirs_stay_separate(conn, settings):
   assert all(f["derived_from"] is None for f in by_path(conn).values())
 
 
-def test_non_jpeg_files_are_not_grouped(conn, settings):
+def roles(conn, *paths):
+  f = by_path(conn)
+  return [(f[p]["role"], f[p]["derived_from"] == f[paths[0]]["id"] if f[p]["derived_from"] else None)
+          for p in paths]
+
+
+def test_dng_jpg_tif_png_with_the_same_name_form_one_photo(conn, settings):
   d = settings.pictures_dir
   touch(os.path.join(d, "a.dng"))
   make_jpeg(os.path.join(d, "a.jpg"))
+  make_jpeg(os.path.join(d, "a.tif"))
   make_jpeg(os.path.join(d, "a.png"))
   scan.scan(conn, d)
   f = by_path(conn)
-  assert f["a.png"]["photo_id"] not in (f["a.dng"]["photo_id"], None)
+  assert len(photos(conn)) == 1
+  assert len({f[p]["photo_id"] for p in f}) == 1
+  assert [f[p]["role"] for p in ("a.dng", "a.jpg", "a.tif", "a.png")] == \
+      ["original", "camera", "tuning", "tuning"]
+  assert all(f[p]["derived_from"] == f["a.dng"]["id"] and f[p]["link_source"] == "auto"
+             for p in ("a.jpg", "a.tif", "a.png"))
+  (photo,) = photos(conn).values()
+  assert photo["original_file_id"] == f["a.dng"]["id"]
+  assert photo["representative_file_id"] == f["a.jpg"]["id"]
+
+
+def test_without_a_raw_the_jpeg_is_the_original_then_tiff_then_png(conn, settings):
+  d = settings.pictures_dir
+  for n in ("a.jpg", "a.tif", "a.png", "b.tif", "b.PNG", "c.TIFF", "c.jpeg"):
+    make_jpeg(os.path.join(d, n))
+  scan.scan(conn, d)
+  f = by_path(conn)
+  assert [f[p]["role"] for p in ("a.jpg", "a.tif", "a.png")] == ["original", "tuning", "tuning"]
+  assert [f[p]["role"] for p in ("b.tif", "b.PNG")] == ["original", "tuning"]
+  assert [f[p]["role"] for p in ("c.jpeg", "c.TIFF")] == ["original", "tuning"]
+  assert f["a.tif"]["derived_from"] == f["a.jpg"]["id"]
+  assert f["b.PNG"]["derived_from"] == f["b.tif"]["id"]
+  assert len(photos(conn)) == 3
+  (pa,) = [p for p in photos(conn).values() if p["original_file_id"] == f["a.jpg"]["id"]]
+  assert pa["representative_file_id"] == f["a.jpg"]["id"]
+
+
+def test_lone_tiff_png_and_other_types_stay_alone(conn, settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "x.tif"))
+  make_jpeg(os.path.join(d, "y.png"))
+  make_jpeg(os.path.join(d, "z.jpg"))
+  make_jpeg(os.path.join(d, "z.gif"))              # not part of the rule
+  make_jpeg(os.path.join(d, "z.webp"))
+  make_jpeg(os.path.join(d, "sub", "x.png"))       # same name, other directory
+  scan.scan(conn, d)
+  assert len(photos(conn)) == 6
+  assert all(f["role"] == "original" for f in by_path(conn).values())
+
+
+def test_duplicate_of_the_same_kind_stays_single(conn, settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "a.tif"))
+  make_jpeg(os.path.join(d, "a.TIF"))
+  make_jpeg(os.path.join(d, "a.png"))
+  scan.scan(conn, d)
+  f = by_path(conn)
   assert len(photos(conn)) == 2
+  joined = [p for p in ("a.tif", "a.TIF") if f[p]["photo_id"] == f["a.png"]["photo_id"]]
+  assert len(joined) == 1                        # the png joins exactly one of the two TIFFs
+
+
+def test_existing_lone_png_photo_merges_and_the_originals_photo_survives(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.dng"))
+  make_jpeg(os.path.join(d, "a.png"))
+  # the png and the dng have different names at first, so they are two photos
+  os.rename(os.path.join(d, "a.png"), os.path.join(d, "other.png"))
+  scan.scan(conn, d)
+  dng_photo = by_path(conn)["a.dng"]["photo_id"]
+  conn.execute("UPDATE photos SET rating = 4 WHERE id = ?", (dng_photo,))
+  conn.commit()
+  os.rename(os.path.join(d, "other.png"), os.path.join(d, "a.png"))
+  os.utime(d, None)
+  scan.scan(conn, d)
+  f = by_path(conn)
+  assert f["a.png"]["photo_id"] == f["a.dng"]["photo_id"] == dng_photo
+  assert photos(conn)[dng_photo]["rating"] == 4
+  live = conn.execute("SELECT COUNT(DISTINCT photo_id) FROM files WHERE missing = 0").fetchone()[0]
+  assert live == 1              # (the renamed-away row keeps its own, missing, photo)
+
+
+def test_only_original_and_camera_sidecars_are_written_not_tunings(conn, settings):
+  from photoapp import curation
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.dng"))
+  make_jpeg(os.path.join(d, "a.jpg"))
+  make_jpeg(os.path.join(d, "a.tif"))
+  scan.scan(conn, d)
+  pid = by_path(conn)["a.dng"]["photo_id"]
+  r = curation.set_rating(conn, settings, pid, 3)
+  assert r["sidecars"] == ["a.dng.xmp", "a.jpg.xmp"]
+  assert not os.path.exists(os.path.join(d, "a.tif.xmp"))
 
 
 def test_photo_identity_and_rating_survive_rescan_and_new_jpg(conn, settings):
