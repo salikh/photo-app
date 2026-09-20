@@ -60,8 +60,8 @@ from absl import flags
 from absl import logging
 
 from photoapp.fileinfo import (
-    IMAGE_EXTENSIONS, hash_file, is_image, read_exif_date_from_path,
-    read_image_metadata)
+    IMAGE_EXTENSIONS, get_or_compute_hash, is_image, load_precomputed_hashes,
+    read_exif_date_from_path, read_image_metadata)
 
 FLAGS = flags.FLAGS
 
@@ -83,19 +83,6 @@ flags.mark_flag_as_required("db")
 flags.mark_flag_as_required("root_dir")
 
 _INDEX_JSON_NAME = "index.json"
-
-
-def load_precomputed_hashes(db_path):
-  """Return {filename: (hash, mtime)} from a hash_dir.py-produced database."""
-  conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-  try:
-    return {
-        filename: (hash_, mtime)
-        for filename, hash_, mtime in conn.execute(
-            "SELECT filename, hash, mtime FROM hashes")
-    }
-  finally:
-    conn.close()
 
 
 def create_tables(conn):
@@ -137,22 +124,6 @@ def load_existing_index(dirpath):
   except (OSError, ValueError):
     return {}
   return data.get("files", {})
-
-
-def get_or_compute_hash(filepath, rel_path, file_mtime, precomputed_hashes):
-  if precomputed_hashes is not None:
-    pre = precomputed_hashes.get(rel_path)
-    if pre is not None:
-      pre_hash, pre_mtime = pre
-      if pre_mtime == file_mtime:
-        logging.vlog(5, "Reusing precomputed hash for %s", filepath)
-        return pre_hash
-  logging.vlog(3, "Hashing %s", filepath)
-  try:
-    return hash_file(filepath)
-  except OSError as e:
-    logging.error("Could not hash %s: %s", filepath, e)
-    return None
 
 
 def upsert_image_metadata(conn, rel_path, record):

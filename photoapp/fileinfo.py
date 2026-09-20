@@ -9,6 +9,7 @@ import hashlib
 import mimetypes
 import os
 import re
+import sqlite3
 
 from absl import logging
 
@@ -138,3 +139,32 @@ def read_image_metadata(filepath):
     logging.warning("Could not decode image %s: %s", filepath, e)
     mime_type, _ = mimetypes.guess_type(filepath)
     return mime_type, None, None, None
+
+
+def load_precomputed_hashes(db_path):
+  """Return {filename: (hash, mtime)} from a hash_dir.py-produced database."""
+  conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+  try:
+    return {
+        filename: (hash_, mtime)
+        for filename, hash_, mtime in conn.execute(
+            "SELECT filename, hash, mtime FROM hashes")
+    }
+  finally:
+    conn.close()
+
+
+def get_or_compute_hash(filepath, rel_path, file_mtime, precomputed_hashes):
+  if precomputed_hashes is not None:
+    pre = precomputed_hashes.get(rel_path)
+    if pre is not None:
+      pre_hash, pre_mtime = pre
+      if pre_mtime == file_mtime:
+        logging.vlog(5, "Reusing precomputed hash for %s", filepath)
+        return pre_hash
+  logging.vlog(3, "Hashing %s", filepath)
+  try:
+    return hash_file(filepath)
+  except OSError as e:
+    logging.error("Could not hash %s: %s", filepath, e)
+    return None
