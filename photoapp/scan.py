@@ -9,6 +9,7 @@ to the pictures dir with '/' separators.
 
 import dataclasses
 import hashlib
+import json
 import os
 import threading
 
@@ -18,6 +19,7 @@ from photoapp import db
 from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import manual_links
+from photoapp import ratings
 from photoapp import xmp
 
 
@@ -110,8 +112,9 @@ def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress):
   known is {sidecar_name: row} for this directory from the database.
   """
   sidecar_names = sorted(n for n in filenames if xmp.is_sidecar(n))
+  changed = False
   if not sidecar_names and not known:
-    return
+    return changed
   file_ids = {
       r["path"]: r["id"] for r in conn.execute(
           "SELECT id, path FROM files WHERE path LIKE ? ESCAPE '\\'",
@@ -133,6 +136,7 @@ def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress):
       if old["file_id"] != file_id:
         conn.execute("UPDATE xmp_sidecars SET file_id = ? WHERE path = ?",
                      (file_id, path))
+        changed = True
       continue
     try:
       with open(os.path.join(dirpath, name), "rb") as f:
@@ -143,17 +147,21 @@ def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress):
     parsed = xmp.parse(data)
     conn.execute(
         "INSERT INTO xmp_sidecars (path, file_id, mtime, hash, rating,"
-        " has_fav) VALUES (?, ?, ?, ?, ?, ?) "
+        " has_fav, tags) VALUES (?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(path) DO UPDATE SET file_id = excluded.file_id,"
         " mtime = excluded.mtime, hash = excluded.hash,"
-        " rating = excluded.rating, has_fav = excluded.has_fav",
+        " rating = excluded.rating, has_fav = excluded.has_fav,"
+        " tags = excluded.tags",
         (path, file_id, mtime, hashlib.sha224(data).hexdigest(),
-         parsed.rating, int(parsed.fav)))
+         parsed.rating, int(parsed.fav), json.dumps(list(parsed.tags))))
+    changed = True
     progress.sidecars_processed += 1
   for name in known:
     if name not in sidecar_names:
       conn.execute("DELETE FROM xmp_sidecars WHERE path = ?", (prefix + name,))
+      changed = True
   conn.commit()
+  return changed
 
 
 def _load_known_sidecars(conn):
@@ -195,8 +203,9 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
       mtime = os.stat(dirpath).st_mtime
 
       def sync_sidecars():
-        _sync_sidecars(conn, dirpath, rel_dir, filenames, images,
-                       known_sidecars.get(rel_dir, {}), progress)
+        if _sync_sidecars(conn, dirpath, rel_dir, filenames, images,
+                          known_sidecars.get(rel_dir, {}), progress):
+          changed_dirs.add(rel_dir)
 
       row = conn.execute(
           "SELECT mtime FROM dir_mtimes WHERE dirpath = ?",
@@ -224,6 +233,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
             "SELECT path FROM files WHERE photo_id IS NULL"))
     grouping.regroup(conn, changed_dirs)
     manual_links.apply_all(conn)
+    ratings.refresh_dirs(conn, changed_dirs)
   except Exception as e:
     logging.exception("scan failed")
     progress.error = str(e)

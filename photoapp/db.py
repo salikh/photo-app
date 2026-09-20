@@ -98,6 +98,9 @@ MIGRATIONS = [
     """
     ALTER TABLE manual_links ADD COLUMN role TEXT;  -- 'tuning' | 'export' (link)
     """,
+    """
+    ALTER TABLE xmp_sidecars ADD COLUMN tags TEXT;  -- JSON list, without 'fav'
+    """,
 ]
 
 
