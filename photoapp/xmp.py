@@ -169,7 +169,13 @@ def set_rating_bytes(data, rating):
     raise XmpEditError(f"rating out of range: {rating}")
   root = _load(data)
   desc = _first_description(root)
-  xmp_prefixes = _prefixes(desc, NS_XMP)
+  # A file can have several rdf:Description blocks; edit the one that
+  # already carries the Rating, and only add one to the first if none does.
+  carrier = next(
+      (d for d in root.iter(f"{{{NS_RDF}}}Description")
+       if f"{{{NS_XMP}}}Rating" in d.attrib
+       or d.find(f"{{{NS_XMP}}}Rating") is not None), None)
+  xmp_prefixes = _prefixes(carrier if carrier is not None else desc, NS_XMP)
   for prefix in xmp_prefixes:  # attribute form, e.g. xmp:Rating="3"
     pat = re.compile(
         rb"(\b" + re.escape(prefix.encode()) + rb":Rating\s*=\s*)([\"'])"
@@ -204,7 +210,11 @@ def set_subjects_bytes(data, add=(), remove=()):
   add, remove = list(dict.fromkeys(add)), set(remove)
   root = _load(data)
   desc = _first_description(root)
-  dc = (_prefixes(desc, NS_DC) or [None])[0]
+  subject_el = next(root.iter(f"{{{NS_DC}}}subject"), None)
+  # The prefix may be declared on the dc:subject element itself (as our own
+  # insertions do), so take it from there before looking at the Description.
+  dc = (subject_el.prefix if subject_el is not None
+        else (_prefixes(desc, NS_DC) or [None])[0])
   rdf = (_prefixes(desc, NS_RDF) or ["rdf"])[0]
   current = set(_subjects_from_tree(root))
   add = [t for t in add if t not in current and t not in remove]

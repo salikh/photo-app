@@ -239,3 +239,37 @@ def test_create_file_never_overwrites(tmp_path):
     xmp.create_file(str(p), rating=5)
   assert xmp.parse(p.read_bytes()).rating == 2
   assert [n for n in os.listdir(tmp_path) if n.endswith(".tmp")] == []
+
+
+def test_subject_with_locally_declared_prefix_can_be_edited_and_removed():
+  # dc is declared on the dc:subject element, not on rdf:Description
+  local = BARE.replace(b'<rdf:Description rdf:about=""/>',
+      b'<rdf:Description rdf:about="">\n   <dc:subject xmlns:dc="http://purl.org/dc/elements/1.1/">'
+      b'<rdf:Bag><rdf:li>a</rdf:li></rdf:Bag></dc:subject>\n  </rdf:Description>')
+  out = xmp.edit_bytes(local, add_tags=["b"])
+  assert xmp.parse(out).tags == ("a", "b")
+  assert xmp.parse(xmp.edit_bytes(out, remove_tags=["a"])).tags == ("b",)
+  assert xmp.edit_bytes(local, remove_tags=["a"]).count(b"subject") == 0
+
+
+def test_add_then_remove_tag_restores_original_bytes():
+  for data in (DARKTABLE, LIGHTROOM):   # BARE: <Description/> reopens as <Description></...>
+    added = xmp.edit_bytes(data, add_tags=["zz"])
+    assert xmp.edit_bytes(added, remove_tags=["zz"]) == data
+
+
+MULTI = b"""<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:tiff="http://ns.adobe.com/tiff/1.0/">
+   <tiff:Make>PENTAX</tiff:Make>
+  </rdf:Description>
+  <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="3">
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>"""
+
+
+def test_rating_is_edited_in_the_description_that_carries_it():
+  out = xmp.edit_bytes(MULTI, rating=5)
+  assert out.count(b"Rating") == 1 and xmp.parse(out).rating == 5
+  assert xmp.edit_bytes(out, rating=3) == MULTI
