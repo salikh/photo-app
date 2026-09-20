@@ -4,7 +4,7 @@
 import {get, post, imgUrl} from './api.js';
 import {el, toast, isTyping, enqueue, retryImage, setChildren} from './util.js';
 import {href} from './route.js';
-import {afterKey, step, label, REJECT} from './rating.js';
+import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
 import {updateCell} from './grid.js';
@@ -176,7 +176,7 @@ function toggleZoom(force) {
 function renderHud() {
   const p = current();
   const rate = (r) => el('button', {
-    text: r === 0 ? '☆' : String(r), title: 'rate ' + r, class: p.rating === r ? 'on' : '',
+    text: r === 0 ? '☆' : String(r), title: 'rate ' + r, class: display(p.rating) === r ? 'on' : '',
     onclick: (e) => { e.stopPropagation(); setRating(r); },
   });
   ui.tagInput = el('input', {class: 'tags', placeholder: 'tag, -remove', hidden: true, onkeydown: onTagKey});
@@ -189,7 +189,7 @@ function renderHud() {
     p.tags.map((t) => el('span', {class: 'tag', text: t})),
     ui.tagInput,
     el('div', {class: 'buttons'},
-      [0, 1, 2, 3, 4, 5].map(rate),
+      choices().map(rate),
       el('button', {text: '✖', title: 'reject (X)', class: p.rating === REJECT ? 'on' : '', onclick: () => setRating(afterKey(p.rating, 'x', p.previous_stars))}),
       el('button', {text: '♥', title: 'fav (F)', class: p.fav ? 'on' : '', onclick: toggleFav}),
       el('button', {text: 'tag', title: 'tags (T)', onclick: openTagInput}),

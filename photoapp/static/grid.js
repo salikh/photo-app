@@ -3,7 +3,7 @@
 import {get, post, imgUrl} from './api.js';
 import {el, toast, retryImage, enqueue, setChildren} from './util.js';
 import {href} from './route.js';
-import {label, REJECT} from './rating.js';
+import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 
 const PAGE = 1000;
@@ -41,7 +41,7 @@ export function loadRest(route, onPage = () => {}) {
 export function badges(photo) {
   return [
     photo.rating === REJECT ? el('span', {class: 'rej', text: '✖'})
-      : photo.rating > 0 ? el('span', {class: 'stars', text: '★' + photo.rating}) : null,
+      : display(photo.rating) > 0 ? el('span', {class: 'stars', text: '★' + photo.rating}) : null,
     photo.fav ? el('span', {class: 'fav', text: '♥'}) : null,
     photo.conflict ? el('span', {class: 'conflict', title: 'sidecars disagree', text: '⚠'}) : null,
     photo.files > 1 ? el('span', {class: 'stack', title: photo.files + ' files', text: '⧉ ' + photo.files}) : null,
@@ -95,7 +95,7 @@ export function renderSelectionBar() {
   const rate = (rating) => batchRate(ids, rating);
   setChildren(bar,
     el('strong', {text: n + ' selected'}),
-    ...[0, 1, 2, 3, 4, 5].map((r) => el('button', {text: r === 0 ? '☆' : String(r), title: 'rate ' + r, onclick: () => rate(r)})),
+    ...choices().map((r) => el('button', {text: r === 0 ? '☆' : String(r), title: 'rate ' + r, onclick: () => rate(r)})),
     el('button', {text: '✖', title: 'reject', onclick: () => rate(REJECT)}),
     n === 2 ? el('button', {text: 'Link 2nd as tuning of 1st', onclick: () => linkSelected(ids)}) : null,
     el('button', {text: 'Clear', onclick: clearSelection}),

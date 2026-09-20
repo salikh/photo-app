@@ -7,6 +7,7 @@ import {state} from './state.js';
 import * as grid from './grid.js';
 import * as loupe from './loupe.js';
 import * as pages from './pages.js';
+import {configure} from './rating.js';
 
 const app = document.getElementById('app');
 const FILTERS = ['all', 'unrated', 'rejected', 'picked', 'rated', 'fav', 'conflict'];
@@ -140,4 +141,5 @@ document.addEventListener('keydown', (e) => {
 });
 
 window.addEventListener('hashchange', render);
-render();
+// The rating presentation depends on server settings, so load them first.
+get('/api/config').then(configure).catch(() => {}).finally(render);

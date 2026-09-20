@@ -291,3 +291,60 @@ def test_dry_run_says_nothing_was_saved(browser, tmp_path):
     ctx.close()
   finally:
     srv.stop()
+
+
+def test_one_star_is_unrated_flag_hides_star_1_and_skips_it(browser, tmp_path):
+  from tests.e2e.harness import Server
+  from tests.test_scan_sidecars import XMP, write
+  srv = Server(tmp_path, one_star_is_unrated=True).start()
+  try:
+    # IMG_0004 carries darktable's default 1 star
+    write(srv.pictures + "/2024/trip/IMG_0004.jpg.xmp", XMP % (1, ""), mtime=1_000_000)
+    srv.app.state.scanner.start(); srv.app.state.scanner.wait()
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    pg = ctx.new_page()
+    ids = photo_ids(srv)
+    pg.goto(f"{srv.url}/#/2024/trip")
+    expect(pg.locator(".cell")).to_have_count(6)
+    expect(pg.locator(".badges .stars", has_text="4")).to_have_count(1)      # 4 stars still shown
+    assert pg.locator(".badges .stars", has_text="1").count() == 0            # the 1-star badge is hidden
+    pg.get_by_label("filter").select_option("picked")
+    expect(pg.locator(".cell")).to_have_count(1)                              # only the 4-star photo
+    pg.goto(f"{srv.url}/#/2024/trip?photo={ids[3]}")                          # IMG_0004, real rating 1
+    expect(pg.locator(".hud .stars")).to_have_text("☆☆☆☆☆")
+    assert pg.locator(".hud .buttons button", has_text="1").count() == 0      # no meaningless '1' button
+    pg.keyboard.press("ArrowRight")
+    pg.keyboard.press("ArrowLeft")
+    pg.keyboard.press("Escape")
+    pg.goto(f"{srv.url}/#/2024/trip?photo={ids[0]}")                          # unrated: up skips 1
+    expect(pg.locator(".loupe")).to_be_visible()
+    pg.keyboard.press("1")                                                    # '1' means unrated
+    pg.wait_for_timeout(300)
+    expect(pg.locator(".hud .stars")).to_have_text("☆☆☆☆☆")
+    pg.keyboard.press("3")
+    expect(pg.locator(".hud .stars")).to_have_text("★★★☆☆")
+    ctx.close()
+  finally:
+    srv.stop()
+
+
+def test_rating_step_logic_in_the_browser(page, server):
+  page.goto(server.url + "/")
+  result = page.evaluate("""async () => {
+    const r = await import('/static/rating.js');
+    const out = {};
+    r.configure({one_star_is_unrated: false});
+    out.plain = [r.step(0, 1), r.step(1, -1), r.step(5, 1), r.step(-1, -1), r.step(-1, 1, 3), r.step(0, -1)];
+    out.plainKeys = [r.afterKey(2, '1'), r.afterKey(2, 'x'), r.afterKey(-1, 'x', 4), r.afterKey(0, 'q')];
+    r.configure({one_star_is_unrated: true});
+    out.flag = [r.step(0, 1), r.step(1, 1), r.step(2, -1), r.step(1, -1), r.step(5, 1), r.step(-1, 1, 3), r.step(-1, 1)];
+    out.flagKeys = [r.afterKey(2, '1'), r.afterKey(0, '2')];
+    out.shown = [r.display(1), r.display(2), r.label(1), r.choices()];
+    return out;
+  }""")
+  assert result["plain"] == [1, 0, 5, -1, 3, -1]
+  assert result["plainKeys"] == [1, -1, 4, None]
+  assert result["flag"] == [2, 2, 0, -1, 5, 3, 0]      # 1 is skipped both ways; un-reject restores stars
+  assert result["flagKeys"] == [0, 2]
+  assert result["shown"][:2] == [0, 2] and result["shown"][2] == "☆" * 5
+  assert result["shown"][3] == [0, 2, 3, 4, 5]

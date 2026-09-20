@@ -17,6 +17,14 @@ _FILTER_SQL = {
     "conflict": "p.conflict = 1",
 }
 
+# With one_star_is_unrated (ticket 049) a 1-star rating counts as unrated.
+_FILTER_SQL_ONE_STAR_UNRATED = dict(
+    _FILTER_SQL,
+    unrated="p.rating IN (0, 1)",
+    picked="p.rating > 1",
+    rated="p.rating NOT IN (0, 1)",
+)
+
 
 def _prefix_range(rel_dir):
   """(lo, hi) such that a path is under rel_dir iff lo <= path < hi.
@@ -70,7 +78,7 @@ def _photo_json(r, tags):
 
 
 def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
-                limit=200):
+                limit=200, one_star_is_unrated=False):
   """A page of Photos whose representative file is directly in rel_dir."""
   rel_dir = _norm_dir(rel_dir)
   if sort not in SORTS:
@@ -80,8 +88,9 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
   limit = max(1, min(int(limit), 1000))
   offset = max(0, int(offset))
   lo, hi = _prefix_range(rel_dir)
+  filters = _FILTER_SQL_ONE_STAR_UNRATED if one_star_is_unrated else _FILTER_SQL
   where = ("rf.path >= ? AND rf.path < ? AND instr(substr(rf.path, ?), '/') = 0"
-           " AND rf.missing = 0 AND " + _FILTER_SQL[filter])
+           " AND rf.missing = 0 AND " + filters[filter])
   args = (lo, hi, len(lo) + 1)
   order = ("COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path"
            if sort == "date" else "rf.path COLLATE NOCASE")

@@ -36,7 +36,7 @@ Decisions (each ticket has the options and the evidence; 024 and 042 were answer
 
 - [x] [024](docs/tickets/024.md) Un-reject restores the previous star count (implemented as default: yes)
 - [x] [042](docs/tickets/042.md) New RAW sidecar name: `NAME.DNG.xmp` (implemented, `--new_raw_sidecar_style=full`) or `NAME.xmp`
-- [ ] [049](docs/tickets/049.md) darktable's default 1 star is 76% of sidecars: show as is (current), hide, or migrate
+- [x] [049](docs/tickets/049.md) darktable's default 1 star: hidden with `--one_star_is_unrated` (opt-in; decided and implemented 2026-09-21)
 - [x] [023](docs/tickets/023.md) Ratings are written to both the DNG and JPG sidecars; reading stays newest-wins (decided and implemented 2026-09-21)
 - [ ] [015](docs/tickets/015.md) Manual link decisions are mirrored to `manual_links.jsonl` (implemented); confirm
 - [x] [046](docs/tickets/046.md) Swipe up/down = one rating step, clamped (confirmed 2026-09-21)

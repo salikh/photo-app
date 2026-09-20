@@ -127,3 +127,29 @@ def test_huge_and_full_serve_the_original_and_raw_has_no_image_yet(settings):
   assert c.get(f"/img/full/{raw}").status_code == 404
   assert c.get(f"/img/Bogus/{fid}").status_code == 404
   assert c.get("/img/Thumb/99999").status_code == 404
+
+
+def test_one_star_is_unrated_changes_filters_only_when_enabled(settings):
+  import dataclasses
+  d = settings.pictures_dir
+  for i, r in enumerate((1, 2, 0, -1)):
+    make_jpeg(os.path.join(d, "s", f"{i}.jpg"))
+    if r:
+      write(os.path.join(d, "s", f"{i}.jpg.xmp"), XMP % (r, ""), mtime=1_000_000)
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+
+  def listed(c, f):
+    return sorted(p["name"] for p in c.get("/api/photos", params={"dir": "s", "filter": f}).json()["photos"])
+
+  plain = TestClient(api.create_app(conn, settings))
+  assert plain.get("/api/config").json()["one_star_is_unrated"] is False
+  assert listed(plain, "picked") == ["0.jpg", "1.jpg"] and listed(plain, "unrated") == ["2.jpg"]
+  on = TestClient(api.create_app(conn, dataclasses.replace(settings, one_star_is_unrated=True)))
+  assert on.get("/api/config").json()["one_star_is_unrated"] is True
+  assert listed(on, "picked") == ["1.jpg"]                       # rating >= 2
+  assert listed(on, "unrated") == ["0.jpg", "2.jpg"]              # 1 star counts as unrated
+  assert listed(on, "rated") == ["1.jpg", "3.jpg"]                # 2 stars and the reject
+  assert listed(on, "rejected") == ["3.jpg"]
+  # the data itself is untouched: the API still reports the real rating
+  assert {p["name"]: p["rating"] for p in on.get("/api/photos", params={"dir": "s"}).json()["photos"]}["0.jpg"] == 1

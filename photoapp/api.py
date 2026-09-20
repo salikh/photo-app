@@ -95,6 +95,12 @@ def create_app(conn, settings):
   def favicon():
     return Response(status_code=204)
 
+  @app.get("/api/config")
+  def client_config():
+    """Settings the UI needs to present ratings consistently."""
+    return {"one_star_is_unrated": settings.one_star_is_unrated,
+            "xmp_dry_run": settings.xmp_dry_run}
+
   @app.get("/api/health")
   def health():
     return {"ok": True}
@@ -243,7 +249,8 @@ def create_app(conn, settings):
   @app.get("/api/photos")
   def photos(dir: str = ".", sort: str = "date", filter: str = "all",
              offset: int = 0, limit: int = 200):
-    return read(library.list_photos, dir, sort, filter, offset, limit)
+    return read(library.list_photos, dir, sort, filter, offset, limit,
+                settings.one_star_is_unrated)
 
   @app.get("/api/photos/{photo_id}")
   def photo(photo_id: int):

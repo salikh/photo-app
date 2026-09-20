@@ -30,6 +30,12 @@ flags.DEFINE_enum(
 flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).")
 flags.DEFINE_integer("nightly_scan_hour", 3, "Local hour (0-23) of the nightly rescan; -1 disables it.")
 flags.DEFINE_integer("scan_workers", 8, "Threads reading files during a scan (network file systems are latency bound).")
+flags.DEFINE_boolean(
+    "one_star_is_unrated", False,
+    "Display-only: treat a 1-star rating as unrated (darktable's default on import "
+    "is 1 star, 76% of this library's sidecars). Hides the 1-star badge, makes "
+    "'picked' mean rating >= 2 and 'unrated' include 1. Nothing on disk changes. "
+    "See ticket 049.")
 flags.DEFINE_string("host", "0.0.0.0", "Address to listen on (LAN only).")
 flags.DEFINE_integer("port", 8080, "Port to listen on.")
 
@@ -45,6 +51,7 @@ class Settings:
   job_workers: int = 2
   nightly_scan_hour: int = -1
   scan_workers: int = 8
+  one_star_is_unrated: bool = False
 
   @property
   def db_path(self):
@@ -56,4 +63,4 @@ class Settings:
     return cls(os.path.abspath(f.pictures_dir), os.path.abspath(f.thumbs_dir),
                os.path.abspath(f.state_dir), f.hashes_db, f.xmp_dry_run,
                f.new_raw_sidecar_style, f.job_workers, f.nightly_scan_hour,
-               f.scan_workers)
+               f.scan_workers, f.one_star_is_unrated)
