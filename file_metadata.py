@@ -26,10 +26,15 @@ is rewritten with the corrected value -- so both index.json and --db's
 dir_mtimes cache agree on the directory's true final mtime, and an
 unmodified directory is still correctly skipped on the next run.
 
+Each file's record also carries its plain byte size ('bytesize'). A
+record reused from an existing index.json (mtime unchanged) that
+predates this field simply has it backfilled in place, without
+otherwise being re-read or re-hashed.
+
 Requires Pillow (`import PIL`) to read image dimensions and format.
 
 Usage:
-    create_metadata_db.py
+    file_metadata.py
         --logtostderr --v=3
         --root_dir /zoo/Pictures
         --dir /zoo/Pictures/2024
@@ -117,6 +122,7 @@ def create_tables(conn):
       "width INTEGER, "
       "height INTEGER, "
       "hash TEXT, "
+      "bytesize INTEGER, "
       "mtime REAL NOT NULL)")
   conn.execute(
       "CREATE TABLE IF NOT EXISTS dir_mtimes ("
@@ -125,6 +131,8 @@ def create_tables(conn):
   columns = {row[1] for row in conn.execute("PRAGMA table_info(image_metadata)")}
   if "hash" not in columns:
     conn.execute("ALTER TABLE image_metadata ADD COLUMN hash TEXT")
+  if "bytesize" not in columns:
+    conn.execute("ALTER TABLE image_metadata ADD COLUMN bytesize INTEGER")
 
 
 def get_cached_dir_mtime(conn, dirpath):
@@ -133,18 +141,15 @@ def get_cached_dir_mtime(conn, dirpath):
   return row[0] if row else None
 
 
-def get_cached_file(conn, rel_path):
-  """Return the cached {mime_type, width, height, hash, mtime} dict, or None."""
-  row = conn.execute(
-      "SELECT mime_type, width, height, hash, mtime FROM image_metadata "
-      "WHERE filename = ?", (rel_path,)).fetchone()
-  if row is None:
-    return None
-  mime_type, width, height, hash_, mtime = row
-  return {
-      "mime_type": mime_type, "width": width, "height": height,
-      "hash": hash_, "mtime": mtime,
-  }
+def load_existing_index(dirpath):
+  """Return {name: record} from dirpath's existing index.json, if any."""
+  index_path = os.path.join(dirpath, _INDEX_JSON_NAME)
+  try:
+    with open(index_path) as f:
+      data = json.load(f)
+  except (OSError, ValueError):
+    return {}
+  return data.get("files", {})
 
 
 def is_image(name):
@@ -175,7 +180,7 @@ def get_or_compute_hash(filepath, rel_path, file_mtime, precomputed_hashes):
     if pre is not None:
       pre_hash, pre_mtime = pre
       if pre_mtime == file_mtime:
-        logging.vlog(3, "Reusing precomputed hash for %s", filepath)
+        logging.vlog(5, "Reusing precomputed hash for %s", filepath)
         return pre_hash
   logging.vlog(3, "Hashing %s", filepath)
   try:
@@ -185,14 +190,29 @@ def get_or_compute_hash(filepath, rel_path, file_mtime, precomputed_hashes):
     return None
 
 
+def upsert_image_metadata(conn, rel_path, record):
+  conn.execute(
+      "INSERT INTO image_metadata "
+      "(filename, mime_type, width, height, hash, bytesize, mtime) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?) "
+      "ON CONFLICT(filename) DO UPDATE SET "
+      "mime_type = excluded.mime_type, width = excluded.width, "
+      "height = excluded.height, hash = excluded.hash, "
+      "bytesize = excluded.bytesize, mtime = excluded.mtime",
+      (rel_path, record["mime_type"], record["width"], record["height"],
+       record["hash"], record["bytesize"], record["mtime"]))
+
+
 def process_directory(conn, root_dir, dirpath, filenames, precomputed_hashes):
   """Process every image file directly in dirpath.
 
-  Returns {name: {mime_type, width, height, hash, mtime}} for every
-  current image file in the directory (freshly computed or reused from
-  the cache), for use in that directory's index.json.
+  Returns {name: {mime_type, width, height, hash, bytesize, mtime}} for
+  every current image file in the directory (freshly computed or reused
+  from that directory's existing index.json), for use in the new
+  index.json written for it.
   """
   rel_dir = os.path.relpath(dirpath, root_dir)
+  existing_index = load_existing_index(dirpath)
   file_records = {}
 
   for name in filenames:
@@ -202,38 +222,35 @@ def process_directory(conn, root_dir, dirpath, filenames, precomputed_hashes):
     if not os.path.isfile(filepath):
       continue
     try:
-      file_mtime = os.stat(filepath).st_mtime
+      st = os.stat(filepath)
     except OSError as e:
       logging.error("Skipping %s: %s", filepath, e)
       continue
+    file_mtime = st.st_mtime
 
     rel_path = os.path.normpath(os.path.join(rel_dir, name))
-    cached = get_cached_file(conn, rel_path)
-    if cached is not None and cached["mtime"] == file_mtime:
-      logging.vlog(2, "Skipping unchanged file %s", filepath)
+    cached = existing_index.get(name)
+    if cached is not None and cached.get("mtime") == file_mtime:
+      if "bytesize" in cached:
+        logging.vlog(5, "Skipping unchanged file %s", filepath)
+      else:
+        logging.vlog(3, "Backfilling bytesize for unchanged file %s", filepath)
+        cached = dict(cached, bytesize=st.st_size)
       file_records[name] = cached
+      upsert_image_metadata(conn, rel_path, cached)
       continue
 
-    logging.vlog(3, "Reading metadata for %s", filepath)
     mime_type, width, height = read_image_metadata(filepath)
     file_hash = get_or_compute_hash(
         filepath, rel_path, file_mtime, precomputed_hashes)
 
+    logging.vlog(3, "Writing metadata for %s", filepath)
     record = {
         "mime_type": mime_type, "width": width, "height": height,
-        "hash": file_hash, "mtime": file_mtime,
+        "hash": file_hash, "bytesize": st.st_size, "mtime": file_mtime,
     }
     file_records[name] = record
-
-    conn.execute(
-        "INSERT INTO image_metadata "
-        "(filename, mime_type, width, height, hash, mtime) "
-        "VALUES (?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(filename) DO UPDATE SET "
-        "mime_type = excluded.mime_type, width = excluded.width, "
-        "height = excluded.height, hash = excluded.hash, "
-        "mtime = excluded.mtime",
-        (rel_path, mime_type, width, height, file_hash, file_mtime))
+    upsert_image_metadata(conn, rel_path, record)
 
   # Drop stale entries for image files that used to live directly in this
   # directory but have since been removed or renamed. Subdirectory entries
