@@ -116,6 +116,7 @@ function batchRate(ids, rating) {
         const photo = state.photos.find((p) => p.id === res.photo_id);
         if (photo) { Object.assign(photo, res.photo); updateCell(photo); }
       }
+      if (r.results.some((x) => x.dry_run)) { toast('dry run: nothing was saved'); return; }
       if (r.results.length) state.undoStack.push({batch_id: r.batch_id});
       toast(`rated ${r.results.length}` + (r.errors.length ? `, ${r.errors.length} failed` : '') + ' (press U to undo)', r.errors.length > 0);
     } catch (e) { toast(e.message, true); }

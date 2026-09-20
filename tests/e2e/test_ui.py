@@ -273,3 +273,21 @@ def test_tap_toggles_zoom_but_swipe_does_not(phone, server):
   expect(phone.locator(".stage.zoomed")).to_have_count(0)     # the drag was not a tap
   phone.locator(".stage").tap(position={"x": 195, "y": 300})
   expect(phone.locator(".stage.zoomed")).to_have_count(1)
+
+
+def test_dry_run_says_nothing_was_saved(browser, tmp_path):
+  from tests.e2e.harness import Server
+  srv = Server(tmp_path, xmp_dry_run=True).start()
+  try:
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    pg = ctx.new_page()
+    ids = photo_ids(srv)
+    pg.goto(f"{srv.url}/#/2024/trip?photo={ids[0]}")
+    expect(pg.locator(".loupe")).to_be_visible()
+    pg.keyboard.press("3")
+    expect(pg.locator("#toast")).to_contain_text("dry run")
+    expect(pg.locator(".hud .stars")).to_have_text("☆☆☆☆☆")   # not applied
+    assert srv.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") is None
+    ctx.close()
+  finally:
+    srv.stop()

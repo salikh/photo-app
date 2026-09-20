@@ -94,3 +94,15 @@ def test_sidecar_edit_updates_photo_and_import_survives_without_sidecar(conn, se
   scan.scan(conn, d)
   assert conn.execute("SELECT p.rating FROM photos p JOIN files f ON "
                       "f.photo_id = p.id WHERE f.path = 'b.jpg'").fetchone()[0] == 5
+
+
+def test_scan_resolves_photos_left_unresolved_by_an_older_version(conn, settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "a.jpg"))
+  write(os.path.join(d, "a.jpg.xmp"), XMP % (3, ""), mtime=1_000_000)
+  scan.scan(conn, d)
+  conn.execute("UPDATE photos SET rating = 0, rating_source = NULL")   # as an old DB would be
+  conn.commit()
+  scan.scan(conn, d)                       # nothing changed on disk
+  row = conn.execute("SELECT rating, rating_source FROM photos").fetchone()
+  assert (row["rating"], row["rating_source"]) == (3, "xmp")

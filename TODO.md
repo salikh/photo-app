@@ -32,6 +32,7 @@ Check items off here when the ticket's status is done.
 - [ ] [023](docs/tickets/023.md) Review the conflict survey before any XMP write (after it runs)
 - [x] [015](docs/tickets/015.md) Confirm JSONL mirror as the durability answer for manual links
 - [ ] [042](docs/tickets/042.md) Naming of new sidecars for RAW originals (survey says the library is darktable full-filename style)
+- [ ] [049](docs/tickets/049.md) darktable's default 1-star: 76% of sidecars are 1 star (options in the ticket)
 - [ ] [046](docs/tickets/046.md) Confirm swipe up/down rating mapping (up = +1 step, down = -1 step, clamped)
 
 ## Suggested first moves

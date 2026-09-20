@@ -121,3 +121,19 @@ def refresh_dirs(conn, rel_dirs):
     remember(conn, pid)
   conn.commit()
   return len(photo_ids)
+
+
+def refresh_unresolved(conn):
+  """Resolve Photos that have sidecars but were never resolved from them.
+
+  Covers databases scanned by an older version and sidecars without a
+  rating (cheap: these are re-resolved on every scan).
+  """
+  ids = [r["id"] for r in conn.execute(
+      "SELECT DISTINCT p.id FROM photos p JOIN files f ON f.photo_id = p.id "
+      "JOIN xmp_sidecars s ON s.file_id = f.id WHERE p.rating_source IS NULL")]
+  for pid in ids:
+    refresh_photo(conn, pid)
+    remember(conn, pid)
+  conn.commit()
+  return len(ids)

@@ -222,6 +222,7 @@ function setRating(value) {
     try {
       const r = await post(`/api/photos/${photo.id}/rating`, {rating: value});
       Object.assign(photo, r.photo);
+      if (r.dry_run) toast('dry run: nothing was saved');
       if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids});
     } catch (e) {
       Object.assign(photo, before);
@@ -245,6 +246,7 @@ function toggleFav() {
     try {
       const r = await post(`/api/photos/${photo.id}/fav`, {fav: value});
       Object.assign(photo, r.photo);
+      if (r.dry_run) toast('dry run: nothing was saved');
       if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids});
     } catch (e) { photo.fav = !value; toast(e.message, true); }
     refresh(photo);
@@ -271,6 +273,7 @@ function onTagKey(e) {
     try {
       const r = await post(`/api/photos/${photo.id}/tags`, {add, remove});
       Object.assign(photo, r.photo);
+      if (r.dry_run) toast('dry run: nothing was saved');
       if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids});
     } catch (err) { toast(err.message, true); }
     refresh(photo);

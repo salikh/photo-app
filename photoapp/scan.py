@@ -239,6 +239,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
     grouping.regroup(conn, changed_dirs)
     manual_links.apply_all(conn)
     ratings.refresh_dirs(conn, changed_dirs)
+    ratings.refresh_unresolved(conn)
     if thumbs_dir:
       thumbs.index_existing(conn, thumbs_dir, changed_dirs)
     if on_done:
