@@ -239,6 +239,7 @@ def main(argv):
   conn = sqlite3.connect(FLAGS.db)
   try:
     create_tables(conn)
+    logging.info("Checking removed files...")
     removed = remove_missing_files(conn, FLAGS.root_dir)
     logging.info("Removed %d entries for missing files", removed)
     collect_hashes(conn, FLAGS.root_dir, scan_dir)
