@@ -25,6 +25,11 @@ IMAGE_EXTENSIONS = {
     '.bmp', '.webp', '.pef',
 }
 
+# Subset of IMAGE_EXTENSIONS that are camera RAW formats.
+RAW_EXTENSIONS = {
+    '.dng', '.cr2', '.cr3', '.nef', '.arw', '.raf', '.rw2', '.orf', '.pef',
+}
+
 _HASH_CHUNK_SIZE = 1024 * 1024
 
 # EXIF tags: (date tag, matching UTC offset tag), in order of preference.
@@ -47,6 +52,10 @@ def hash_file(path):
         break
       digest.update(chunk)
   return digest.hexdigest()
+
+
+def is_raw(name):
+  return os.path.splitext(name)[1].lower() in RAW_EXTENSIONS
 
 
 def is_image(name):

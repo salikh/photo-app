@@ -34,5 +34,5 @@ Independent of each other, can start now:
 
 - [x] [011](docs/tickets/011.md) Extract reusable logic from `file_metadata.py`
 - [ ] [016](docs/tickets/016.md) Inspect `/zoo/Thumbs` layout (read-only)
-- [ ] [018](docs/tickets/018.md) XMP sidecar discovery and read
+- [x] [018](docs/tickets/018.md) XMP sidecar discovery and read
 - [x] [001](docs/tickets/001.md) Skeleton and schema
