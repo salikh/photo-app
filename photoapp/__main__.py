@@ -6,7 +6,7 @@ from absl import flags
 from absl import logging
 
 from photoapp import api
-from photoapp import config  # noqa: F401  (defines the flags)
+from photoapp import config
 from photoapp import db
 
 FLAGS = flags.FLAGS
@@ -18,7 +18,8 @@ def main(argv):
   conn = db.open_state(FLAGS.state_dir)
   logging.info("database in %s, schema version %d", FLAGS.state_dir,
                db.schema_version(conn))
-  uvicorn.run(api.create_app(conn), host=FLAGS.host, port=FLAGS.port)
+  settings = config.Settings.from_flags()
+  uvicorn.run(api.create_app(conn, settings), host=FLAGS.host, port=FLAGS.port)
 
 
 if __name__ == "__main__":

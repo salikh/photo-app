@@ -35,7 +35,7 @@ def test_newer_schema_is_refused(tmp_path):
     raise AssertionError("expected RuntimeError")
 
 
-def test_placeholder_page_and_health():
-  client = TestClient(api.create_app(db.connect(":memory:")))
+def test_placeholder_page_and_health(settings):
+  client = TestClient(api.create_app(db.connect(":memory:"), settings))
   assert client.get("/api/health").json() == {"ok": True}
   assert "Photos" in client.get("/").text
