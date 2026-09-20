@@ -228,3 +228,18 @@ def test_regroup_is_idempotent(conn, settings):
   assert grouping.regroup(conn) == 0
   assert before == ({p: dict(r) for p, r in by_path(conn).items()},
                     {p: dict(r) for p, r in photos(conn).items()})
+
+
+def test_databases_scanned_by_an_older_rule_are_regrouped_once(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.dng"))
+  make_jpeg(os.path.join(d, "a.png"))
+  scan.scan(conn, d)
+  # pretend an older rule made them two photos and recorded its version
+  conn.execute("UPDATE files SET photo_id = (SELECT id FROM photos ORDER BY id LIMIT 1), "
+               "role = 'original', derived_from = NULL WHERE path = 'a.png'")
+  conn.execute("DELETE FROM meta WHERE key = 'grouping_version'")
+  conn.commit()
+  assert grouping.regroup_if_rule_changed(conn) is True
+  assert by_path(conn)["a.png"]["role"] == "tuning"
+  assert grouping.regroup_if_rule_changed(conn) is False          # only once per version

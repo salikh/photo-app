@@ -256,6 +256,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
         r["path"].rpartition("/")[0] or "." for r in conn.execute(
             "SELECT path FROM files WHERE photo_id IS NULL"))
     grouping.regroup(conn, changed_dirs)
+    grouping.regroup_if_rule_changed(conn)
     manual_links.apply_all(conn)
     ratings.refresh_dirs(conn, changed_dirs)
     ratings.refresh_unresolved(conn)

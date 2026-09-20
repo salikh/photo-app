@@ -16,6 +16,10 @@ import os
 
 from photoapp import fileinfo
 
+# Bump when the automatic rule changes: scan() then regroups every directory
+# once, so databases scanned by an older rule catch up.
+GROUPING_VERSION = "2"   # 1: RAW+JPG; 2: also TIF/PNG (ticket 015)
+
 _JPEG_EXTENSIONS = {".jpg", ".jpeg"}
 _TIFF_EXTENSIONS = {".tif", ".tiff"}
 _PNG_EXTENSIONS = {".png"}
@@ -211,3 +215,18 @@ def set_representative(conn, photo_id, file_id):
         "UPDATE photos SET representative_file_id = ?, "
         "representative_source = 'manual' WHERE id = ?", (file_id, photo_id))
   conn.commit()
+
+
+def regroup_if_rule_changed(conn):
+  """Regroup everything once if the stored rule version is not current."""
+  row = conn.execute(
+      "SELECT value FROM meta WHERE key = 'grouping_version'").fetchone()
+  if row is not None and row["value"] == GROUPING_VERSION:
+    return False
+  regroup(conn)
+  conn.execute(
+      "INSERT INTO meta (key, value) VALUES ('grouping_version', ?) "
+      "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      (GROUPING_VERSION,))
+  conn.commit()
+  return True

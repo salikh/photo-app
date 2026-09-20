@@ -114,6 +114,9 @@ MIGRATIONS = [
     """
     ALTER TABLE activity_log ADD COLUMN batch_id TEXT;  -- one id per batch action
     """,
+    """
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);  -- e.g. grouping_version
+    """,
 ]
 
 
