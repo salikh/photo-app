@@ -17,6 +17,7 @@ from photoapp import grouping
 from photoapp import jobs
 from photoapp import library
 from photoapp import manual_links
+from photoapp import recovery
 from photoapp import scan as scan_lib
 from photoapp import thumbs
 
@@ -60,7 +61,8 @@ def create_app(conn, settings):
   hashes = (fileinfo.load_precomputed_hashes(settings.hashes_db)
             if settings.hashes_db else None)
   app.state.scanner = scan_lib.ScanManager(
-      settings.db_path, settings.pictures_dir, hashes, settings.thumbs_dir)
+      settings.db_path, settings.pictures_dir, hashes, settings.thumbs_dir,
+      on_done=lambda conn: recovery.recover(conn, settings))
 
   def raw_render(conn, job):
     row = conn.execute("SELECT id, path FROM files WHERE id = ?",
@@ -191,6 +193,20 @@ def create_app(conn, settings):
       if lacking:
         result["lacking"] = thumbs.lacking(app.state.db)
       return result
+
+  @app.get("/api/attention")
+  def attention():
+    with app.state.db_lock:
+      conn = app.state.db
+      conflicts = [dict(r) for r in conn.execute(
+          "SELECT p.id, p.rating, rf.path FROM photos p JOIN files rf ON "
+          "rf.id = p.representative_file_id WHERE p.conflict = 1 "
+          "ORDER BY rf.path LIMIT 500")]
+      orphans = [r["path"] for r in conn.execute(
+          "SELECT path FROM xmp_sidecars WHERE file_id IS NULL "
+          "ORDER BY path LIMIT 500")]
+      return {"conflicts": conflicts, "orphan_sidecars": orphans,
+              "ambiguous_recovery": recovery.ambiguous(conn)}
 
   @app.get("/api/activity")
   def activity(limit: int = 100):

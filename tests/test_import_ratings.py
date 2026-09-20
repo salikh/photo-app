@@ -63,7 +63,7 @@ def test_import_applies_reports_and_remembers_hashes(conn, settings, tmp_path):
   assert photo(conn, "y/e.dng")["rating"] == -1
   assert photo(conn, "y/e.dng")["id"] == photo(conn, "y/e.jpg")["id"]
   assert photo(conn, "y/c.jpg")["rating"] == 0
-  assert conn.execute("SELECT COUNT(*) FROM rating_by_hash").fetchone()[0] == 5
+  assert conn.execute("SELECT COUNT(*) FROM rating_by_hash WHERE hash LIKE 'h-%'").fetchone()[0] == 5
   assert not os.path.exists(os.path.join(settings.pictures_dir, "y", "a.jpg.xmp"))
   log = [(l["photo_id"], l["cause"]) for l in curation.recent_activity(conn)]
   assert len(log) == 2 and {c for _, c in log} == {"import"}

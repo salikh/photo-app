@@ -185,6 +185,7 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
   for field, (o, n) in changes.items():
     _log(conn, photo_id, rel_sidecar, field, o, n, cause, batch_id)
   ratings.refresh_photo(conn, photo_id)
+  ratings.remember(conn, photo_id)
   conn.commit()
   return result
 

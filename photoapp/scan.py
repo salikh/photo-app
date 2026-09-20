@@ -184,7 +184,7 @@ def _like_prefix(rel_dir):
 
 
 def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
-         thumbs_dir=None):
+         thumbs_dir=None, on_done=None):
   """Scan scan_dir (default: pictures_dir) into conn. Returns the Progress.
 
   With thumbs_dir, thumbnails that already exist for new files are recorded.
@@ -241,6 +241,8 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
     ratings.refresh_dirs(conn, changed_dirs)
     if thumbs_dir:
       thumbs.index_existing(conn, thumbs_dir, changed_dirs)
+    if on_done:
+      on_done(conn)
   except Exception as e:
     logging.exception("scan failed")
     progress.error = str(e)
@@ -263,11 +265,13 @@ def _mark_missing(conn, pictures_dir, scan_dir, seen):
 class ScanManager:
   """Runs at most one scan at a time in a background thread."""
 
-  def __init__(self, db_path, pictures_dir, hashes=None, thumbs_dir=None):
+  def __init__(self, db_path, pictures_dir, hashes=None, thumbs_dir=None,
+               on_done=None):
     self._db_path = db_path
     self._pictures_dir = pictures_dir
     self._hashes = hashes
     self._thumbs_dir = thumbs_dir
+    self._on_done = on_done
     self._lock = threading.Lock()
     self._thread = None
     self.progress = Progress()
@@ -292,7 +296,7 @@ class ScanManager:
     conn = db.connect(self._db_path)
     try:
       scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
-           self._thumbs_dir)
+           self._thumbs_dir, self._on_done)
     finally:
       conn.close()
 

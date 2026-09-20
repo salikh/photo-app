@@ -100,6 +100,12 @@ def refresh_photo(conn, photo_id):
   return r
 
 
+def remember(conn, photo_id):
+  """Keep rating_by_hash current for rename recovery (see recovery.py)."""
+  from photoapp import recovery
+  recovery.remember_photo(conn, photo_id)
+
+
 def refresh_dirs(conn, rel_dirs):
   """Refresh every Photo that has a file directly in one of rel_dirs."""
   wanted = set(rel_dirs)
@@ -112,5 +118,6 @@ def refresh_dirs(conn, rel_dirs):
       photo_ids.add(r["photo_id"])
   for pid in sorted(photo_ids):
     refresh_photo(conn, pid)
+    remember(conn, pid)
   conn.commit()
   return len(photo_ids)
