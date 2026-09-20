@@ -22,7 +22,7 @@ def create_app(conn, settings):
   hashes = (fileinfo.load_precomputed_hashes(settings.hashes_db)
             if settings.hashes_db else None)
   app.state.scanner = scan_lib.ScanManager(
-      settings.db_path, settings.pictures_dir, hashes)
+      settings.db_path, settings.pictures_dir, hashes, settings.thumbs_dir)
 
   @app.get("/")
   def index():

@@ -10,7 +10,7 @@ Check items off here when the ticket's status is done.
 - [x] [001](docs/tickets/001.md) Skeleton and schema
 - [x] [002](docs/tickets/002.md) Scan and files table
 - [x] [003](docs/tickets/003.md) Grouping
-- [ ] [004](docs/tickets/004.md) Thumbs inspection and lookup
+- [x] [004](docs/tickets/004.md) Thumbs inspection and lookup
 - [ ] [005](docs/tickets/005.md) XMP module and tests
 - [ ] [006](docs/tickets/006.md) Import and ratings
 - [ ] [007](docs/tickets/007.md) Read-only UI
@@ -22,6 +22,7 @@ Check items off here when the ticket's status is done.
 
 - [ ] [040](docs/tickets/040.md) Test infrastructure and fixtures
 - [x] [041](docs/tickets/041.md) start.sh to bring up a local server
+- [ ] [048](docs/tickets/048.md) First full library scan and reports (long-running; run with the user's go-ahead)
 - [ ] [047](docs/tickets/047.md) Dark theme (CSS variables in place; pages must use them as they are built)
 - [ ] [043](docs/tickets/043.md) Mobile UI: responsive layout, swipe navigation, swipe rating (after the desktop grid/loupe/rating exist)
 

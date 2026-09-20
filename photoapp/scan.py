@@ -20,6 +20,7 @@ from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import manual_links
 from photoapp import ratings
+from photoapp import thumbs
 from photoapp import xmp
 
 
@@ -182,8 +183,12 @@ def _like_prefix(rel_dir):
   return escaped + "/"
 
 
-def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
-  """Scan scan_dir (default: pictures_dir) into conn. Returns the Progress."""
+def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
+         thumbs_dir=None):
+  """Scan scan_dir (default: pictures_dir) into conn. Returns the Progress.
+
+  With thumbs_dir, thumbnails that already exist for new files are recorded.
+  """
   progress = progress or Progress()
   progress.running = True
   scan_dir = scan_dir or pictures_dir
@@ -234,6 +239,8 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
     grouping.regroup(conn, changed_dirs)
     manual_links.apply_all(conn)
     ratings.refresh_dirs(conn, changed_dirs)
+    if thumbs_dir:
+      thumbs.index_existing(conn, thumbs_dir, changed_dirs)
   except Exception as e:
     logging.exception("scan failed")
     progress.error = str(e)
@@ -256,10 +263,11 @@ def _mark_missing(conn, pictures_dir, scan_dir, seen):
 class ScanManager:
   """Runs at most one scan at a time in a background thread."""
 
-  def __init__(self, db_path, pictures_dir, hashes=None):
+  def __init__(self, db_path, pictures_dir, hashes=None, thumbs_dir=None):
     self._db_path = db_path
     self._pictures_dir = pictures_dir
     self._hashes = hashes
+    self._thumbs_dir = thumbs_dir
     self._lock = threading.Lock()
     self._thread = None
     self.progress = Progress()
@@ -283,7 +291,8 @@ class ScanManager:
   def _run(self, scan_dir, progress):
     conn = db.connect(self._db_path)
     try:
-      scan(conn, self._pictures_dir, scan_dir, self._hashes, progress)
+      scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
+           self._thumbs_dir)
     finally:
       conn.close()
 
