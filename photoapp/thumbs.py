@@ -89,17 +89,17 @@ def _record(conn, file_id, size, path, source):
       (file_id, size, path, os.path.getsize(path), source))
 
 
-def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
-  """Return the path of a thumbnail of exactly this size, making it if
+def make(pictures_dir, thumbs_dir, file_path, size):
+  """Return (path, source) of a thumbnail of exactly this size, making it if
   needed, or None if that is not possible without a RAW converter.
 
   Order: existing file in the tree; downscale from a larger existing size;
-  render from the original with Pillow.
+  render from the original with Pillow. Touches no database, so it can run
+  outside any lock.
   """
   path = lookup(thumbs_dir, size, file_path)
   if path:
-    _record(conn, file_id, size, path, "existing")
-    return path
+    return path, "existing"
   dest = thumb_path(thumbs_dir, size, file_path)
   sources = [lookup(thumbs_dir, s, file_path)
              for s in SIZES[SIZES.index(size) + 1:]]
@@ -111,9 +111,22 @@ def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
     except Unsupported as e:
       logging.vlog(2, "cannot render %s from %s: %s", size, source, e)
       continue
-    _record(conn, file_id, size, dest, "pillow")
-    return dest
+    return dest, "pillow"
   return None
+
+
+def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
+  """make() and record the result in the thumbs table. Returns the path."""
+  made = make(pictures_dir, thumbs_dir, file_path, size)
+  if made is None:
+    return None
+  path, source = made
+  _record(conn, file_id, size, path, source)
+  return path
+
+
+def record(conn, file_id, size, path, source):
+  _record(conn, file_id, size, path, source)
 
 
 def _dirname(path):

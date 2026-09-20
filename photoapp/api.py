@@ -7,14 +7,18 @@ import threading
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 import pydantic
 
 from photoapp import curation
 from photoapp import fileinfo
+from photoapp import library
 from photoapp import scan as scan_lib
+from photoapp import thumbs
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+WEB_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 
 
 class RatingBody(pydantic.BaseModel):
@@ -98,6 +102,73 @@ def create_app(conn, settings):
         return result
       except curation.CurationError as e:
         raise HTTPException(400, str(e))
+
+  def read(fn, *args, **kwargs):
+    with app.state.db_lock:
+      try:
+        return fn(app.state.db, *args, **kwargs)
+      except ValueError as e:
+        raise HTTPException(400, str(e))
+
+  @app.get("/api/dirs")
+  def dirs(path: str = "."):
+    return read(library.list_dirs, path)
+
+  @app.get("/api/photos")
+  def photos(dir: str = ".", sort: str = "date", filter: str = "all",
+             offset: int = 0, limit: int = 200):
+    return read(library.list_photos, dir, sort, filter, offset, limit)
+
+  @app.get("/api/photos/{photo_id}")
+  def photo(photo_id: int):
+    detail = read(library.photo_detail, photo_id)
+    if detail is None:
+      raise HTTPException(404, f"no such photo: {photo_id}")
+    return detail
+
+  def file_row(file_id):
+    with app.state.db_lock:
+      row = app.state.db.execute(
+          "SELECT id, path, missing FROM files WHERE id = ?",
+          (file_id,)).fetchone()
+    if row is None or row["missing"]:
+      raise HTTPException(404, "no such file")
+    return row
+
+  cache = {"Cache-Control": "private, max-age=3600"}
+
+  @app.get("/img/full/{file_id}")
+  def full(file_id: int):
+    row = file_row(file_id)
+    if not row["path"].lower().endswith(WEB_EXTENSIONS):
+      raise HTTPException(404, "not viewable in a browser; use a thumbnail size")
+    return FileResponse(os.path.join(settings.pictures_dir, row["path"]),
+                        headers=cache)
+
+  @app.get("/img/{size}/{file_id}")
+  async def image(size: str, file_id: int):
+    if size not in thumbs.SIZES:
+      raise HTTPException(404, "unknown size")
+    row = file_row(file_id)
+    if size == "Huge":
+      # Huge is the full size: an existing one, else the original if the
+      # browser can show it. Never re-encode a full-size copy on request.
+      path = thumbs.lookup(settings.thumbs_dir, size, row["path"])
+      if path is None and row["path"].lower().endswith(WEB_EXTENSIONS):
+        path = os.path.join(settings.pictures_dir, row["path"])
+    else:
+      made = await run_in_threadpool(
+          thumbs.make, settings.pictures_dir, settings.thumbs_dir,
+          row["path"], size)
+      path = None
+      if made:
+        path, source = made
+        with app.state.db_lock:
+          thumbs.record(app.state.db, file_id, size, path, source)
+          app.state.db.commit()
+    if path is None:
+      raise HTTPException(404, "no thumbnail available yet")
+    return FileResponse(path, headers=cache)
 
   app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

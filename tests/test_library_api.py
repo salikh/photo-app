@@ -1,0 +1,129 @@
+import os
+
+from fastapi.testclient import TestClient
+from PIL import Image
+
+from photoapp import api
+from photoapp import db
+from photoapp import scan
+from photoapp import thumbs
+from tests.conftest import make_jpeg
+from tests.test_grouping import touch
+from tests.test_scan_sidecars import FAV, XMP, write
+
+
+def build(settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "2020", "a.jpg"), size=(3000, 2000))
+  make_jpeg(os.path.join(d, "2020", "B.jpg"))
+  touch(os.path.join(d, "2020", "K1.DNG"))
+  make_jpeg(os.path.join(d, "2020", "K1.JPG"))
+  make_jpeg(os.path.join(d, "2020", "trip", "c.jpg"))
+  make_jpeg(os.path.join(d, "2020", "trip", "deep", "d.jpg"))
+  make_jpeg(os.path.join(d, "2021", "e.jpg"))
+  make_jpeg(os.path.join(d, "top.jpg"))
+  write(os.path.join(d, "2020", "a.jpg.xmp"), XMP % (4, FAV), mtime=1_000_000)
+  write(os.path.join(d, "2020", "B.jpg.xmp"), XMP % (-1, ""), mtime=1_000_000)
+  write(os.path.join(d, "2020", "K1.DNG.xmp"), XMP % (1, ""), mtime=1_000_000)
+  write(os.path.join(d, "2020", "K1.JPG.xmp"), XMP % (2, ""), mtime=2_000_000)
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  return TestClient(api.create_app(conn, settings))
+
+
+def names(resp):
+  return [p["name"] for p in resp.json()["photos"]]
+
+
+def test_dirs_lists_children_with_subtree_counts(settings):
+  c = build(settings)
+  root = c.get("/api/dirs").json()
+  assert root["photos"] == 1 and root["dirs"] == [
+      {"name": "2020", "photos": 5}, {"name": "2021", "photos": 1}]
+  y = c.get("/api/dirs", params={"path": "2020"}).json()
+  assert y["photos"] == 3 and y["dirs"] == [{"name": "trip", "photos": 2}]
+  assert c.get("/api/dirs", params={"path": "2020/trip/"}).json()["dirs"] == [
+      {"name": "deep", "photos": 1}]
+  assert c.get("/api/dirs", params={"path": "nope"}).json() == {
+      "path": "nope", "dirs": [], "photos": 0}
+  assert c.get("/api/dirs", params={"path": "../etc"}).status_code == 400
+
+
+def test_photos_page_sort_filter_and_paging(settings):
+  c = build(settings)
+  r = c.get("/api/photos", params={"dir": "2020", "sort": "name"}).json()
+  assert r["total"] == 3
+  assert [p["name"] for p in r["photos"]] == ["a.jpg", "B.jpg", "K1.JPG"]  # case-insensitive
+  a = r["photos"][0]
+  assert a["rating"] == 4 and a["fav"] is True and a["files"] == 1
+  assert (a["width"], a["height"]) == (3000, 2000)
+  k = r["photos"][2]
+  assert k["files"] == 2 and k["conflict"] is True and k["rating"] == 2  # rep = camera JPG
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "rejected"})) == ["B.jpg"]
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "fav"})) == ["a.jpg"]
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "conflict"})) == ["K1.JPG"]
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "picked", "sort": "name"})) == ["a.jpg", "K1.JPG"]
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "unrated"})) == []
+  page = c.get("/api/photos", params={"dir": "2020", "sort": "name", "limit": 1, "offset": 1}).json()
+  assert page["total"] == 3 and [p["name"] for p in page["photos"]] == ["B.jpg"]
+  assert names(c.get("/api/photos")) == ["top.jpg"]
+  assert c.get("/api/photos", params={"sort": "x"}).status_code == 400
+  assert c.get("/api/photos", params={"filter": "x"}).status_code == 400
+
+
+def test_photos_page_includes_tags(settings):
+  c = build(settings)
+  pid = c.get("/api/photos", params={"dir": "2020", "sort": "name"}).json()["photos"][0]["id"]
+  c.post(f"/api/photos/{pid}/tags", json={"add": ["b", "a"]})
+  assert c.get("/api/photos", params={"dir": "2020", "sort": "name"}).json()["photos"][0]["tags"] == ["a", "b"]
+
+
+def test_missing_files_are_hidden(settings):
+  c = build(settings)
+  os.remove(os.path.join(settings.pictures_dir, "top.jpg"))
+  os.utime(settings.pictures_dir, None)
+  c.post("/api/scan")
+  c.app.state.scanner.wait()
+  assert names(c.get("/api/photos")) == []
+
+
+def test_photo_detail(settings):
+  c = build(settings)
+  pid = [p for p in c.get("/api/photos", params={"dir": "2020"}).json()["photos"] if p["name"] == "K1.JPG"][0]["id"]
+  d = c.get(f"/api/photos/{pid}").json()
+  assert [f["path"] for f in d["files"]] == ["2020/K1.DNG", "2020/K1.JPG"]   # original first
+  assert [f["role"] for f in d["files"]] == ["original", "camera"]
+  assert {s["path"]: s["rating"] for s in d["sidecars"]} == {"2020/K1.DNG.xmp": 1, "2020/K1.JPG.xmp": 2}
+  assert d["conflict"] is True and d["original_file_id"] == d["files"][0]["id"]
+  assert c.get("/api/photos/99999").status_code == 404
+
+
+def file_id(c, path):
+  return c.app.state.db.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()[0]
+
+
+def test_image_sizes_are_made_on_demand_and_served(settings):
+  c = build(settings)
+  fid = file_id(c, "2020/a.jpg")
+  r = c.get(f"/img/Thumb/{fid}")
+  assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+  assert "max-age" in r.headers["cache-control"]
+  out = os.path.join(settings.thumbs_dir, "Thumb", "2020", "a.jpg")
+  assert Image.open(out).size == (300, 200)
+  assert thumbs.usage(c.app.state.db)["Thumb"]["files"] == 1
+  assert c.get(f"/img/Medium/{fid}").status_code == 200
+  assert Image.open(os.path.join(settings.thumbs_dir, "Medium", "2020", "a.jpg")).size == (2000, 1333)
+
+
+def test_huge_and_full_serve_the_original_and_raw_has_no_image_yet(settings):
+  c = build(settings)
+  fid = file_id(c, "2020/a.jpg")
+  full = c.get(f"/img/full/{fid}")
+  assert full.status_code == 200 and Image.open(__import__("io").BytesIO(full.content)).size == (3000, 2000)
+  assert c.get(f"/img/Huge/{fid}").status_code == 200
+  assert not os.path.exists(os.path.join(settings.thumbs_dir, "Huge"))   # nothing re-encoded
+  raw = file_id(c, "2020/K1.DNG")
+  assert c.get(f"/img/Small/{raw}").status_code == 404
+  assert c.get(f"/img/full/{raw}").status_code == 404
+  assert c.get(f"/img/Bogus/{fid}").status_code == 404
+  assert c.get("/img/Thumb/99999").status_code == 404
