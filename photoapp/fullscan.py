@@ -2,7 +2,8 @@
 
   python -m photoapp.fullscan --hashes_db=~/zoo.db [--pictures_dir=...] [--state_dir=...]
 
-Read-only on the library (only the state database is written). Safe to
+Read-only on the library (only the state database is written). --scan_dirs=2001,2026
+restricts it to those directories. Safe to
 interrupt and rerun: finished directories are skipped by their mtime.
 """
 
@@ -22,6 +23,10 @@ from photoapp import recovery
 from photoapp import scan
 
 FLAGS = flags.FLAGS
+flags.DEFINE_list(
+    "scan_dirs", [],
+    "Only scan these directories (relative to --pictures_dir, comma separated). "
+    "Default: the whole library.")
 
 
 def main(argv):
@@ -48,10 +53,19 @@ def main(argv):
                    progress.files_processed / max(1, time.time() - start))
 
   threading.Thread(target=report, daemon=True).start()
-  scan.scan(conn, settings.pictures_dir, hashes=hashes, progress=progress,
-            thumbs_dir=settings.thumbs_dir,
-            on_done=lambda c: recovery.recover(c, settings),
-            workers=settings.scan_workers)
+  targets = [os.path.join(settings.pictures_dir, d.strip("/")) for d in FLAGS.scan_dirs] \
+      or [settings.pictures_dir]
+  for target in targets:
+    if not os.path.isdir(target):
+      raise SystemExit(f"not a directory: {target}")
+  for target in targets:
+    logging.info("scanning %s", target)
+    scan.scan(conn, settings.pictures_dir, target, hashes=hashes,
+              progress=progress, thumbs_dir=settings.thumbs_dir,
+              on_done=lambda c: recovery.recover(c, settings),
+              workers=settings.scan_workers)
+    if progress.error:
+      break
   done.set()
   logging.info("finished: %s", progress)
   for table in ("files", "photos", "xmp_sidecars", "tags"):
