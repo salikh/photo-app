@@ -13,8 +13,10 @@ import pydantic
 
 from photoapp import curation
 from photoapp import fileinfo
+from photoapp import grouping
 from photoapp import jobs
 from photoapp import library
+from photoapp import manual_links
 from photoapp import scan as scan_lib
 from photoapp import thumbs
 
@@ -28,6 +30,20 @@ class RatingBody(pydantic.BaseModel):
 
 class FavBody(pydantic.BaseModel):
   fav: bool
+
+
+class BatchRatingBody(pydantic.BaseModel):
+  ids: list[int]
+  rating: int
+
+
+class RepresentativeBody(pydantic.BaseModel):
+  file_id: int | None = None
+
+
+class LinkBody(pydantic.BaseModel):
+  target_file_id: int
+  role: str = "tuning"
 
 
 class TagsBody(pydantic.BaseModel):
@@ -109,6 +125,72 @@ def create_app(conn, settings):
   @app.post("/api/photos/{photo_id}/tags")
   def edit_tags(photo_id: int, body: TagsBody):
     return curate(photo_id, curation.edit_tags, body.add, body.remove)
+
+  @app.post("/api/photos/rating")
+  def batch_rating(body: BatchRatingBody):
+    if not body.ids or len(body.ids) > 2000:
+      raise HTTPException(400, "give between 1 and 2000 photo ids")
+    with app.state.db_lock:
+      try:
+        return curation.set_rating_batch(app.state.db, settings, body.ids,
+                                         body.rating)
+      except curation.CurationError as e:
+        raise HTTPException(400, str(e))
+
+  @app.post("/api/activity/batch/{batch_id}/undo")
+  def undo_batch(batch_id: str):
+    with app.state.db_lock:
+      try:
+        return curation.undo_batch(app.state.db, settings, batch_id)
+      except curation.CurationError as e:
+        raise HTTPException(400, str(e))
+
+  @app.post("/api/photos/{photo_id}/representative")
+  def representative(photo_id: int, body: RepresentativeBody):
+    with app.state.db_lock:
+      try:
+        grouping.set_representative(app.state.db, photo_id, body.file_id)
+      except ValueError as e:
+        raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
+      return library.photo_detail(app.state.db, photo_id)
+
+  def path_of(file_id):
+    row = app.state.db.execute("SELECT path FROM files WHERE id = ?",
+                               (file_id,)).fetchone()
+    if row is None:
+      raise ValueError(f"no such file: {file_id}")
+    return row["path"]
+
+  @app.post("/api/files/{file_id}/link")
+  def link_file(file_id: int, body: LinkBody):
+    with app.state.db_lock:
+      try:
+        manual_links.link(app.state.db, settings.state_dir, path_of(file_id),
+                          path_of(body.target_file_id), body.role)
+        photo_id = app.state.db.execute(
+            "SELECT photo_id FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+        return library.photo_detail(app.state.db, photo_id)
+      except ValueError as e:
+        raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
+
+  @app.post("/api/files/{file_id}/unlink")
+  def unlink_file(file_id: int):
+    with app.state.db_lock:
+      try:
+        manual_links.unlink(app.state.db, settings.state_dir, path_of(file_id))
+        photo_id = app.state.db.execute(
+            "SELECT photo_id FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+        return library.photo_detail(app.state.db, photo_id)
+      except ValueError as e:
+        raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
+
+  @app.get("/api/thumbs/usage")
+  def thumbs_usage(lacking: bool = False):
+    with app.state.db_lock:
+      result = {"usage": thumbs.usage(app.state.db)}
+      if lacking:
+        result["lacking"] = thumbs.lacking(app.state.db)
+      return result
 
   @app.get("/api/activity")
   def activity(limit: int = 100):

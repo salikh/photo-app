@@ -111,6 +111,9 @@ MIGRATIONS = [
       OR lower(path) GLOB '*.orf' OR lower(path) GLOB '*.pef';
     DELETE FROM dir_mtimes;
     """,
+    """
+    ALTER TABLE activity_log ADD COLUMN batch_id TEXT;  -- one id per batch action
+    """,
 ]
 
 

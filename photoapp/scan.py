@@ -299,3 +299,42 @@ class ScanManager:
   def wait(self):
     if self._thread is not None:
       self._thread.join()
+
+
+def seconds_until(hour, now):
+  """Seconds from now (a datetime) until the next local HH:00."""
+  import datetime
+  target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+  if target <= now:
+    target += datetime.timedelta(days=1)
+  return (target - now).total_seconds()
+
+
+class NightlyScan:
+  """Starts a scan every day at a given local hour, in a daemon thread."""
+
+  def __init__(self, manager, hour, wait=None):
+    self._manager = manager
+    self._hour = hour
+    self._stop = threading.Event()
+    self._wait = wait or self._stop.wait      # injectable for tests
+    self._thread = None
+    self.runs = 0
+
+  def start(self):
+    self._thread = threading.Thread(target=self._loop, daemon=True,
+                                    name="nightly-scan")
+    self._thread.start()
+
+  def stop(self):
+    self._stop.set()
+
+  def _loop(self):
+    import datetime
+    while not self._stop.is_set():
+      self._wait(seconds_until(self._hour, datetime.datetime.now()))
+      if self._stop.is_set():
+        return
+      if self._manager.start():        # False: a scan is already running
+        self.runs += 1
+        logging.info("nightly scan started")

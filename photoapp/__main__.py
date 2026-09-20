@@ -9,6 +9,7 @@ from photoapp import api
 from photoapp import config
 from photoapp import db
 from photoapp import manual_links
+from photoapp import scan
 
 FLAGS = flags.FLAGS
 
@@ -25,6 +26,8 @@ def main(argv):
   settings = config.Settings.from_flags()
   application = api.create_app(conn, settings)
   application.state.jobs.start()
+  if settings.nightly_scan_hour >= 0:
+    scan.NightlyScan(application.state.scanner, settings.nightly_scan_hour).start()
   uvicorn.run(application, host=FLAGS.host, port=FLAGS.port)
 
 

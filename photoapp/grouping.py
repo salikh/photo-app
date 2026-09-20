@@ -154,3 +154,33 @@ def _delete_empty_photos(conn):
   for pid in empty:
     conn.execute("DELETE FROM tags WHERE photo_id = ?", (pid,))
     conn.execute("DELETE FROM photos WHERE id = ?", (pid,))
+
+
+def set_representative(conn, photo_id, file_id):
+  """Choose which file represents a Photo; None goes back to the default.
+
+  A chosen file survives rescans while it remains a live member of the
+  Photo (see fix_representatives).
+  """
+  photo = conn.execute("SELECT original_file_id FROM photos WHERE id = ?",
+                       (photo_id,)).fetchone()
+  if photo is None:
+    raise ValueError(f"no such photo: {photo_id}")
+  if file_id is None:
+    camera = conn.execute(
+        "SELECT id FROM files WHERE photo_id = ? AND role = 'camera' AND "
+        "missing = 0 ORDER BY path", (photo_id,)).fetchone()
+    conn.execute(
+        "UPDATE photos SET representative_file_id = ?, "
+        "representative_source = 'auto' WHERE id = ?",
+        (camera["id"] if camera else photo["original_file_id"], photo_id))
+  else:
+    member = conn.execute(
+        "SELECT id FROM files WHERE id = ? AND photo_id = ? AND missing = 0",
+        (file_id, photo_id)).fetchone()
+    if member is None:
+      raise ValueError("file is not a live member of this photo")
+    conn.execute(
+        "UPDATE photos SET representative_file_id = ?, "
+        "representative_source = 'manual' WHERE id = ?", (file_id, photo_id))
+  conn.commit()

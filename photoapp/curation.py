@@ -10,6 +10,7 @@ import datetime
 import hashlib
 import json
 import os
+import uuid
 
 from absl import logging
 
@@ -81,15 +82,15 @@ def _backup_path(settings, rel_sidecar):
                       f"{rel_sidecar}.{ts}")
 
 
-def _log(conn, photo_id, xmp_path, field, old, new, cause):
+def _log(conn, photo_id, xmp_path, field, old, new, cause, batch_id=None):
   conn.execute(
       "INSERT INTO activity_log (ts, photo_id, xmp_path, field, old, new,"
-      " cause) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      (_now(), photo_id, xmp_path, field, old, new, cause))
+      " cause, batch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      (_now(), photo_id, xmp_path, field, old, new, cause, batch_id))
 
 
 def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
-           cause="user"):
+           cause="user", batch_id=None):
   """Core write path. Returns a dict describing the change (or dry run)."""
   photo = _photo(conn, photo_id)
   add, remove = list(add), list(remove)
@@ -182,7 +183,7 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
     conn.executemany("INSERT OR IGNORE INTO tags (photo_id, tag) VALUES (?, ?)",
                      [(photo_id, t) for t in new_tags])
   for field, (o, n) in changes.items():
-    _log(conn, photo_id, rel_sidecar, field, o, n, cause)
+    _log(conn, photo_id, rel_sidecar, field, o, n, cause, batch_id)
   ratings.refresh_photo(conn, photo_id)
   conn.commit()
   return result
@@ -190,6 +191,40 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
 
 def set_rating(conn, settings, photo_id, rating, cause="user"):
   return _apply(conn, settings, photo_id, rating=int(rating), cause=cause)
+
+
+def set_rating_batch(conn, settings, photo_ids, rating):
+  """Rate many Photos; failures do not stop the rest.
+
+  All log entries share one batch_id so the whole action can be undone.
+  Returns {"batch_id", "results": [...], "errors": [{photo_id, error}]}.
+  """
+  batch_id = uuid.uuid4().hex
+  results, errors = [], []
+  for pid in dict.fromkeys(photo_ids):
+    try:
+      results.append(_apply(conn, settings, pid, rating=int(rating),
+                            batch_id=batch_id))
+    except CurationError as e:
+      errors.append({"photo_id": pid, "error": str(e)})
+  return {"batch_id": batch_id, "results": results, "errors": errors}
+
+
+def undo_batch(conn, settings, batch_id):
+  """Undo every not-yet-undone entry of a batch (newest first)."""
+  entries = conn.execute(
+      "SELECT id FROM activity_log WHERE batch_id = ? AND undone = 0 "
+      "ORDER BY id DESC", (batch_id,)).fetchall()
+  if not entries:
+    raise CurationError("nothing to undo for this batch")
+  undone, errors = [], []
+  for e in entries:
+    try:
+      undo(conn, settings, e["id"])
+      undone.append(e["id"])
+    except CurationError as ex:
+      errors.append({"activity_id": e["id"], "error": str(ex)})
+  return {"undone": undone, "errors": errors}
 
 
 def set_fav(conn, settings, photo_id, fav, cause="user"):
