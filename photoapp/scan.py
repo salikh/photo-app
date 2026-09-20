@@ -16,6 +16,8 @@ from absl import logging
 
 from photoapp import db
 from photoapp import fileinfo
+from photoapp import grouping
+from photoapp import manual_links
 from photoapp import xmp
 
 
@@ -50,6 +52,7 @@ def _upsert_file(conn, rel_path, record):
 
 def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
                 progress):
+  changed = False
   known = {
       row["path"]: row for row in conn.execute(
           "SELECT path, mtime, bytesize, missing FROM files "
@@ -78,6 +81,8 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
         "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
         "exif_date": exif_date})
     progress.files_processed += 1
+    changed = True
+  return changed
 
 
 def _sidecar_owners(image_names, sidecar_names):
@@ -175,6 +180,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
   progress.running = True
   scan_dir = scan_dir or pictures_dir
   seen = set()
+  changed_dirs = set()
   known_sidecars = _load_known_sidecars(conn)
   try:
     for dirpath, dirnames, filenames in os.walk(scan_dir):
@@ -200,8 +206,9 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
         sync_sidecars()
         continue
 
-      _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
-                  progress)
+      if _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
+                     progress):
+        changed_dirs.add(rel_dir)
       sync_sidecars()
       conn.execute(
           "INSERT INTO dir_mtimes (dirpath, mtime) VALUES (?, ?) "
@@ -211,6 +218,12 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
 
     _mark_missing(conn, pictures_dir, scan_dir, seen)
     conn.commit()
+    # Also directories left ungrouped by an earlier interrupted scan.
+    changed_dirs.update(
+        r["path"].rpartition("/")[0] or "." for r in conn.execute(
+            "SELECT path FROM files WHERE photo_id IS NULL"))
+    grouping.regroup(conn, changed_dirs)
+    manual_links.apply_all(conn)
   except Exception as e:
     logging.exception("scan failed")
     progress.error = str(e)

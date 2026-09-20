@@ -91,6 +91,13 @@ MIGRATIONS = [
 
     CREATE TABLE dir_mtimes (dirpath TEXT PRIMARY KEY, mtime REAL NOT NULL);
     """,
+    """
+    ALTER TABLE photos ADD COLUMN representative_source TEXT NOT NULL
+      DEFAULT 'auto';  -- 'auto' | 'manual' (user override, survives rescans)
+    """,
+    """
+    ALTER TABLE manual_links ADD COLUMN role TEXT;  -- 'tuning' | 'export' (link)
+    """,
 ]
 
 

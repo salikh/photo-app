@@ -29,7 +29,7 @@ Check items off here when the ticket's status is done.
 
 - [ ] [024](docs/tickets/024.md) Decision: reject vs previous stars
 - [ ] [023](docs/tickets/023.md) Review the conflict survey before any XMP write (after it runs)
-- [ ] [015](docs/tickets/015.md) Confirm JSONL mirror as the durability answer for manual links
+- [x] [015](docs/tickets/015.md) Confirm JSONL mirror as the durability answer for manual links
 - [ ] [042](docs/tickets/042.md) Naming of new sidecars for RAW originals (survey says the library is darktable full-filename style)
 - [ ] [046](docs/tickets/046.md) Confirm swipe up/down rating mapping (up = +1 step, down = -1 step, clamped)
 
