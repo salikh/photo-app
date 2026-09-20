@@ -26,9 +26,13 @@ def is_sidecar(name):
   return name.lower().endswith(".xmp")
 
 
-def preferred_sidecar_name(filename):
-  """Name a new sidecar for filename would get (never used for existing)."""
-  if fileinfo.is_raw(filename):
+def preferred_sidecar_name(filename, raw_style="full"):
+  """Name a NEW sidecar for filename would get (never used for existing).
+
+  raw_style 'full' names RAW sidecars NAME.DNG.xmp like the rest of the
+  library; 'stem' uses NAME.xmp.
+  """
+  if raw_style == "stem" and fileinfo.is_raw(filename):
     return os.path.splitext(filename)[0] + ".xmp"
   return filename + ".xmp"
 

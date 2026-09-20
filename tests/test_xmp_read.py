@@ -59,7 +59,8 @@ def test_find_sidecars_prefers_files_own_convention_and_reads_others():
 
 
 def test_preferred_sidecar_name_for_new_sidecars():
-  assert xmp.preferred_sidecar_name("a.dng") == "a.xmp"
+  assert xmp.preferred_sidecar_name("a.dng") == "a.dng.xmp"
+  assert xmp.preferred_sidecar_name("a.dng", raw_style="stem") == "a.xmp"
   assert xmp.preferred_sidecar_name("a.jpg") == "a.jpg.xmp"
   assert xmp.preferred_sidecar_name("a.b.JPG") == "a.b.JPG.xmp"
 

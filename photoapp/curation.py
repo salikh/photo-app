@@ -1,0 +1,257 @@
+"""Changing rating, fav and tags: write the original's sidecar, update the
+cache, log the change, undo.
+
+Only the sidecar of the Photo's original file is ever written. The cache is
+updated from what was written, then the Photo is re-resolved from all its
+sidecars so a conflict with other sidecars stays visible.
+"""
+
+import datetime
+import hashlib
+import json
+import os
+
+from absl import logging
+
+from photoapp import ratings
+from photoapp import xmp
+
+MAX_TAG_LENGTH = 200
+
+
+class CurationError(Exception):
+  """A request that cannot be carried out; message is safe to show."""
+
+
+def _now():
+  return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+def _photo(conn, photo_id):
+  row = conn.execute("SELECT * FROM photos WHERE id = ?",
+                     (photo_id,)).fetchone()
+  if row is None:
+    raise CurationError(f"no such photo: {photo_id}")
+  return row
+
+
+def _photo_tags(conn, photo_id):
+  return sorted(r["tag"] for r in conn.execute(
+      "SELECT tag FROM tags WHERE photo_id = ?", (photo_id,)))
+
+
+def _clean_tags(tags):
+  out = []
+  for t in tags:
+    t = t.strip()
+    if not t:
+      continue
+    if len(t) > MAX_TAG_LENGTH:
+      raise CurationError("tag too long")
+    if t == xmp.FAV_TAG:
+      raise CurationError("'fav' is set through the fav flag, not as a tag")
+    out.append(t)
+  return list(dict.fromkeys(out))
+
+
+def _sidecar_target(conn, settings, photo):
+  """(relative path, exists) of the sidecar to write for a Photo."""
+  original = conn.execute(
+      "SELECT id, path, missing FROM files WHERE id = ?",
+      (photo["original_file_id"],)).fetchone()
+  if original is None or original["missing"]:
+    raise CurationError("the original file is missing on disk")
+  directory, _, name = original["path"].rpartition("/")
+  abs_dir = os.path.join(settings.pictures_dir, directory)
+  try:
+    listing = os.listdir(abs_dir)
+  except OSError as e:
+    raise CurationError(f"cannot list {directory or '.'}: {e}")
+  existing = xmp.find_sidecars(name, listing)
+  prefix = directory + "/" if directory else ""
+  if existing:
+    return prefix + existing[0], True, original["id"]
+  new_name = xmp.preferred_sidecar_name(name, settings.new_raw_sidecar_style)
+  return prefix + new_name, False, original["id"]
+
+
+def _backup_path(settings, rel_sidecar):
+  ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+  return os.path.join(settings.state_dir, "xmp_backups",
+                      f"{rel_sidecar}.{ts}")
+
+
+def _log(conn, photo_id, xmp_path, field, old, new, cause):
+  conn.execute(
+      "INSERT INTO activity_log (ts, photo_id, xmp_path, field, old, new,"
+      " cause) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      (_now(), photo_id, xmp_path, field, old, new, cause))
+
+
+def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
+           cause="user"):
+  """Core write path. Returns a dict describing the change (or dry run)."""
+  photo = _photo(conn, photo_id)
+  add, remove = list(add), list(remove)
+  if fav is True:
+    add.append(xmp.FAV_TAG)
+  elif fav is False:
+    remove.append(xmp.FAV_TAG)
+  if rating is not None and not (ratings.REJECT <= rating <= ratings.MAX_STARS):
+    raise CurationError("rating must be between -1 and 5")
+
+  old_tags = _photo_tags(conn, photo_id)
+  old_rating, old_fav = photo["rating"], bool(photo["fav"])
+  new_tags = sorted((set(old_tags) | {t for t in add if t != xmp.FAV_TAG})
+                    - set(remove))
+  new_rating = old_rating if rating is None else rating
+  new_fav = old_fav if fav is None else fav
+  changes = {}
+  if new_rating != old_rating:
+    changes["rating"] = (str(old_rating), str(new_rating))
+  if new_fav != old_fav:
+    changes["fav"] = (str(int(old_fav)), str(int(new_fav)))
+  if new_tags != old_tags:
+    changes["tags"] = (json.dumps(old_tags), json.dumps(new_tags))
+
+  rel_sidecar, exists, original_id = _sidecar_target(conn, settings, photo)
+  result = {"photo_id": photo_id, "sidecar": rel_sidecar,
+            "changes": {k: {"old": o, "new": n}
+                        for k, (o, n) in changes.items()},
+            "dry_run": settings.xmp_dry_run, "created": not exists}
+  abs_sidecar = os.path.join(settings.pictures_dir, rel_sidecar)
+  if not changes and (exists or photo["rating_source"] != "import"):
+    return result   # nothing to do (an imported rating still gets written)
+
+  edit = {}
+  if rating is not None:
+    edit["rating"] = new_rating
+  edit["add_tags"] = [t for t in add if t not in remove]
+  edit["remove_tags"] = remove
+  if settings.xmp_dry_run:
+    logging.info("xmp_dry_run: would %s %s with %s",
+                 "create" if not exists else "edit", rel_sidecar, result["changes"])
+    return result
+
+  backup = None
+  if exists:
+    known = conn.execute("SELECT backup_path FROM xmp_sidecars WHERE path = ?",
+                         (rel_sidecar,)).fetchone()
+    backup = (known["backup_path"] if known and known["backup_path"]
+              else _backup_path(settings, rel_sidecar))
+    try:
+      upd = xmp.update_file(abs_sidecar, backup_path=backup, **edit)
+    except (xmp.XmpEditError, OSError) as e:
+      raise CurationError(f"cannot write {rel_sidecar}: {e}")
+    if upd.backup_path is None and not os.path.exists(backup):
+      backup = None
+  else:
+    try:
+      xmp.create_file(abs_sidecar, rating=new_rating,
+                      tags=[t for t in edit["add_tags"]])
+    except OSError as e:
+      raise CurationError(f"cannot create {rel_sidecar}: {e}")
+
+  # Update the cache from what is now on disk.
+  with open(abs_sidecar, "rb") as f:
+    data = f.read()
+  parsed = xmp.parse(data)
+  conn.execute(
+      "INSERT INTO xmp_sidecars (path, file_id, mtime, hash, rating, has_fav,"
+      " tags, backup_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+      "ON CONFLICT(path) DO UPDATE SET file_id = excluded.file_id,"
+      " mtime = excluded.mtime, hash = excluded.hash, rating = excluded.rating,"
+      " has_fav = excluded.has_fav, tags = excluded.tags,"
+      " backup_path = COALESCE(xmp_sidecars.backup_path, excluded.backup_path)",
+      (rel_sidecar, original_id, os.stat(abs_sidecar).st_mtime,
+       hashlib.sha224(data).hexdigest(), parsed.rating, int(parsed.fav),
+       json.dumps(list(parsed.tags)), backup))
+  if "rating" in changes:
+    # Rejecting erases the star count in the sidecar; remember it for un-reject.
+    prev = photo["previous_stars"]
+    if new_rating == ratings.REJECT and old_rating > 0:
+      prev = old_rating
+    conn.execute("UPDATE photos SET rating = ?, previous_stars = ?, "
+                 "rating_source = 'app' WHERE id = ?",
+                 (new_rating, prev, photo_id))
+  if "fav" in changes:
+    conn.execute("UPDATE photos SET fav = ? WHERE id = ?",
+                 (int(new_fav), photo_id))
+  if "tags" in changes:
+    conn.execute("DELETE FROM tags WHERE photo_id = ?", (photo_id,))
+    conn.executemany("INSERT OR IGNORE INTO tags (photo_id, tag) VALUES (?, ?)",
+                     [(photo_id, t) for t in new_tags])
+  for field, (o, n) in changes.items():
+    _log(conn, photo_id, rel_sidecar, field, o, n, cause)
+  ratings.refresh_photo(conn, photo_id)
+  conn.commit()
+  return result
+
+
+def set_rating(conn, settings, photo_id, rating, cause="user"):
+  return _apply(conn, settings, photo_id, rating=int(rating), cause=cause)
+
+
+def set_fav(conn, settings, photo_id, fav, cause="user"):
+  return _apply(conn, settings, photo_id, fav=bool(fav), cause=cause)
+
+
+def edit_tags(conn, settings, photo_id, add=(), remove=(), cause="user"):
+  return _apply(conn, settings, photo_id, add=_clean_tags(add),
+                remove=_clean_tags(remove), cause=cause)
+
+
+def photo_state(conn, photo_id):
+  """The Photo's cached curation state, as the API returns it."""
+  p = _photo(conn, photo_id)
+  return {"id": p["id"], "rating": p["rating"], "fav": bool(p["fav"]),
+          "tags": _photo_tags(conn, photo_id), "conflict": bool(p["conflict"]),
+          "previous_stars": p["previous_stars"]}
+
+
+def recent_activity(conn, limit=100):
+  return [dict(r) for r in conn.execute(
+      "SELECT a.*, (SELECT f.path FROM files f WHERE f.id = "
+      "p.original_file_id) AS path FROM activity_log a "
+      "LEFT JOIN photos p ON p.id = a.photo_id ORDER BY a.id DESC LIMIT ?",
+      (limit,))]
+
+
+def undo(conn, settings, activity_id):
+  """Revert one logged change by writing the old value back.
+
+  Refused if the value has changed since (undo would clobber a later edit).
+  """
+  entry = conn.execute("SELECT * FROM activity_log WHERE id = ?",
+                       (activity_id,)).fetchone()
+  if entry is None:
+    raise CurationError("no such activity entry")
+  if entry["undone"]:
+    raise CurationError("already undone")
+  photo = _photo(conn, entry["photo_id"])
+  field, old, new = entry["field"], entry["old"], entry["new"]
+  if field == "rating":
+    if str(photo["rating"]) != new:
+      raise CurationError("the rating has changed since; not undoing")
+    result = _apply(conn, settings, photo["id"], rating=int(old), cause="undo")
+  elif field == "fav":
+    if str(int(photo["fav"])) != new:
+      raise CurationError("fav has changed since; not undoing")
+    result = _apply(conn, settings, photo["id"], fav=bool(int(old)),
+                    cause="undo")
+  elif field == "tags":
+    current = _photo_tags(conn, photo["id"])
+    if current != json.loads(new):
+      raise CurationError("tags have changed since; not undoing")
+    wanted = json.loads(old)
+    result = _apply(conn, settings, photo["id"],
+                    add=[t for t in wanted if t not in current],
+                    remove=[t for t in current if t not in wanted],
+                    cause="undo")
+  else:
+    raise CurationError(f"cannot undo field {field!r}")
+  if not settings.xmp_dry_run:
+    conn.execute("UPDATE activity_log SET undone = 1 WHERE id = ?",
+                 (activity_id,))
+    conn.commit()
+  return result
