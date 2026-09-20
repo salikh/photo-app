@@ -13,6 +13,7 @@ import pydantic
 
 from photoapp import curation
 from photoapp import fileinfo
+from photoapp import jobs
 from photoapp import library
 from photoapp import scan as scan_lib
 from photoapp import thumbs
@@ -44,6 +45,27 @@ def create_app(conn, settings):
             if settings.hashes_db else None)
   app.state.scanner = scan_lib.ScanManager(
       settings.db_path, settings.pictures_dir, hashes, settings.thumbs_dir)
+
+  def raw_render(conn, job):
+    row = conn.execute("SELECT id, path FROM files WHERE id = ?",
+                       (job["file_id"],)).fetchone()
+    if row is None:
+      raise RuntimeError("file is gone")
+    made = thumbs.render_raw_sizes(settings.pictures_dir, settings.thumbs_dir,
+                                   row["path"])
+    if not made:
+      raise RuntimeError("LibRaw could not decode the file")
+    for size, path in made.items():
+      thumbs.record(conn, row["id"], size, path, "libraw")
+    conn.commit()
+
+  app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render},
+                                 settings.job_workers)
+
+  @app.get("/api/jobs")
+  def list_jobs(limit: int = 100):
+    return {"counts": app.state.jobs.counts(),
+            "jobs": app.state.jobs.list(min(limit, 500))}
 
   @app.get("/")
   def index():
@@ -150,7 +172,7 @@ def create_app(conn, settings):
     if size not in thumbs.SIZES:
       raise HTTPException(404, "unknown size")
     row = file_row(file_id)
-    if size == "Huge":
+    if size == "Huge" and not fileinfo.is_raw(row["path"]):
       # Huge is the full size: an existing one, else the original if the
       # browser can show it. Never re-encode a full-size copy on request.
       path = thumbs.lookup(settings.thumbs_dir, size, row["path"])
@@ -166,6 +188,12 @@ def create_app(conn, settings):
         with app.state.db_lock:
           thumbs.record(app.state.db, file_id, size, path, source)
           app.state.db.commit()
+    if path is None and fileinfo.is_raw(row["path"]):
+      # No usable embedded preview: demosaic in the background; the client
+      # retries the image after a moment.
+      app.state.jobs.enqueue("raw_render", file_id)
+      raise HTTPException(404, "being rendered; retry shortly",
+                          headers={"Retry-After": "2"})
     if path is None:
       raise HTTPException(404, "no thumbnail available yet")
     return FileResponse(path, headers=cache)

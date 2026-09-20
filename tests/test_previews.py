@@ -55,3 +55,22 @@ def test_real_dng_dimensions_preview_and_thumbnails(tmp_path):
   assert mime == "image/x-adobe-dng" and max(w, h) > 1000
   out = thumbs.render(REAL_DNG, str(tmp_path / "t.jpg"), 300)
   assert max(Image.open(out).size) == 300
+
+
+def test_migration_forces_reread_of_raw_rows(tmp_path):
+  import sqlite3
+  from photoapp import db
+  path = str(tmp_path / "app.sqlite")
+  conn = sqlite3.connect(path)
+  for script in db.MIGRATIONS[:4]:
+    conn.executescript(script)
+  conn.execute("PRAGMA user_version = 4")
+  conn.execute("INSERT INTO files (path, mtime, bytesize, width, height) VALUES "
+               "('a.DNG', 1, 100, 160, 120), ('b.jpg', 1, 100, 30, 20)")
+  conn.execute("INSERT INTO dir_mtimes VALUES ('.', 5)")
+  conn.commit()
+  conn.close()
+  conn = db.connect(path)
+  sizes = dict(conn.execute("SELECT path, bytesize FROM files").fetchall())
+  assert sizes == {"a.DNG": -1, "b.jpg": 100}
+  assert conn.execute("SELECT COUNT(*) FROM dir_mtimes").fetchone()[0] == 0

@@ -101,6 +101,16 @@ MIGRATIONS = [
     """
     ALTER TABLE xmp_sidecars ADD COLUMN tags TEXT;  -- JSON list, without 'fav'
     """,
+    """
+    -- RAW sizes used to come from Pillow's IFD0 thumbnail (160x120). Force
+    -- the next scan to re-read every RAW row.
+    UPDATE files SET bytesize = -1 WHERE lower(path) GLOB '*.dng'
+      OR lower(path) GLOB '*.cr2' OR lower(path) GLOB '*.cr3'
+      OR lower(path) GLOB '*.nef' OR lower(path) GLOB '*.arw'
+      OR lower(path) GLOB '*.raf' OR lower(path) GLOB '*.rw2'
+      OR lower(path) GLOB '*.orf' OR lower(path) GLOB '*.pef';
+    DELETE FROM dir_mtimes;
+    """,
 ]
 
 

@@ -23,7 +23,9 @@ def main(argv):
   logging.info("database in %s, schema version %d", FLAGS.state_dir,
                db.schema_version(conn))
   settings = config.Settings.from_flags()
-  uvicorn.run(api.create_app(conn, settings), host=FLAGS.host, port=FLAGS.port)
+  application = api.create_app(conn, settings)
+  application.state.jobs.start()
+  uvicorn.run(application, host=FLAGS.host, port=FLAGS.port)
 
 
 if __name__ == "__main__":
