@@ -6,6 +6,7 @@ import os
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from photoapp import fileinfo
 from photoapp import scan as scan_lib
@@ -42,5 +43,7 @@ def create_app(conn, settings):
   @app.get("/api/scan/status")
   def scan_status():
     return dataclasses.asdict(app.state.scanner.progress)
+
+  app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
   return app

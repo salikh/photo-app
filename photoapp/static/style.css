@@ -1,0 +1,31 @@
+/* All colors live here as variables; pages must not hard-code colors. */
+:root {
+  color-scheme: dark;
+
+  --bg: #121212;            /* page and loupe background */
+  --bg-raised: #1c1c1e;     /* panels, drawers, cards */
+  --bg-hover: #2a2a2d;
+  --border: #38383c;
+
+  --text: #e4e4e6;
+  --text-dim: #9a9aa0;
+  --link: #8ab4f8;
+
+  --accent: #f5c542;        /* stars, selection */
+  --reject: #ef5350;
+  --fav: #ff6b9d;
+  --conflict: #ff9800;
+  --ok: #66bb6a;
+
+  --overlay-bg: rgba(0, 0, 0, 0.6);   /* badges on top of thumbnails */
+  --overlay-text: #ffffff;
+}
+
+html, body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, sans-serif;
+}
+
+a { color: var(--link); }

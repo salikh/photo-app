@@ -39,3 +39,11 @@ def test_placeholder_page_and_health(settings):
   client = TestClient(api.create_app(db.connect(":memory:"), settings))
   assert client.get("/api/health").json() == {"ok": True}
   assert "Photos" in client.get("/").text
+
+
+def test_stylesheet_is_served_and_defines_dark_theme(settings):
+  client = TestClient(api.create_app(db.connect(":memory:"), settings))
+  css = client.get("/static/style.css")
+  assert css.status_code == 200
+  assert "color-scheme: dark" in css.text and "--bg:" in css.text
+  assert "/static/style.css" in client.get("/").text

@@ -48,6 +48,8 @@ Added after the grill session: the UI must also work on a smartphone on the
 LAN (responsive layout, swipe left/right to move between pictures in a
 folder, swipe up/down to change the rating). Tracked in `docs/tickets/043.md`.
 
+The UI uses dark theme colors throughout (`docs/tickets/047.md`).
+
 Not in v1: dedupe/cleanup views, image editing, hard promotion of a tuning to
 a new file, GPS/caption editing, multi-user features, remote access.
 

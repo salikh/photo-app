@@ -22,6 +22,7 @@ Check items off here when the ticket's status is done.
 
 - [ ] [040](docs/tickets/040.md) Test infrastructure and fixtures
 - [x] [041](docs/tickets/041.md) start.sh to bring up a local server
+- [ ] [047](docs/tickets/047.md) Dark theme (CSS variables in place; pages must use them as they are built)
 - [ ] [043](docs/tickets/043.md) Mobile UI: responsive layout, swipe navigation, swipe rating (after the desktop grid/loupe/rating exist)
 
 ## Decisions needed from the user
