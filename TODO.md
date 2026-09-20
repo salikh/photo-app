@@ -15,7 +15,7 @@ Check items off here when the ticket's status is done.
 - [ ] [006](docs/tickets/006.md) Import and ratings
 - [ ] [007](docs/tickets/007.md) Read-only UI
 - [ ] [008](docs/tickets/008.md) Curation
-- [x] [009](docs/tickets/009.md) Grouping UI
+- [ ] [009](docs/tickets/009.md) Grouping UI
 - [ ] [010](docs/tickets/010.md) Hash recovery and nightly scan
 
 ## Cross-cutting
@@ -32,7 +32,7 @@ Check items off here when the ticket's status is done.
 
 Independent of each other, can start now:
 
-- [ ] [011](docs/tickets/011.md) Extract reusable logic from `file_metadata.py`
+- [x] [011](docs/tickets/011.md) Extract reusable logic from `file_metadata.py`
 - [ ] [016](docs/tickets/016.md) Inspect `/zoo/Thumbs` layout (read-only)
 - [ ] [018](docs/tickets/018.md) XMP sidecar discovery and read
 - [ ] [001](docs/tickets/001.md) Skeleton and schema
