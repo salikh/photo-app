@@ -29,6 +29,7 @@ flags.DEFINE_enum(
     "Existing sidecars are always edited in place. See ticket 042.")
 flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).")
 flags.DEFINE_integer("nightly_scan_hour", 3, "Local hour (0-23) of the nightly rescan; -1 disables it.")
+flags.DEFINE_integer("scan_workers", 8, "Threads reading files during a scan (network file systems are latency bound).")
 flags.DEFINE_string("host", "0.0.0.0", "Address to listen on (LAN only).")
 flags.DEFINE_integer("port", 8080, "Port to listen on.")
 
@@ -43,6 +44,7 @@ class Settings:
   new_raw_sidecar_style: str = "full"
   job_workers: int = 2
   nightly_scan_hour: int = -1
+  scan_workers: int = 8
 
   @property
   def db_path(self):
@@ -53,4 +55,5 @@ class Settings:
     f = flags.FLAGS
     return cls(os.path.abspath(f.pictures_dir), os.path.abspath(f.thumbs_dir),
                os.path.abspath(f.state_dir), f.hashes_db, f.xmp_dry_run,
-               f.new_raw_sidecar_style, f.job_workers, f.nightly_scan_hour)
+               f.new_raw_sidecar_style, f.job_workers, f.nightly_scan_hour,
+               f.scan_workers)

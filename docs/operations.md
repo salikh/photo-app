@@ -14,6 +14,7 @@
 | `--new_raw_sidecar_style` | `full` | new RAW sidecars named `NAME.DNG.xmp` (`stem`: `NAME.xmp`) |
 | `--nightly_scan_hour` | 3 | local hour of the nightly rescan, -1 disables |
 | `--job_workers` | 2 | background RAW render threads |
+| `--scan_workers` | 8 | threads reading files during a scan (the NAS is latency bound) |
 | `--port`, `--host` | 8080, 0.0.0.0 | LAN only, no authentication |
 
 Try a first session with `--xmp_dry_run` to see what would be written.

@@ -7,6 +7,7 @@ marked missing=1, never deleted. All paths in the database are relative
 to the pictures dir with '/' separators.
 """
 
+import concurrent.futures
 import dataclasses
 import hashlib
 import json
@@ -54,7 +55,12 @@ def _upsert_file(conn, rel_path, record):
 
 
 def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
-                progress):
+                progress, pool):
+  """Read new or changed image files of one directory.
+
+  The pool runs the per-file work (stat, decode, hash), which is dominated by
+  network file system latency; database writes stay on this thread.
+  """
   changed = False
   known = {
       row["path"]: row for row in conn.execute(
@@ -62,27 +68,33 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
           "WHERE path LIKE ? ESCAPE '\\'",
           (_like_prefix(rel_dir) + "%",))
   }
-  for name in filenames:
+
+  def work(name):
     filepath = os.path.join(dirpath, name)
-    if not os.path.isfile(filepath):
-      continue
     try:
+      if not os.path.isfile(filepath):
+        return None
       st = os.stat(filepath)
     except OSError as e:
       logging.error("Skipping %s: %s", filepath, e)
-      continue
+      return None
     rel_path = name if rel_dir == "." else f"{rel_dir}/{name}"
     old = known.get(rel_path)
     if (old is not None and old["mtime"] == st.st_mtime
         and old["bytesize"] == st.st_size and not old["missing"]):
-      continue
+      return None
     mime_type, width, height, exif_date = fileinfo.read_image_metadata(filepath)
     file_hash = fileinfo.get_or_compute_hash(
         filepath, rel_path, st.st_mtime, hashes)
-    _upsert_file(conn, rel_path, {
+    return rel_path, {
         "hash": file_hash, "mime_type": mime_type, "width": width,
         "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
-        "exif_date": exif_date})
+        "exif_date": exif_date}
+
+  for result in pool.map(work, filenames):
+    if result is None:
+      continue
+    _upsert_file(conn, *result)
     progress.files_processed += 1
     changed = True
   return changed
@@ -105,7 +117,8 @@ def _sidecar_owners(image_names, sidecar_names):
   return {sc: best[sc][1] if sc in best else None for sc in sidecar_names}
 
 
-def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress):
+def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress,
+                   pool):
   """Bring xmp_sidecars for one directory in line with the disk.
 
   Runs on every scan, also for directories skipped by the mtime rule:
@@ -123,27 +136,32 @@ def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress):
   }
   prefix = "" if rel_dir == "." else rel_dir + "/"
   owners = _sidecar_owners(images, sidecar_names)
-  for name in sidecar_names:
-    path = prefix + name
+  def work(name):
+    """(mtime, data or None): data is read only if the sidecar changed."""
+    full = os.path.join(dirpath, name)
     try:
-      mtime = os.stat(os.path.join(dirpath, name)).st_mtime
+      mtime = os.stat(full).st_mtime
+      old = known.get(name)
+      if old is not None and old["mtime"] == mtime:
+        return mtime, None
+      with open(full, "rb") as f:
+        return mtime, f.read()
     except OSError as e:
-      logging.error("Skipping sidecar %s: %s", path, e)
+      logging.error("Skipping sidecar %s: %s", prefix + name, e)
+      return None
+
+  for name, result in zip(sidecar_names, pool.map(work, sidecar_names)):
+    if result is None:
       continue
+    mtime, data = result
+    path = prefix + name
     owner = owners[name]
     file_id = file_ids.get(prefix + owner) if owner else None
-    old = known.get(name)
-    if old is not None and old["mtime"] == mtime:
-      if old["file_id"] != file_id:
+    if data is None:                       # unchanged on disk
+      if known[name]["file_id"] != file_id:
         conn.execute("UPDATE xmp_sidecars SET file_id = ? WHERE path = ?",
                      (file_id, path))
         changed = True
-      continue
-    try:
-      with open(os.path.join(dirpath, name), "rb") as f:
-        data = f.read()
-    except OSError as e:
-      logging.error("Skipping sidecar %s: %s", path, e)
       continue
     parsed = xmp.parse(data)
     conn.execute(
@@ -184,13 +202,14 @@ def _like_prefix(rel_dir):
 
 
 def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
-         thumbs_dir=None, on_done=None):
+         thumbs_dir=None, on_done=None, workers=8):
   """Scan scan_dir (default: pictures_dir) into conn. Returns the Progress.
 
   With thumbs_dir, thumbnails that already exist for new files are recorded.
   """
   progress = progress or Progress()
   progress.running = True
+  pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers))
   scan_dir = scan_dir or pictures_dir
   seen = set()
   changed_dirs = set()
@@ -209,7 +228,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
 
       def sync_sidecars():
         if _sync_sidecars(conn, dirpath, rel_dir, filenames, images,
-                          known_sidecars.get(rel_dir, {}), progress):
+                          known_sidecars.get(rel_dir, {}), progress, pool):
           changed_dirs.add(rel_dir)
 
       row = conn.execute(
@@ -221,7 +240,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
         continue
 
       if _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
-                     progress):
+                     progress, pool):
         changed_dirs.add(rel_dir)
       sync_sidecars()
       conn.execute(
@@ -248,6 +267,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
     logging.exception("scan failed")
     progress.error = str(e)
   finally:
+    pool.shutdown(wait=True)
     progress.running = False
   return progress
 
@@ -267,12 +287,13 @@ class ScanManager:
   """Runs at most one scan at a time in a background thread."""
 
   def __init__(self, db_path, pictures_dir, hashes=None, thumbs_dir=None,
-               on_done=None):
+               on_done=None, workers=8):
     self._db_path = db_path
     self._pictures_dir = pictures_dir
     self._hashes = hashes
     self._thumbs_dir = thumbs_dir
     self._on_done = on_done
+    self._workers = workers
     self._lock = threading.Lock()
     self._thread = None
     self.progress = Progress()
@@ -297,7 +318,7 @@ class ScanManager:
     conn = db.connect(self._db_path)
     try:
       scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
-           self._thumbs_dir, self._on_done)
+           self._thumbs_dir, self._on_done, self._workers)
     finally:
       conn.close()
 

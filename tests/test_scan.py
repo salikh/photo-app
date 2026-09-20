@@ -105,3 +105,25 @@ def test_api_scan_and_status(settings):
   status = client.get("/api/scan/status").json()
   assert status["running"] is False and status["files_processed"] == 4
   assert client.post("/api/scan", params={"dir": "../etc"}).status_code == 400
+
+
+def test_parallel_scan_matches_serial_and_is_actually_concurrent(settings, monkeypatch, tmp_path):
+  import time
+  from photoapp import db, fileinfo
+  for i in range(24):
+    make_jpeg(os.path.join(settings.pictures_dir, "d", f"{i:02d}.jpg"), color=("red" if i % 2 else "blue"))
+  real = fileinfo.read_image_metadata
+
+  def slow(path):
+    time.sleep(0.05)              # stands in for network file system latency
+    return real(path)
+
+  monkeypatch.setattr(fileinfo, "read_image_metadata", slow)
+  serial = db.connect(str(tmp_path / "serial.sqlite"))
+  t = time.time(); scan.scan(serial, settings.pictures_dir, workers=1); serial_time = time.time() - t
+  parallel = db.connect(str(tmp_path / "parallel.sqlite"))
+  t = time.time(); scan.scan(parallel, settings.pictures_dir, workers=8); parallel_time = time.time() - t
+  cols = "path, hash, mime_type, width, height, bytesize, exif_date"
+  assert [tuple(r) for r in serial.execute(f"SELECT {cols} FROM files ORDER BY path")] == \
+         [tuple(r) for r in parallel.execute(f"SELECT {cols} FROM files ORDER BY path")]
+  assert serial_time > 1.1 and parallel_time < serial_time / 3
