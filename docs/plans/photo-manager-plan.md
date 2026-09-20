@@ -79,7 +79,7 @@ CREATE TABLE photos (
   representative_file_id INTEGER NOT NULL REFERENCES files(id),
   rating INTEGER NOT NULL DEFAULT 0,   -- combined [-1, 5]
   fav INTEGER NOT NULL DEFAULT 0,
-  previous_stars INTEGER,              -- for un-reject (open item)
+  previous_stars INTEGER,              -- for un-reject (decided: kept, ticket 024)
   rating_source TEXT,                  -- 'xmp' | 'import' | 'app' | 'hash-recovery'
   conflict INTEGER NOT NULL DEFAULT 0
 );
@@ -215,9 +215,10 @@ Discovery for a file `dir/name.ext`:
    `name.xmp` and `name.ext.xmp`. If several exist, prefer the one whose
    naming matches the file's convention (RAW: `name.xmp`; else `name.ext.xmp`)
    and read the others as additional sources.
-2. If none exists and a write is needed, create the new-style name: `name.xmp`
-   for RAW, `name.ext.xmp` for other types. The Photo's sidecar is chosen from
-   the original file.
+2. If none exists and a write is needed, create the full-filename name
+   `name.ext.xmp` for every type, RAW included (decided, ticket 042; flag
+   `--new_raw_sidecar_style=stem` gives `name.xmp` for RAW). The Photo's
+   sidecar is chosen from the original file.
 
 Lossless editing:
 - Parse with lxml, retaining all namespaces, comments, processing instructions
@@ -362,7 +363,7 @@ Each step ends in something that runs and is checked before the next starts.
 | XMP corruption or loss of Lightroom `crs:*` data | Lossless edit, atomic writes, backups, round-trip tests on real files, dry-run first |
 | Lightroom and the app writing at once | mtime/hash check at write time and re-apply |
 | Conflicting sidecars for DNG and JPG | Newest wins, conflict badge, survey before first write |
-| `Rating=-1` erasing stars | Keep `previous_stars` in the DB so un-reject restores them (confirm) |
+| `Rating=-1` erasing stars | Keep `previous_stars` in the DB so un-reject restores them (decided) |
 | Camera counter reuse across years | Automatic grouping only within one directory |
 | Slow first scan (847 GB to hash) | Reuse `--hashes_db` hashes, run scan in the background, show progress |
 | Manual links lost if the DB is deleted | Mirror to `manual_links.jsonl`, include the state dir in backups |

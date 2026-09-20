@@ -98,9 +98,11 @@ a new file, GPS/caption editing, multi-user features, remote access.
   read. If they disagree, the most recently modified one wins and the UI shows
   a conflict badge. Other sidecars are not modified.
 - Existing sidecars (`.XMP`, `.JPG.xmp`, ...) are read in any naming style and
-  edited in place; there is no mass rename. New sidecars use `foo.xmp` next to
-  RAW originals and `foo.jpg.xmp` for other files. Normalization "going
-  forward" must not be lossy.
+  edited in place; there is no mass rename. New sidecars use the full-filename
+  style for every file, including RAW originals: `foo.DNG.xmp`, `foo.jpg.xmp`
+  (decided 2026-09-21, ticket 042: it is what darktable and 15427 of 15429
+  existing sidecars use; this replaces the earlier `foo.xmp` for RAW).
+  Normalization "going forward" must not be lossy.
 - Lightroom stays in occasional use on the same tree. Writes therefore must:
   round-trip the XML untouched except for the edited nodes (`crs:*` develop
   data and unknown elements survive), be atomic (temp file + rename), and keep
@@ -131,8 +133,10 @@ a new file, GPS/caption editing, multi-user features, remote access.
   in XMP, so the DB is not a pure cache if they live only there. Decide where
   they are persisted (for example an append-only JSON-lines file kept beside
   the DB, or a custom XMP field).
-- **Reject and stars.** Lightroom's `Rating=-1` erases the star count. Decide
-  whether the app remembers the previous stars for un-reject.
+- **Reject and stars.** Lightroom's `Rating=-1` erases the star count.
+  **Decided 2026-09-21 (ticket 024): yes**, the app remembers the previous
+  stars (`photos.previous_stars`, not rebuildable from disk) and un-reject
+  restores them.
 - **Conflict survey.** Before first write-back, count Photos whose DNG and JPG
   sidecars disagree, to check that "newest wins" is acceptable.
 - **Camera counter reuse.** Names like `K___0001` can repeat across years. This

@@ -32,10 +32,10 @@ Everything that can be built and verified without you is done (139 tests, real-l
 What is left needs a decision, a real device, or a go-ahead. Provisional defaults are implemented
 where noted, so the app already works; a decision only changes behavior.
 
-Decisions (each ticket has the options and the evidence):
+Decisions (each ticket has the options and the evidence; 024 and 042 were answered on 2026-09-21):
 
-- [ ] [024](docs/tickets/024.md) Un-reject restores the previous star count (implemented as default: yes)
-- [ ] [042](docs/tickets/042.md) New RAW sidecar name: `NAME.DNG.xmp` (implemented, `--new_raw_sidecar_style=full`) or `NAME.xmp`
+- [x] [024](docs/tickets/024.md) Un-reject restores the previous star count (implemented as default: yes)
+- [x] [042](docs/tickets/042.md) New RAW sidecar name: `NAME.DNG.xmp` (implemented, `--new_raw_sidecar_style=full`) or `NAME.xmp`
 - [ ] [049](docs/tickets/049.md) darktable's default 1 star is 76% of sidecars: show as is (current), hide, or migrate
 - [ ] [023](docs/tickets/023.md) Conflict survey: "newest wins" looked right on a sample; write ratings to the original's sidecar only (current) or to the sidecar that holds the winning rating?
 - [ ] [015](docs/tickets/015.md) Manual link decisions are mirrored to `manual_links.jsonl` (implemented); confirm
