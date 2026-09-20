@@ -8,8 +8,10 @@ database with one row per logical image:
 
     hash          content hash of the chosen canonical copy
     filepath      canonical path of that copy (see ranking.py)
-    rating        star rating, 0-5 (0 = unrated)
-    reject        -1 / 0 / 1  (-1 = rejected, 0 = unmarked, 1 = picked)
+    rating        combined rating: -1 = REJECT, 0 = UNRATED,
+                  1-5 = PICK with that star rating
+    reject        derived from rating: -1 if rating == -1, 0 if rating == 0,
+                  1 if rating > 0
     popularity    fine-grained duplication score (see below)
     copies        number of physical files that are copies of this image
     has_exported_copy   1 if any copy lives under an '/Exported/' path
@@ -194,11 +196,15 @@ def _make_logical_image(renditions):
 
 
 def interpret_combined_rating(value):
-    """Map a combined [-1, 5] rating value to (star_rating, reject_status)."""
+    """Map a combined [-1, 5] rating value to (rating, reject_status).
+
+    The combined value is kept as the 'rating' column (clamped to
+    [-1, 5]); 'reject' is derived from it (-1 / 0 / 1).
+    """
     if value is None:
         return None
     if value < 0:
-        return (0, -1)
+        return (-1, -1)
     if value == 0:
         return (0, 0)
     return (min(value, 5), 1)
@@ -432,8 +438,8 @@ def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus):
         CREATE TABLE images (
             hash TEXT PRIMARY KEY,
             filepath TEXT NOT NULL,
-            rating INTEGER NOT NULL,
-            reject INTEGER NOT NULL,
+            rating INTEGER NOT NULL,  -- -1 REJECT, 0 UNRATED, 1-5 PICK
+            reject INTEGER NOT NULL,  -- -1 if rating == -1, 0 if 0, 1 if > 0
             popularity INTEGER NOT NULL,
             copies INTEGER NOT NULL,
             has_exported_copy INTEGER NOT NULL,

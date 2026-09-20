@@ -101,10 +101,12 @@ Both sources encode rating and reject status together as a single
 |     0 | unmarked/unrated, no star rating |
 |   1-5 | picked, with an N-star rating    |
 
-This combined value is decoded into the two output columns:
-`reject = -1` when the value is negative, `reject = 1` and
-`rating = value` when positive, otherwise `reject = 0` and
-`rating = 0`.
+This combined value is stored as-is in the `rating` column (clamped to
+[-1, 5]), and the `reject` column is derived from it: `reject = -1`
+when `rating == -1`, `reject = 0` when `rating == 0`, `reject = 1` when
+`rating > 0`. (Databases written by older versions, where `rating` held
+only 0-5 and rejection lived solely in `reject`, can be upgraded with
+`migrate_metadata.py`.)
 
 Candidate ratings are gathered in this precedence order (first
 available value wins):
@@ -167,8 +169,8 @@ copy nested under both adds both bonuses).
 CREATE TABLE images (
     hash TEXT PRIMARY KEY,       -- content hash of the canonical (DNG-preferred) copy
     filepath TEXT NOT NULL,      -- canonical relative path of that copy
-    rating INTEGER NOT NULL,     -- 0-5, 0 = unrated
-    reject INTEGER NOT NULL,     -- -1/0/1
+    rating INTEGER NOT NULL,     -- -1 = REJECT, 0 = UNRATED, 1-5 = PICK / STAR RATING
+    reject INTEGER NOT NULL,     -- derived: -1 if rating == -1, 0 if 0, 1 if > 0
     popularity INTEGER NOT NULL, -- see Step 7
     copies INTEGER NOT NULL,           -- physical copy count across all renditions
     has_exported_copy INTEGER NOT NULL,-- 1 if any copy is under '/Exported/'
