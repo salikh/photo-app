@@ -8,7 +8,7 @@ Check items off here when the ticket's status is done.
 ## Build order
 
 - [x] [001](docs/tickets/001.md) Skeleton and schema
-- [ ] [002](docs/tickets/002.md) Scan and files table
+- [x] [002](docs/tickets/002.md) Scan and files table
 - [ ] [003](docs/tickets/003.md) Grouping
 - [ ] [004](docs/tickets/004.md) Thumbs inspection and lookup
 - [ ] [005](docs/tickets/005.md) XMP module and tests

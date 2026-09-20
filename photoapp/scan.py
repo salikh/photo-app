@@ -8,6 +8,7 @@ to the pictures dir with '/' separators.
 """
 
 import dataclasses
+import hashlib
 import os
 import threading
 
@@ -15,6 +16,7 @@ from absl import logging
 
 from photoapp import db
 from photoapp import fileinfo
+from photoapp import xmp
 
 
 @dataclasses.dataclass
@@ -24,6 +26,7 @@ class Progress:
   dirs_skipped: int = 0
   files_seen: int = 0
   files_processed: int = 0
+  sidecars_processed: int = 0
   error: str = None
 
 
@@ -77,6 +80,87 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
     progress.files_processed += 1
 
 
+def _sidecar_owners(image_names, sidecar_names):
+  """Map each sidecar name to the image filename that owns it (or None).
+
+  A full-filename sidecar (K.JPG.xmp) belongs to that file; a bare
+  K.xmp belongs to the RAW with that stem if there is one, else to an
+  image with that stem. Sidecars with no matching image are orphans.
+  """
+  best = {}  # sidecar name -> (rank, image name)
+  for image in image_names:
+    full = (image + ".xmp").lower()
+    for sc in xmp.find_sidecars(image, sidecar_names):
+      rank = 0 if sc.lower() == full else (1 if fileinfo.is_raw(image) else 2)
+      if sc not in best or (rank, image) < best[sc]:
+        best[sc] = (rank, image)
+  return {sc: best[sc][1] if sc in best else None for sc in sidecar_names}
+
+
+def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress):
+  """Bring xmp_sidecars for one directory in line with the disk.
+
+  Runs on every scan, also for directories skipped by the mtime rule:
+  editing a sidecar in place does not change its directory's mtime.
+  known is {sidecar_name: row} for this directory from the database.
+  """
+  sidecar_names = sorted(n for n in filenames if xmp.is_sidecar(n))
+  if not sidecar_names and not known:
+    return
+  file_ids = {
+      r["path"]: r["id"] for r in conn.execute(
+          "SELECT id, path FROM files WHERE path LIKE ? ESCAPE '\\'",
+          (_like_prefix(rel_dir) + "%",))
+  }
+  prefix = "" if rel_dir == "." else rel_dir + "/"
+  owners = _sidecar_owners(images, sidecar_names)
+  for name in sidecar_names:
+    path = prefix + name
+    try:
+      mtime = os.stat(os.path.join(dirpath, name)).st_mtime
+    except OSError as e:
+      logging.error("Skipping sidecar %s: %s", path, e)
+      continue
+    owner = owners[name]
+    file_id = file_ids.get(prefix + owner) if owner else None
+    old = known.get(name)
+    if old is not None and old["mtime"] == mtime:
+      if old["file_id"] != file_id:
+        conn.execute("UPDATE xmp_sidecars SET file_id = ? WHERE path = ?",
+                     (file_id, path))
+      continue
+    try:
+      with open(os.path.join(dirpath, name), "rb") as f:
+        data = f.read()
+    except OSError as e:
+      logging.error("Skipping sidecar %s: %s", path, e)
+      continue
+    parsed = xmp.parse(data)
+    conn.execute(
+        "INSERT INTO xmp_sidecars (path, file_id, mtime, hash, rating,"
+        " has_fav) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(path) DO UPDATE SET file_id = excluded.file_id,"
+        " mtime = excluded.mtime, hash = excluded.hash,"
+        " rating = excluded.rating, has_fav = excluded.has_fav",
+        (path, file_id, mtime, hashlib.sha224(data).hexdigest(),
+         parsed.rating, int(parsed.fav)))
+    progress.sidecars_processed += 1
+  for name in known:
+    if name not in sidecar_names:
+      conn.execute("DELETE FROM xmp_sidecars WHERE path = ?", (prefix + name,))
+  conn.commit()
+
+
+def _load_known_sidecars(conn):
+  """Return {rel_dir: {sidecar_name: row}} for all sidecars in the database."""
+  result = {}
+  for row in conn.execute(
+      "SELECT path, file_id, mtime FROM xmp_sidecars"):
+    dirname, _, name = row["path"].rpartition("/")
+    result.setdefault(dirname or ".", {})[name] = row
+  return result
+
+
 def _like_prefix(rel_dir):
   """LIKE pattern prefix for paths directly or indirectly under rel_dir."""
   if rel_dir == ".":
@@ -91,6 +175,7 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
   progress.running = True
   scan_dir = scan_dir or pictures_dir
   seen = set()
+  known_sidecars = _load_known_sidecars(conn)
   try:
     for dirpath, dirnames, filenames in os.walk(scan_dir):
       dirnames.sort()
@@ -102,15 +187,22 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None):
                   (f"{rel_dir}/{n}" for n in images))
 
       mtime = os.stat(dirpath).st_mtime
+
+      def sync_sidecars():
+        _sync_sidecars(conn, dirpath, rel_dir, filenames, images,
+                       known_sidecars.get(rel_dir, {}), progress)
+
       row = conn.execute(
           "SELECT mtime FROM dir_mtimes WHERE dirpath = ?",
           (rel_dir,)).fetchone()
       if row is not None and row["mtime"] == mtime:
         progress.dirs_skipped += 1
+        sync_sidecars()
         continue
 
       _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
                   progress)
+      sync_sidecars()
       conn.execute(
           "INSERT INTO dir_mtimes (dirpath, mtime) VALUES (?, ?) "
           "ON CONFLICT(dirpath) DO UPDATE SET mtime = excluded.mtime",
