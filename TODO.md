@@ -2,7 +2,7 @@
 
 Top-level task list for the photo manager web app. Plan: `docs/plans/photo-manager-plan.md`;
 requirements: `docs/reqs/photo-manager-requirements.md`. Tickets live in `docs/tickets/NNN.md`;
-epics (001-010, one per build step in plan §7) hold checklists of their child tickets.
+epics (001-010, one per build step in plan §7, plus 043 Mobile UI) hold checklists of their child tickets.
 Check items off here when the ticket's status is done.
 
 ## Build order
@@ -22,14 +22,15 @@ Check items off here when the ticket's status is done.
 
 - [ ] [040](docs/tickets/040.md) Test infrastructure and fixtures
 - [x] [041](docs/tickets/041.md) start.sh to bring up a local server
+- [ ] [043](docs/tickets/043.md) Mobile UI: responsive layout, swipe navigation, swipe rating (after the desktop grid/loupe/rating exist)
 
 ## Decisions needed from the user
 
 - [ ] [024](docs/tickets/024.md) Decision: reject vs previous stars
 - [ ] [023](docs/tickets/023.md) Review the conflict survey before any XMP write (after it runs)
 - [ ] [015](docs/tickets/015.md) Confirm JSONL mirror as the durability answer for manual links
-
 - [ ] [042](docs/tickets/042.md) Naming of new sidecars for RAW originals (survey says the library is darktable full-filename style)
+- [ ] [046](docs/tickets/046.md) Confirm swipe up/down rating mapping (up = +1 step, down = -1 step, clamped)
 
 ## Suggested first moves
 
