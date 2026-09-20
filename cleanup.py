@@ -11,16 +11,30 @@ anything itself; review the generated script before running it.
 
 See ranking.py for the canonical-copy ranking heuristic (shared with
 metadata_db.py).
+
+Usage:
+    cleanup.py
+        --v=3
+        --database ~/zoo.db
+        > cleanup.sh
 """
 
-import argparse
 import shlex
 import sqlite3
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
+from absl import app
+from absl import flags
+from absl import logging
+
 from ranking import rank
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string("database", None, "Path to the sqlite3 database.")
+flags.mark_flag_as_required("database")
 
 
 def load_hashes(db_path):
@@ -56,8 +70,12 @@ def build_script(db_path, hash_to_files):
         ranked = rank(files)
         canonical = ranked[0]
         duplicates = ranked[1:]
+        logging.vlog(3, "Processing hash %s -- keeping %s, %d duplicate(s)",
+                     h, canonical, len(duplicates))
         lines.append(f"# hash {h} -- keeping: {canonical}")
         for dup in duplicates:
+            logging.vlog(5, "Marking duplicate for deletion: %s (hash %s)",
+                         dup, h)
             lines.append(f"# duplicate of: {canonical}  (hash {h})")
             lines.append(f"rm -vf -- {shlex.quote(dup)}")
             num_deleted += 1
@@ -70,23 +88,21 @@ def build_script(db_path, hash_to_files):
     return "\n".join(lines) + "\n", len(groups), num_deleted
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Generate a shell script that deletes redundant duplicate files "
-                    "found via the 'hashes' table of a sqlite3 database."
-    )
-    parser.add_argument("database", help="path to the sqlite3 database")
-    args = parser.parse_args()
+def main(argv):
+    if len(argv) != 1:
+        raise app.UsageError(
+            "This tool takes no positional arguments; use --database "
+            "instead (got: %s)" % argv[1:])
 
-    hash_to_files = load_hashes(args.database)
-    script, num_groups, num_deleted = build_script(args.database, hash_to_files)
+    hash_to_files = load_hashes(FLAGS.database)
+    script, num_groups, num_deleted = build_script(FLAGS.database, hash_to_files)
 
     sys.stdout.write(script)
 
-    print(f"INFO: duplicate hash groups: {num_groups}", file=sys.stderr)
-    print(f"INFO: files marked for deletion: {num_deleted}", file=sys.stderr)
-    print("Review the script before running it -- nothing was deleted.", file=sys.stderr)
+    logging.info("duplicate hash groups: %d", num_groups)
+    logging.info("files marked for deletion: %d", num_deleted)
+    logging.info("Review the script before running it -- nothing was deleted.")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app.run(main)

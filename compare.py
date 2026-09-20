@@ -6,13 +6,21 @@ Reports:
   - duplication statistics per database (hashes with more than one filename)
 
 Usage:
-  compare.py DB1 DB2
+  compare.py --db1 DB1 --db2 DB2
 """
 
-import argparse
 import sqlite3
-import sys
 from collections import defaultdict
+
+from absl import app
+from absl import flags
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string("db1", None, "Path to the first sqlite3 database.")
+flags.DEFINE_string("db2", None, "Path to the second sqlite3 database.")
+flags.mark_flag_as_required("db1")
+flags.mark_flag_as_required("db2")
 
 
 def load_hashes(db_path):
@@ -58,14 +66,14 @@ def print_unique_hashes(label_a, label_b, only_in_a):
     print()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Compare 'hashes' tables of two sqlite3 databases.")
-    parser.add_argument("db1", help="path to first sqlite3 database")
-    parser.add_argument("db2", help="path to second sqlite3 database")
-    args = parser.parse_args()
+def main(argv):
+    if len(argv) != 1:
+        raise app.UsageError(
+            "This tool takes no positional arguments; use --db1/--db2 "
+            "instead (got: %s)" % argv[1:])
 
-    hashes1 = load_hashes(args.db1)
-    hashes2 = load_hashes(args.db2)
+    hashes1 = load_hashes(FLAGS.db1)
+    hashes2 = load_hashes(FLAGS.db2)
 
     set1 = set(hashes1)
     set2 = set(hashes2)
@@ -74,8 +82,8 @@ def main():
     only_in_2 = {h: hashes2[h] for h in (set2 - set1)}
     common = set1 & set2
 
-    print(f"Database A: {args.db1}")
-    print(f"Database B: {args.db2}")
+    print(f"Database A: {FLAGS.db1}")
+    print(f"Database B: {FLAGS.db2}")
     print()
     print(f"Distinct hashes in A: {len(set1)}")
     print(f"Distinct hashes in B: {len(set2)}")
@@ -84,12 +92,12 @@ def main():
     print(f"Only in B:            {len(only_in_2)}")
     print()
 
-    print_unique_hashes(args.db1, args.db2, only_in_1)
-    print_unique_hashes(args.db2, args.db1, only_in_2)
+    print_unique_hashes(FLAGS.db1, FLAGS.db2, only_in_1)
+    print_unique_hashes(FLAGS.db2, FLAGS.db1, only_in_2)
 
-    print_duplication_stats(args.db1, hashes1)
-    print_duplication_stats(args.db2, hashes2)
+    print_duplication_stats(FLAGS.db1, hashes1)
+    print_duplication_stats(FLAGS.db2, hashes2)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app.run(main)

@@ -18,19 +18,20 @@ moved copy are redundant and get `rm -vf --`ed; any with a *different*
 hash (an unexpected same-target collision) are left in place, noted in
 a comment for manual review.
 
-If --target_db is given (a 'hashes'-format database for --output_dir
-itself, e.g. produced by hash_dir.py run against it), a destination that
-already exists there is not moved to again: the source file is instead
-`rm`-ed, since --output_dir already has a copy of it.
+A destination is also never moved to twice: if it already exists on
+disk (checked directly, at generation time) -- or, when --target_db is
+given (a 'hashes'-format database for --output_dir itself, e.g. produced
+by hash_dir.py run against it), if it's listed there -- the source file
+is `rm`-ed instead of moved, since --output_dir already has a copy of it.
 
 This tool only WRITES a shell script, to stdout. It never moves or
 deletes anything itself; review the generated script before running it.
 
 Usage:
     thumbs_move.py
+        --database ~/zoo.db
         --output_dir /zoo/Thumbs
         --target_db /zoo/Thumbs/hashes.db
-        ~/zoo.db
         > move_thumbs.sh
 """
 
@@ -48,6 +49,7 @@ from absl import logging
 
 FLAGS = flags.FLAGS
 
+flags.DEFINE_string("database", None, "Path to the sqlite3 database.")
 flags.DEFINE_string(
     "output_dir", None,
     "Directory that relocated files are placed under, e.g. 'Thumbs'.")
@@ -56,6 +58,7 @@ flags.DEFINE_string(
     "Path to a 'hashes'-format sqlite3 database for --output_dir itself; "
     "a destination that already exists there gets its source file removed "
     "instead of moved.")
+flags.mark_flag_as_required("database")
 flags.mark_flag_as_required("output_dir")
 
 MARKER_RE = re.compile(r"^\.Pictures\.(.+)$")
@@ -151,8 +154,11 @@ def build_script(db_path, output_dir, targets, target_filenames):
                     "# duplicate target with a DIFFERENT hash, left in "
                     f"place: {filename}")
                 num_dup_skipped += 1
-        if target_filenames is not None and target_rel in target_filenames:
-            lines.append(f"# already exists in --target_db: {dest}")
+        exists_on_disk = os.path.exists(dest)
+        exists_in_db = target_filenames is not None and target_rel in target_filenames
+        if exists_on_disk or exists_in_db:
+            reason = "on disk" if exists_on_disk else "in --target_db"
+            lines.append(f"# already exists {reason}: {dest}")
             lines.append(f"rm -vf -- {shlex.quote(winner_file)}")
             num_removed += 1
         else:
@@ -171,25 +177,24 @@ def build_script(db_path, output_dir, targets, target_filenames):
 
 
 def main(argv):
-    if len(argv) != 2:
+    if len(argv) != 1:
         raise app.UsageError(
-            "Expected exactly one positional argument: path to the sqlite3 "
-            "database (got: %s)" % argv[1:])
-    database = argv[1]
+            "This tool takes no positional arguments; use --database "
+            "instead (got: %s)" % argv[1:])
 
-    rows = load_files(database)
+    rows = load_files(FLAGS.database)
     targets = group_by_target(rows)
     target_filenames = (
         load_target_filenames(FLAGS.target_db) if FLAGS.target_db else None)
     script, num_moved, num_removed, num_dup_removed, num_dup_skipped = build_script(
-        database, FLAGS.output_dir, targets, target_filenames)
+        FLAGS.database, FLAGS.output_dir, targets, target_filenames)
 
     sys.stdout.write(script)
 
     logging.info(
-        "%d files to move, %d files to remove (already present in "
-        "--target_db), %d redundant same-hash duplicates to remove, %d "
-        "different-hash collisions left in place",
+        "%d files to move, %d files to remove (destination already exists), "
+        "%d redundant same-hash duplicates to remove, %d different-hash "
+        "collisions left in place",
         num_moved, num_removed, num_dup_removed, num_dup_skipped)
     logging.info("Review the script before running it -- nothing was moved "
                  "or removed.")

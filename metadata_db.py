@@ -37,9 +37,9 @@ always resolved as a pick, even if a higher-precedence source says it
 was rejected or left unmarked -- a reject/unmarked verdict never
 overrides an actual pick. Among multiple picks, the precedence order
 above still decides whose star rating is used.
-Disagreements between sources are logged to stderr as CONFLICT lines;
-the resolved value (following the rule above) is still the one written
-to the database.
+Disagreements between sources are logged as CONFLICT warnings; the
+resolved value (following the rule above) is still the one written to
+the database.
 
 Both sources use the same "combined" rating encoding (documented in
 METADATA_SOURCES.md): a raw value in [-1, 5], where -1 means rejected
@@ -47,18 +47,43 @@ with no star rating, 0 means unmarked with no star rating, and a
 positive value N means picked with an N-star rating.
 
 See METADATA_SOURCES.md for the full write-up of this process.
+
+Usage:
+    metadata_db.py
+        --database ~/zoo.db
+        --root_dir /zoo/Pictures
+        --output metadata.db
 """
 
-import argparse
 import json
 import os
 import re
 import sqlite3
-import sys
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
+from absl import app
+from absl import flags
+from absl import logging
+
 from ranking import rank
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string(
+    "database", None, "Path to the sqlite3 image/hash database.")
+flags.DEFINE_string(
+    "root_dir", None,
+    "Filesystem directory that filenames in the hash database are "
+    "relative to (used to locate .xmp sidecars and '*.db' sources).")
+flags.DEFINE_string(
+    "output", "metadata.db",
+    "Path to write the new metadata sqlite3 database to.")
+flags.DEFINE_integer(
+    "exported_bonus", 1000,
+    "Popularity bonus applied when a copy lives under an '/Exported/' path.")
+flags.mark_flag_as_required("database")
+flags.mark_flag_as_required("root_dir")
 
 IMAGE_EXTENSIONS = {
     '.jpg', '.jpeg', '.png', '.dng', '.tif', '.tiff', '.heic', '.heif',
@@ -188,18 +213,19 @@ class ProdDbSource:
         self.sha224_to_rating = {}
 
     @classmethod
-    def try_load(cls, db_path, rel_path, log):
+    def try_load(cls, db_path, rel_path):
         try:
             conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         except sqlite3.Error as e:
-            log(f"INFO: could not open {rel_path} as sqlite3 ({e}); skipping")
+            logging.info("could not open %s as sqlite3 (%s); skipping",
+                         rel_path, e)
             return None
         try:
             tables = {r[0] for r in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table'")}
             if not {'images', 'photos'} <= tables:
-                log(f"INFO: {rel_path} does not have the expected "
-                    f"images/photos schema; skipping")
+                logging.info("%s does not have the expected images/photos "
+                             "schema; skipping", rel_path)
                 return None
             src = cls(db_path, rel_path)
             rows = conn.execute(
@@ -211,14 +237,14 @@ class ProdDbSource:
                 src.sha224_to_rating[sha224] = rating
             return src
         except sqlite3.Error as e:
-            log(f"INFO: {rel_path} does not look like a prod.db-style "
-                f"database ({e}); skipping")
+            logging.info("%s does not look like a prod.db-style database "
+                         "(%s); skipping", rel_path, e)
             return None
         finally:
             conn.close()
 
 
-def find_prod_db_sources(hash_to_files, root_dir, log):
+def find_prod_db_sources(hash_to_files, root_dir):
     """Locate and load every '*.db' file tracked in `hashes`."""
     db_files = sorted(f for f in hash_to_files_all_filenames(hash_to_files)
                        if f.lower().endswith('.db'))
@@ -226,13 +252,13 @@ def find_prod_db_sources(hash_to_files, root_dir, log):
     for rel_path in db_files:
         abs_path = os.path.join(root_dir, rel_path)
         if not os.path.isfile(abs_path):
-            log(f"INFO: {rel_path} listed in hashes table but not found "
-                f"under root_dir; skipping")
+            logging.info("%s listed in hashes table but not found under "
+                         "root_dir; skipping", rel_path)
             continue
-        src = ProdDbSource.try_load(abs_path, rel_path, log)
+        src = ProdDbSource.try_load(abs_path, rel_path)
         if src is not None:
-            log(f"INFO: loaded {len(src.sha224_to_rating)} ratings from "
-                f"{rel_path}")
+            logging.info("loaded %d ratings from %s",
+                         len(src.sha224_to_rating), rel_path)
             sources.append(src)
     # Prefer sources that are NOT inside an old 'Exported/' backup: put
     # those first so they win ties in prod_db_rating() below.
@@ -246,7 +272,7 @@ def hash_to_files_all_filenames(hash_to_files):
             yield f
 
 
-def prod_db_rating(hash_, sources, log):
+def prod_db_rating(hash_, sources):
     """Look up a hash across all prod.db-style sources.
 
     Returns (value, source_path) for the highest-precedence source that
@@ -258,12 +284,13 @@ def prod_db_rating(hash_, sources, log):
         return None
     values = {v for _, v in found}
     if len(values) > 1:
-        log(f"CONFLICT: hash {hash_} has disagreeing prod.db ratings: "
-            + ", ".join(f"{v} ({p})" for p, v in found))
+        logging.warning(
+            "CONFLICT: hash %s has disagreeing prod.db ratings: %s",
+            hash_, ", ".join(f"{v} ({p})" for p, v in found))
     return found[0][1], found[0][0]
 
 
-def xmp_rating(image_path, root_dir, log):
+def xmp_rating(image_path, root_dir):
     """Look up the combined rating in '<image_path>.xmp', if it exists."""
     xmp_path = os.path.join(root_dir, image_path + '.xmp')
     if not os.path.isfile(xmp_path):
@@ -276,7 +303,7 @@ def xmp_rating(image_path, root_dir, log):
         with open(xmp_path, 'rb') as f:
             data = f.read()
     except OSError as e:
-        log(f"INFO: could not read {xmp_path} ({e})")
+        logging.info("could not read %s (%s)", xmp_path, e)
         return None
 
     value = _parse_xmp_rating(data)
@@ -315,7 +342,7 @@ def _parse_xmp_rating(data):
     return None
 
 
-def resolve_rating(image, prod_sources, root_dir, log):
+def resolve_rating(image, prod_sources, root_dir):
     """Apply the rating precedence chain and return (rating, reject, source, source_path).
 
     Normally the highest-precedence source (see module docstring) wins.
@@ -327,12 +354,12 @@ def resolve_rating(image, prod_sources, root_dir, log):
     """
     candidates = []  # in precedence order
     for g in image['renditions']:  # already DNG-first
-        r = prod_db_rating(g.hash, prod_sources, log)
+        r = prod_db_rating(g.hash, prod_sources)
         if r is not None:
             value, path = r
             candidates.append(('prod.db', value, path))
     for g in image['renditions']:
-        r = xmp_rating(g.canonical, root_dir, log)
+        r = xmp_rating(g.canonical, root_dir)
         if r is not None:
             value, path = r
             candidates.append(('xmp', value, path))
@@ -347,13 +374,16 @@ def resolve_rating(image, prod_sources, root_dir, log):
     pool_values = {v for _, v, _ in pool}
 
     if overridden_by_pick:
-        log(f"CONFLICT: {image['filepath']} sources disagree: "
-            + ", ".join(f"{v} ({src}:{p})" for src, v, p in unique_candidates)
-            + " -- resolved as a PICK because at least one source picked it")
+        logging.warning(
+            "CONFLICT: %s sources disagree: %s -- resolved as a PICK "
+            "because at least one source picked it",
+            image['filepath'],
+            ", ".join(f"{v} ({src}:{p})" for src, v, p in unique_candidates))
     elif len(pool_values) > 1:
-        log(f"CONFLICT: {image['filepath']} has disagreeing ratings across "
-            "sources: " + ", ".join(
-                f"{v} ({src}:{p})" for src, v, p in unique_candidates))
+        logging.warning(
+            "CONFLICT: %s has disagreeing ratings across sources: %s",
+            image['filepath'],
+            ", ".join(f"{v} ({src}:{p})" for src, v, p in unique_candidates))
 
     source, value, path = pool[0]
     rating, reject = interpret_combined_rating(value)
@@ -383,16 +413,17 @@ def compute_popularity(image, exported_bonus):
             + compute_archive_bonus(image))
 
 
-def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus, log):
+def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus):
     hash_to_files = load_hashes(image_db_path)
-    log(f"INFO: loaded {sum(len(v) for v in hash_to_files.values())} file "
-        f"rows ({len(hash_to_files)} distinct hashes) from {image_db_path}")
+    logging.info("loaded %d file rows (%d distinct hashes) from %s",
+                 sum(len(v) for v in hash_to_files.values()),
+                 len(hash_to_files), image_db_path)
 
-    prod_sources = find_prod_db_sources(hash_to_files, root_dir, log)
+    prod_sources = find_prod_db_sources(hash_to_files, root_dir)
 
     logical_images = build_logical_images(hash_to_files)
-    log(f"INFO: {len(logical_images)} logical images after filtering to "
-        f"genuine image extensions and merging DNG/JPG pairs")
+    logging.info("%d logical images after filtering to genuine image "
+                 "extensions and merging DNG/JPG pairs", len(logical_images))
 
     if os.path.exists(output_path):
         os.remove(output_path)
@@ -415,7 +446,7 @@ def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus, log)
     rating_counts = defaultdict(int)
     for image in logical_images:
         rating, reject, source, source_path = resolve_rating(
-            image, prod_sources, root_dir, log)
+            image, prod_sources, root_dir)
         rating_counts[source] += 1
         popularity = compute_popularity(image, exported_bonus)
         conn.execute(
@@ -431,41 +462,22 @@ def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus, log)
     conn.commit()
     conn.close()
 
-    log(f"INFO: rating sources used: "
-        + ", ".join(f"{k or 'none'}={v}" for k, v in sorted(
+    logging.info(
+        "rating sources used: %s",
+        ", ".join(f"{k or 'none'}={v}" for k, v in sorted(
             rating_counts.items(), key=lambda kv: str(kv[0]))))
-    log(f"INFO: wrote {len(logical_images)} rows to {output_path}")
+    logging.info("wrote %d rows to %s", len(logical_images), output_path)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Build a metadata database (rating/reject/popularity) "
-                    "for a photo library's hash catalog."
-    )
-    parser.add_argument("database", help="path to the sqlite3 image/hash database")
-    parser.add_argument(
-        "--root_dir", required=True,
-        help="filesystem directory that filenames in the hash database are "
-             "relative to (used to locate .xmp sidecars and '*.db' sources)",
-    )
-    parser.add_argument(
-        "-o", "--output", default="metadata.db",
-        help="path to write the new metadata sqlite3 database to "
-             "(default: metadata.db)",
-    )
-    parser.add_argument(
-        "--exported-bonus", type=int, default=1000,
-        help="popularity bonus applied when a copy lives under an "
-             "'/Exported/' path (default: 1000)",
-    )
-    args = parser.parse_args()
+def main(argv):
+    if len(argv) != 1:
+        raise app.UsageError(
+            "This tool takes no positional arguments; use --database "
+            "instead (got: %s)" % argv[1:])
 
-    def log(msg):
-        print(msg, file=sys.stderr)
-
-    build_metadata_db(args.database, args.root_dir, args.output,
-                       args.exported_bonus, log)
+    build_metadata_db(FLAGS.database, FLAGS.root_dir, FLAGS.output,
+                       FLAGS.exported_bonus)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app.run(main)
