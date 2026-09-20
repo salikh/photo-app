@@ -21,6 +21,7 @@ Check items off here when the ticket's status is done.
 ## Cross-cutting
 
 - [ ] [040](docs/tickets/040.md) Test infrastructure and fixtures
+- [x] [041](docs/tickets/041.md) start.sh to bring up a local server
 
 ## Decisions needed from the user
 
