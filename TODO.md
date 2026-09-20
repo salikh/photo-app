@@ -15,8 +15,8 @@ Check items off here when the ticket's status is done.
 - [ ] [006](docs/tickets/006.md) Import and ratings
 - [ ] [007](docs/tickets/007.md) Read-only UI
 - [ ] [008](docs/tickets/008.md) Curation
-- [ ] [009](docs/tickets/009.md) Grouping UI
-- [ ] [010](docs/tickets/010.md) Hash recovery and nightly scan
+- [x] [009](docs/tickets/009.md) Grouping UI
+- [x] [010](docs/tickets/010.md) Hash recovery and nightly scan
 
 ## Cross-cutting
 

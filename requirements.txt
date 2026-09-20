@@ -6,3 +6,4 @@ absl-py
 pytest
 httpx
 rawpy
+playwright

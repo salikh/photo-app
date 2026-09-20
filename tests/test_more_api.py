@@ -38,6 +38,7 @@ def test_batch_rating_and_grouped_undo(settings):
   ids = [pid(c, "y/a.jpg"), pid(c, "y/b.jpg"), pid(c, "y/K1.DNG"), 99999]
   r = c.post("/api/photos/rating", json={"ids": ids, "rating": 5}).json()
   assert len(r["results"]) == 3 and r["errors"][0]["photo_id"] == 99999
+  assert all(x["photo"]["rating"] == 5 for x in r["results"])
   for p in ids[:3]:
     assert c.get(f"/api/photos/{p}").json()["rating"] == 5
   log = c.get("/api/activity").json()

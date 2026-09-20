@@ -7,6 +7,7 @@ import threading
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 import pydantic
@@ -88,6 +89,10 @@ def create_app(conn, settings):
   @app.get("/")
   def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+  @app.get("/favicon.ico")
+  def favicon():
+    return Response(status_code=204)
 
   @app.get("/api/health")
   def health():

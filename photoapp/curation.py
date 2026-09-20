@@ -83,10 +83,11 @@ def _backup_path(settings, rel_sidecar):
 
 
 def _log(conn, photo_id, xmp_path, field, old, new, cause, batch_id=None):
-  conn.execute(
+  cur = conn.execute(
       "INSERT INTO activity_log (ts, photo_id, xmp_path, field, old, new,"
       " cause, batch_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       (_now(), photo_id, xmp_path, field, old, new, cause, batch_id))
+  return cur.lastrowid
 
 
 def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
@@ -116,7 +117,7 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
     changes["tags"] = (json.dumps(old_tags), json.dumps(new_tags))
 
   rel_sidecar, exists, original_id = _sidecar_target(conn, settings, photo)
-  result = {"photo_id": photo_id, "sidecar": rel_sidecar,
+  result = {"photo_id": photo_id, "sidecar": rel_sidecar, "activity_ids": [],
             "changes": {k: {"old": o, "new": n}
                         for k, (o, n) in changes.items()},
             "dry_run": settings.xmp_dry_run, "created": not exists}
@@ -182,8 +183,9 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
     conn.execute("DELETE FROM tags WHERE photo_id = ?", (photo_id,))
     conn.executemany("INSERT OR IGNORE INTO tags (photo_id, tag) VALUES (?, ?)",
                      [(photo_id, t) for t in new_tags])
-  for field, (o, n) in changes.items():
-    _log(conn, photo_id, rel_sidecar, field, o, n, cause, batch_id)
+  result["activity_ids"] = [
+      _log(conn, photo_id, rel_sidecar, field, o, n, cause, batch_id)
+      for field, (o, n) in changes.items()]
   ratings.refresh_photo(conn, photo_id)
   ratings.remember(conn, photo_id)
   conn.commit()
@@ -204,8 +206,10 @@ def set_rating_batch(conn, settings, photo_ids, rating):
   results, errors = [], []
   for pid in dict.fromkeys(photo_ids):
     try:
-      results.append(_apply(conn, settings, pid, rating=int(rating),
-                            batch_id=batch_id))
+      result = _apply(conn, settings, pid, rating=int(rating),
+                      batch_id=batch_id)
+      result["photo"] = photo_state(conn, pid)
+      results.append(result)
     except CurationError as e:
       errors.append({"photo_id": pid, "error": str(e)})
   return {"batch_id": batch_id, "results": results, "errors": errors}
@@ -214,8 +218,8 @@ def set_rating_batch(conn, settings, photo_ids, rating):
 def undo_batch(conn, settings, batch_id):
   """Undo every not-yet-undone entry of a batch (newest first)."""
   entries = conn.execute(
-      "SELECT id FROM activity_log WHERE batch_id = ? AND undone = 0 "
-      "ORDER BY id DESC", (batch_id,)).fetchall()
+      "SELECT id, photo_id FROM activity_log WHERE batch_id = ? AND "
+      "undone = 0 ORDER BY id DESC", (batch_id,)).fetchall()
   if not entries:
     raise CurationError("nothing to undo for this batch")
   undone, errors = [], []
@@ -225,7 +229,9 @@ def undo_batch(conn, settings, batch_id):
       undone.append(e["id"])
     except CurationError as ex:
       errors.append({"activity_id": e["id"], "error": str(ex)})
-  return {"undone": undone, "errors": errors}
+  photo_ids = sorted({e["photo_id"] for e in entries})
+  return {"undone": undone, "errors": errors,
+          "photos": [photo_state(conn, pid) for pid in photo_ids]}
 
 
 def set_fav(conn, settings, photo_id, fav, cause="user"):

@@ -63,7 +63,7 @@ def _photo_json(r, tags):
       "id": r["id"], "file_id": r["file_id"],
       "name": r["path"].rpartition("/")[2], "path": r["path"],
       "rating": r["rating"], "fav": bool(r["fav"]),
-      "tags": tags, "conflict": bool(r["conflict"]),
+      "previous_stars": r["previous_stars"], "tags": tags, "conflict": bool(r["conflict"]),
       "files": r["nfiles"], "width": r["width"], "height": r["height"],
       "exif_date": r["exif_date"],
   }
@@ -89,7 +89,7 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
       "SELECT COUNT(*) FROM photos p JOIN files rf ON rf.id = "
       "p.representative_file_id WHERE " + where, args).fetchone()[0]
   rows = conn.execute(
-      "SELECT p.id, p.rating, p.fav, p.conflict, rf.id AS file_id, rf.path,"
+      "SELECT p.id, p.rating, p.fav, p.conflict, p.previous_stars, rf.id AS file_id, rf.path,"
       " rf.width, rf.height, rf.exif_date,"
       " (SELECT COUNT(*) FROM files x WHERE x.photo_id = p.id AND"
       "  x.missing = 0) AS nfiles"

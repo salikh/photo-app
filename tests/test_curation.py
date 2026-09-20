@@ -156,3 +156,10 @@ def test_http_api(settings):
   u = client.post(f"/api/activity/{log[0]['id']}/undo").json()
   assert u["photo"]["tags"] == []
   assert client.post(f"/api/activity/{log[0]['id']}/undo").status_code == 400
+
+
+def test_result_lists_activity_ids(conn, settings):
+  pid = setup_pair(conn, settings)
+  r = curation.set_rating(conn, settings, pid, 3)
+  assert r["activity_ids"] == [curation.recent_activity(conn)[0]["id"]]
+  assert curation.set_rating(conn, settings, pid, 3)["activity_ids"] == []   # no change
