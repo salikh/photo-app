@@ -96,12 +96,21 @@ a new file, GPS/caption editing, multi-user features, remote access.
   activity log.
 
 ### XMP handling
-- XMP sidecars are the source of truth. The sqlite DB is a rebuildable cache.
+- **The authoritative rating is the newest one, whether it is in the database or in an XMP
+  file** (changed 2026-09-21, ticket 021; this replaces "XMP sidecars are the source of truth,
+  the sqlite DB is a rebuildable cache"). Both the database and every sidecar of the Photo
+  (the original's and the camera JPG's) are eligible; whichever was set last wins. Each source
+  has a time: a sidecar's is its file modification time, the database's is the time the rating was
+  set there. The other sources are brought in line on the next write. Consequences: the
+  database holds ratings that are not derivable from the files alone (for example an imported
+  rating that was not written to XMP), so it must be backed up; and a rating brought in from
+  outside (an import, a recovered rating) carries the time it was originally set, not the time
+  it was imported.
 - Rating, fav and tags are written to the sidecars of both the original (DNG)
   and its camera JPG, creating the JPG's sidecar if it has none, so the two stay
   in sync in darktable (decided 2026-09-21, ticket 023; this replaces "original
   only"). Other files' sidecars (exports, tunings) are not modified. When
-  reading, if sidecars disagree the most recently modified one wins and the UI
+  reading, if the sources (database and sidecars) disagree the newest one wins and the UI
   shows a conflict badge until a write brings them back in sync.
 - v2 idea: a function to delete DNG files to save space (most likely for
   rating 1); the rating then lives on in the JPG's sidecar.
