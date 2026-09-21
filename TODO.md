@@ -50,7 +50,7 @@ context, the question, options if any, and an empty **Answer** section). The que
 closed and the blocked ticket continues. A ticket is "actionable" when it has no open blocker.
 
 - [ ] [061](docs/tickets/061.md) Try the phone UI on a real phone (blocks 044, 045, 046; on hold by the user)
-- [ ] [062](docs/tickets/062.md) Try zoom gestures on an iPad / Android tablet (blocks 060; after 060 is built)
+- [ ] [062](docs/tickets/062.md) Try zoom gestures on an iPad / Android tablet (blocks 060; 060 is built, ready to try)
 - [ ] [063](docs/tickets/063.md) Try culling a real folder and tell how it feels (blocks 031)
 - [ ] [064](docs/tickets/064.md) Have a look at the dark theme (blocks 047)
 - [ ] [065](docs/tickets/065.md) How should ratings newer in the database be written to the sidecars? (blocks the sync item of 021)
@@ -58,4 +58,6 @@ closed and the blocked ticket continues. A ticket is "actionable" when it has no
 Answered so far: 053 (a single file's reject never rejects the pair while the other is picked; app rejects newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars),
 042 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
-Epics 006, 007, 008 and 043 close when their children are done.
+Epic 007 is done. Epics 006, 008 and 043 close when the questions above are answered (006: only the optional sync item of 021).
+
+To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open `http://<this machine>:8080/` on the phone or tablet.
