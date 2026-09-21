@@ -25,6 +25,10 @@ Check items off here when the ticket's status is done.
 - [ ] [057](docs/tickets/057.md) Counts on the filter buttons and grid shortcuts
 - [ ] [058](docs/tickets/058.md) Move the reject button to the left of the rating buttons (loupe HUD and selection bar)
 
+## Later (requested, not for now)
+
+- [ ] [059](docs/tickets/059.md) Scrollable, tappable thumbnail strip below the main image (whole folder, also on phones)
+
 ## Cross-cutting
 
 - [x] [040](docs/tickets/040.md) Test infrastructure and fixtures
