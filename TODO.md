@@ -28,6 +28,7 @@ Check items off here when the ticket's status is done.
 ## Later (requested, not for now)
 
 - [ ] [059](docs/tickets/059.md) Scrollable, tappable thumbnail strip below the main image (whole folder, also on phones)
+- [ ] [060](docs/tickets/060.md) Pinch zoom in/out and pan of the zoomed (original size) photo on tablets (iPad, best also Android)
 
 ## Cross-cutting
 
