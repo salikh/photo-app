@@ -24,6 +24,7 @@ Check items off here when the ticket's status is done.
 - [x] [041](docs/tickets/041.md) start.sh to bring up a local server
 - [ ] [043](docs/tickets/043.md) Mobile UI (built and tested in an emulated phone; needs a real-phone try)
 - [ ] [047](docs/tickets/047.md) Dark theme (built, contrast checked; needs your look)
+- [ ] [050](docs/tickets/050.md) Preload the big image data of photos within +/-2 of the current one (faster transitions)
 - [ ] [048](docs/tickets/048.md) Library scan and reports (2001 + 2026 done; a wider scan is a ~90 minute job)
 
 ## Waiting on the user
