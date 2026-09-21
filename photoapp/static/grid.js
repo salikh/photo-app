@@ -47,6 +47,7 @@ export function loadRest(route, onPage = () => {}) {
       state.loaded += page.photos.length;
       state.photos.push(...fresh);
       onPage(fresh);
+      if (state.onPhotosChanged) state.onPhotosChanged();
     }
   })();
   state.rest = {route, promise};
@@ -159,6 +160,7 @@ export function removePhotos(photos) {
   }
   updateStatus();
   renderSelectionBar();
+  if (state.onPhotosChanged) state.onPhotosChanged();
   return entries;
 }
 
@@ -179,6 +181,7 @@ export function reinsertPhotos(entries) {
     gridEl.insertBefore(makeCell(photo), before || null);
   }
   updateStatus();
+  if (state.onPhotosChanged) state.onPhotosChanged();
 }
 
 // If the photo no longer matches the active filter, take it out of the view.

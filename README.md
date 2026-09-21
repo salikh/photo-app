@@ -26,6 +26,11 @@ While a filter is active, a photo whose rating stops matching it **leaves the vi
 in the viewer the next photo is shown, when the last one leaves the viewer closes, and `U` brings the photo
 back where it was. So `Unrated` + a rating key is the fast cull: rate, and the next unrated photo is in front of you.
 
+## The thumbnail strip
+
+Under the photo, a strip shows every photo of the folder (and filter). Scroll it (wheel, trackpad, or a sideways swipe on a phone) and
+click or tap a thumbnail to jump there; it follows the current photo and stays out of your way while you scroll it by hand.
+
 ## Speed of the viewer
 
 Moving to another photo or zooming is meant to be instant: the viewer preloads the pictures of the two photos each side of the

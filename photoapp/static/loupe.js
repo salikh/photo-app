@@ -9,10 +9,10 @@ import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
 import {label as filterLabel} from './filters.js';
 import * as preloader from './preload.js';
+import {createFilmstrip} from './filmstrip.js';
 import {updateCell, settle, reinsertPhotos, loadRest} from './grid.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
 
-const FILMSTRIP_RADIUS = 6;
 
 let root = null;
 const ui = {};
@@ -31,7 +31,11 @@ function build() {
     ui.img, ui.preview,
     el('button', {class: 'nav-hint prev', 'aria-label': 'previous', text: '‹', onclick: (e) => { e.stopPropagation(); go(-1); }}),
     el('button', {class: 'nav-hint next', 'aria-label': 'next', text: '›', onclick: (e) => { e.stopPropagation(); go(1); }}));
-  ui.filmstrip = el('div', {class: 'filmstrip'});
+  ui.strip = createFilmstrip((id) => {
+    const i = state.photos.findIndex((p) => p.id === id);
+    if (i >= 0) show(i);
+  });
+  ui.filmstrip = ui.strip.element;
   ui.hud = el('div', {class: 'hud'});
   ui.panel = null;
   root = el('div', {class: 'loupe', hidden: true, role: 'dialog', 'aria-label': 'photo viewer'},
@@ -84,6 +88,7 @@ export function open(photoId) {
   const i = state.photos.findIndex((p) => p.id === photoId);
   if (i < 0) { toast('photo not in this folder view', true); return false; }
   root.hidden = false;
+  state.onPhotosChanged = () => { if (isOpen() && index >= 0) renderFilmstrip(); };
   document.body.style.overflow = 'hidden';
   document.addEventListener('keydown', onKey);
   show(i);
@@ -98,6 +103,8 @@ export function showById(photoId) {
 export function close() {
   if (!root || root.hidden) return;
   root.hidden = true;
+  state.onPhotosChanged = null;
+  ui.strip.reset();
   preloader.clear();
   document.body.style.overflow = '';
   document.removeEventListener('keydown', onKey);
@@ -117,7 +124,7 @@ function show(i) {
   ui.img.alt = photo.name;
   retryOnce(ui.img, photo);
   renderHud();
-  renderFilmstrip();
+  renderFilmstrip(true);                 // centered on the current photo
   preload(delta);
   if (state.route) {
     state.route.photo = photo.id;
@@ -143,15 +150,8 @@ function preload(delta) {
   preloader.decodeCurrentHuge(photo);
 }
 
-function renderFilmstrip() {
-  const from = Math.max(0, index - FILMSTRIP_RADIUS);
-  const to = Math.min(state.photos.length, index + FILMSTRIP_RADIUS + 1);
-  ui.filmstrip.replaceChildren(...state.photos.slice(from, to).map((p, k) => {
-    const img = el('img', {src: imgUrl('Thumb', p.file_id), alt: p.name,
-                           class: from + k === index ? 'current' : '', onclick: () => show(from + k)});
-    retryImage(img);
-    return img;
-  }));
+function renderFilmstrip(center = false) {
+  ui.strip.render(state.photos, index, {center});
 }
 
 export function go(delta) {

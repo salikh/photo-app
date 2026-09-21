@@ -913,3 +913,181 @@ def test_slow_connection_type_also_skips_the_full_size(browser, server):
   pg.wait_for_timeout(800)
   assert "Huge" not in {s_ for s_, f in kind_ids(seen)}
   ctx.close()
+
+
+# --- the scrollable, tappable thumbnail strip (ticket 059) ----------------------------------------
+
+def big_folder_server(tmp_path, count=300):
+  """A server whose library also has a folder 'many' with `count` tiny photos."""
+  import os
+  from PIL import Image
+  from tests.e2e.harness import Server
+  srv = Server(tmp_path)
+  folder = os.path.join(srv.pictures, "many")
+  os.makedirs(folder)
+  for i in range(count):
+    Image.new("RGB", (16, 10), (i % 256, (i * 7) % 256, 90)).save(os.path.join(folder, f"P_{i + 1:04d}.jpg"))
+  return srv.start()
+
+
+def strip_metrics(page):
+  return page.evaluate("""() => {
+    const s = document.querySelector('.filmstrip');
+    return {scrollLeft: s.scrollLeft, clientWidth: s.clientWidth, scrollWidth: s.scrollWidth,
+            innerWidth: document.querySelector('.strip-inner').offsetWidth,
+            nodes: s.querySelectorAll('.thumb').length,
+            imgs: s.querySelectorAll('.thumb img').length,
+            currentCenter: (() => { const c = s.querySelector('.thumb.current'); if (!c) return null;
+                                    const r = c.getBoundingClientRect(), b = s.getBoundingClientRect();
+                                    return r.left + r.width / 2 - (b.left + b.width / 2); })()};
+  }""")
+
+
+def open_many(page, srv, position):
+  ids = [p["id"] for p in api(srv, "/api/photos?dir=many&sort=name&limit=1000")["photos"]]
+  page.goto(f"{srv.url}/#/many?photo={ids[position]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  return ids
+
+
+def test_strip_covers_the_whole_folder_with_few_dom_nodes_and_jumps_on_click(browser, tmp_path):
+  srv = big_folder_server(tmp_path)
+  try:
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    page = ctx.new_page()
+    open_many(page, srv, 0)
+    expect(page.locator(".hud .pos")).to_have_text("1/300")
+    page.wait_for_function("document.querySelector('.filmstrip').querySelectorAll('.thumb').length > 5")
+    m = strip_metrics(page)
+    assert m["innerWidth"] >= 300 * 88                                    # the strip is as long as the folder
+    assert 10 <= m["nodes"] <= 60                                          # but only the nodes near the view exist
+    page.evaluate("document.querySelector('.filmstrip').scrollLeft = document.querySelector('.filmstrip').scrollWidth")
+    expect(page.locator('.filmstrip .thumb[data-index="299"]')).to_have_count(1)
+    assert strip_metrics(page)["nodes"] <= 60                              # still few after scrolling to the end
+    page.locator('.filmstrip .thumb[data-index="299"]').click()
+    expect(page.locator(".hud .pos")).to_have_text("300/300")              # jump from far away
+    expect(page.locator(".filmstrip .thumb.current")).to_have_attribute("data-index", "299")
+    ctx.close()
+  finally:
+    srv.stop()
+
+
+def test_current_thumbnail_stays_centered_when_the_photo_changes(browser, tmp_path):
+  srv = big_folder_server(tmp_path)
+  try:
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    page = ctx.new_page()
+    open_many(page, srv, 150)
+    expect(page.locator(".hud .pos")).to_have_text("151/300")
+    page.wait_for_timeout(700)
+    assert abs(strip_metrics(page)["currentCenter"]) < 60
+    for _ in range(3):
+      page.keyboard.press("ArrowRight")
+    expect(page.locator(".hud .pos")).to_have_text("154/300")
+    page.wait_for_timeout(900)                                             # the smooth scroll finishes
+    assert abs(strip_metrics(page)["currentCenter"]) < 60
+    page.keyboard.press("End")
+    expect(page.locator(".hud .pos")).to_have_text("300/300")
+    page.wait_for_timeout(900)
+    assert strip_metrics(page)["scrollLeft"] > 20000                       # scrolled to the far end for us
+    ctx.close()
+  finally:
+    srv.stop()
+
+
+def test_scrolling_the_strip_by_hand_does_not_change_the_photo_or_get_undone(browser, tmp_path):
+  srv = big_folder_server(tmp_path)
+  try:
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    page = ctx.new_page()
+    open_many(page, srv, 150)
+    page.wait_for_timeout(700)
+    box = page.locator(".filmstrip").bounding_box()
+    page.mouse.move(box["x"] + 400, box["y"] + 30)
+    before = strip_metrics(page)["scrollLeft"]
+    page.mouse.wheel(0, 900)                                               # a vertical wheel scrolls it sideways
+    page.wait_for_function(f"document.querySelector('.filmstrip').scrollLeft > {before + 500}")
+    expect(page.locator(".hud .pos")).to_have_text("151/300")              # the photo did not change
+    scrolled = strip_metrics(page)["scrollLeft"]
+    page.wait_for_timeout(500)
+    assert abs(strip_metrics(page)["scrollLeft"] - scrolled) < 5           # and nothing scrolled it back
+    # a thumbnail on screen, far from the current one, is clickable
+    target = page.locator(".filmstrip .thumb").evaluate_all(
+        "els => els.map(e => [Number(e.dataset.index), e.getBoundingClientRect().left]).filter(x => x[1] > 300 && x[1] < 900)")[0][0]
+    page.locator(f'.filmstrip .thumb[data-index="{target}"]').click()
+    expect(page.locator(".hud .pos")).to_have_text(f"{target + 1}/300")
+    ctx.close()
+  finally:
+    srv.stop()
+
+
+def test_fast_scrolling_does_not_request_hundreds_of_thumbnails(browser, tmp_path):
+  srv = big_folder_server(tmp_path)
+  try:
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    page = ctx.new_page()
+    open_many(page, srv, 0)
+    page.wait_for_timeout(800)
+    thumbs = []
+    page.on("request", lambda r: thumbs.append(r.url) if "/img/Thumb/" in r.url else None)
+    # sweep the whole strip in about 0.6 s, then stop at the far end
+    page.evaluate("""async () => {
+      const s = document.querySelector('.filmstrip');
+      for (let x = 0; x <= s.scrollWidth; x += 700) { s.scrollLeft = x; await new Promise(r => setTimeout(r, 15)); }
+    }""")
+    page.wait_for_timeout(900)                                             # scrolling paused: the view's images load
+    assert len(thumbs) < 60, len(thumbs)                                   # not the ~300 that were swept past
+    m = strip_metrics(page)
+    assert m["imgs"] >= 5                                                  # but the visible ones do load
+    ctx.close()
+  finally:
+    srv.stop()
+
+
+def test_strip_follows_the_filter_and_photos_leaving_and_returning(page, server):
+  page.goto(server.url + "/#/2024/trip?filter=unrated")
+  expect(page.locator(".cell")).to_have_count(4)
+  page.locator(".cell").first.click()
+  expect(page.locator(".loupe")).to_be_visible()
+  page.wait_for_function("document.querySelectorAll('.filmstrip .thumb').length === 4")
+  assert strip_metrics(page)["innerWidth"] >= 4 * 88
+  page.keyboard.press("3")                                                 # the photo leaves the filter
+  expect(page.locator(".hud .pos")).to_have_text("1/3")
+  page.wait_for_function("document.querySelectorAll('.filmstrip .thumb').length === 3")
+  assert strip_metrics(page)["innerWidth"] < 4 * 88 + 10
+  expect(page.locator(".filmstrip .thumb.current")).to_have_attribute("data-index", "0")
+  page.keyboard.press("u")                                                 # and comes back
+  page.wait_for_function("document.querySelectorAll('.filmstrip .thumb').length === 4")
+  expect(page.locator(".hud .pos")).to_have_text("1/4")
+
+
+def test_strip_is_slim_visible_and_tappable_on_a_phone(browser, tmp_path):
+  srv = big_folder_server(tmp_path, count=60)
+  try:
+    ctx = browser.new_context(viewport={"width": 390, "height": 800}, has_touch=True, is_mobile=True, device_scale_factor=2)
+    page = ctx.new_page()
+    open_many(page, srv, 10)
+    expect(page.locator(".filmstrip")).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    hud = page.locator(".hud").bounding_box()
+    assert hud["y"] + hud["height"] <= 801                                  # the buttons are still on screen
+    thumb = page.locator(".filmstrip .thumb").first.bounding_box()
+    assert thumb["height"] >= 43
+    page.wait_for_timeout(700)
+    target = page.locator(".filmstrip .thumb").evaluate_all(
+        "els => els.map(e => [Number(e.dataset.index), e.getBoundingClientRect().left]).filter(x => x[1] > 20 && x[1] < 330 && x[0] !== 10)")[0][0]
+    page.locator(f'.filmstrip .thumb[data-index="{target}"]').tap()
+    expect(page.locator(".hud .pos")).to_have_text(f"{target + 1}/60")
+    # swiping the strip sideways scrolls it and leaves the photo alone
+    strip = page.locator(".filmstrip").bounding_box()
+    y = strip["y"] + strip["height"] / 2
+    before = strip_metrics(page)["scrollLeft"]
+    page.mouse.move(strip["x"] + 300, y)
+    page.mouse.down()
+    for i in range(1, 9):
+      page.mouse.move(strip["x"] + 300 - i * 25, y)
+    page.mouse.up()
+    expect(page.locator(".hud .pos")).to_have_text(f"{target + 1}/60")
+    ctx.close()
+  finally:
+    srv.stop()

@@ -183,10 +183,23 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .hud .buttons button { min-width: var(--touch); padding: 0 8px; }
 .hud input.tags { width: 12em; }
 
-.filmstrip { display: none; gap: 4px; padding: 4px 8px; overflow-x: auto; background: var(--bg-raised); }
-.filmstrip img { height: 56px; width: 84px; object-fit: cover; opacity: 0.6; border-radius: 3px; flex: none; }
-.filmstrip img.current { opacity: 1; outline: 2px solid var(--accent); }
-@media (min-width: 700px) { .filmstrip { display: flex; } }
+/* the strip of thumbnails: every photo of the folder, scrollable (ticket 059) */
+.filmstrip {
+  --thumb-w: 84px; --thumb-h: 56px;
+  position: relative; flex: none; height: calc(var(--thumb-h) + 12px);
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin;
+  touch-action: pan-x;                         /* a sideways drag scrolls the strip, not the page */
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg-raised);
+}
+.strip-inner { position: relative; height: 100%; }
+.filmstrip .thumb {
+  position: absolute; top: 6px; width: var(--thumb-w); height: var(--thumb-h); border-radius: 3px;
+  background: var(--bg-hover); overflow: hidden; opacity: 0.6; cursor: pointer; display: block;
+}
+.filmstrip .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; }
+.filmstrip .thumb.current { opacity: 1; outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 699px) { .filmstrip { --thumb-w: 66px; --thumb-h: 44px; } }   /* slim, still 44 px tall to tap */
 
 .files-panel {
   position: absolute; right: 0; top: 0; bottom: 0; width: min(420px, 100%); overflow: auto;

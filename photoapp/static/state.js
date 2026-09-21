@@ -11,5 +11,6 @@ export const state = {
   selected: new Set(),
   selecting: false,   // touch-friendly selection mode
   undoStack: [],      // {ids: [activity ids]} or {batch_id}, plus left: photos that left the view
+  onPhotosChanged: null,   // set by the viewer: called when photos are added to or removed from the list
   dirty: false,
 };
