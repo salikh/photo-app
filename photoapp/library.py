@@ -45,7 +45,14 @@ def _norm_dir(rel_dir):
 
 def list_dirs(conn, rel_dir="."):
   """Child directories of rel_dir with Photo counts (whole subtree), and the
-  number of Photos directly in rel_dir."""
+  number of Photos directly in rel_dir.
+
+  Folders whose name starts with '.' (leftovers of old programs such as
+  .thumbnails or .picasaoriginals) are not listed and their Photos are left
+  out of the counts (ticket 054). They still exist and can be opened by
+  path; only the directory part of a path is looked at, so a file whose own
+  name starts with '.' is unaffected.
+  """
   rel_dir = _norm_dir(rel_dir)
   lo, hi = _prefix_range(rel_dir)
   counts = {
@@ -55,6 +62,7 @@ def list_dirs(conn, rel_dir="."):
           " SELECT substr(f.path, ?) AS rest, f.photo_id FROM files f"
           " WHERE f.path >= ? AND f.path < ? AND f.missing = 0"
           "  AND f.photo_id IS NOT NULL) WHERE instr(rest, '/') > 0"
+          "  AND rest NOT LIKE '.%/%' AND rest NOT LIKE '%/.%/%'"
           " GROUP BY name", (len(lo) + 1, lo, hi))
   }
   return {"path": rel_dir,

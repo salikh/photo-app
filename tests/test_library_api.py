@@ -153,3 +153,31 @@ def test_one_star_is_unrated_changes_filters_only_when_enabled(settings):
   assert listed(on, "rejected") == ["3.jpg"]
   # the data itself is untouched: the API still reports the real rating
   assert {p["name"]: p["rating"] for p in on.get("/api/photos", params={"dir": "s"}).json()["photos"]}["0.jpg"] == 1
+
+
+def test_folders_starting_with_a_dot_are_not_listed_or_counted(settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "2001", "trip", "a.jpg"))
+  make_jpeg(os.path.join(d, "2001", "trip", ".nu", "thumb1.jpg"))
+  make_jpeg(os.path.join(d, "2001", "trip", ".nu", "thumb2.jpg"))
+  make_jpeg(os.path.join(d, "2001", "trip", "sub", ".thumbnails", "t.jpg"))
+  make_jpeg(os.path.join(d, "2001", "trip", "sub", "b.jpg"))
+  make_jpeg(os.path.join(d, "2001", ".picasaoriginals", "o.jpg"))
+  make_jpeg(os.path.join(d, ".hidden-top", "h.jpg"))
+  make_jpeg(os.path.join(d, "2001", "trip", ".dotfile.jpg"))            # a file, not a folder
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  c = TestClient(api.create_app(conn, settings))
+
+  root = c.get("/api/dirs").json()
+  assert [x["name"] for x in root["dirs"]] == ["2001"]                   # .hidden-top is not listed
+  y = c.get("/api/dirs", params={"path": "2001"}).json()
+  assert y["dirs"] == [{"name": "trip", "photos": 3}]                    # a, .dotfile, sub/b (not .nu, .thumbnails)
+  trip = c.get("/api/dirs", params={"path": "2001/trip"}).json()
+  assert trip["dirs"] == [{"name": "sub", "photos": 1}]                  # .nu hidden; sub counts b only
+  assert trip["photos"] == 2                                             # a.jpg and .dotfile.jpg stay
+  # hidden folders can still be opened by path, nothing is deleted
+  assert c.get("/api/dirs", params={"path": "2001/trip/.nu"}).json()["photos"] == 2
+  listed = c.get("/api/photos", params={"dir": "2001/trip/.nu"}).json()
+  assert listed["total"] == 2
+  assert c.get("/api/dirs", params={"path": "2001/trip/.nu"}).json()["dirs"] == []

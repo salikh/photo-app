@@ -348,3 +348,21 @@ def test_rating_step_logic_in_the_browser(page, server):
   assert result["flagKeys"] == [0, 2]
   assert result["shown"][:2] == [0, 2] and result["shown"][2] == "☆" * 5
   assert result["shown"][3] == [0, 2, 3, 4, 5]
+
+
+def test_folders_starting_with_a_dot_are_not_shown_as_chips(page, server):
+  import os
+  from tests.conftest import make_jpeg
+  make_jpeg(os.path.join(server.pictures, "2024/trip/.nu/x.jpg"))
+  make_jpeg(os.path.join(server.pictures, "2024/.thumbnails/y.jpg"))
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  page.goto(server.url + "/#/2024")
+  expect(page.locator(".folders a")).to_have_count(2)                       # trip and home only
+  texts = " ".join(page.locator(".folders a").all_inner_texts())
+  assert ".nu" not in texts and ".thumbnails" not in texts
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  expect(page.locator(".folders a")).to_have_count(0)                       # only .nu below: nothing shown
+  page.goto(server.url + "/#/2024/trip/.nu")                                # still reachable by path
+  expect(page.locator(".cell")).to_have_count(1)

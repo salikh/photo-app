@@ -32,6 +32,14 @@ running the same command again skips finished directories (by their mtime) and c
 `--scan_dirs=2001,2026` scans only those directories; `--scan_workers` sets the read threads.
 The **Rescan** button and the nightly scan work the same way (a folder-scoped rescan scans that folder).
 
+## Hidden folders
+
+Folders whose name starts with a dot (`.nu`, `.thumbnails`, `.webaxs`, `.picasaoriginals`, `.comments`:
+leftovers of old programs) are not listed in the folder view, and their Photos are not counted in the
+folders that contain them. Nothing is deleted, scans still read them, and a hidden folder can be opened
+by its path (for example `#/2001/new-epoch/.nu`). A file whose own name starts with a dot is not
+affected. Restart the app after updating so the server code is current.
+
 ## What is in the state directory, and what to back up
 
 | Path | Rebuildable from disk? | Back it up? |
