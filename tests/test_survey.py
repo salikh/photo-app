@@ -30,3 +30,28 @@ def test_survey_counts_agreements_conflicts_and_orphans(conn, settings):
   assert r["rating_distribution"] == {2: 1, 4: 1, 5: 1}
   text = survey.format_report(r)
   assert "disagree: 2" in text.replace("sidecars disagree: 2 ", "disagree: 2 ") and "gone" not in text
+
+
+def test_survey_and_attention_report_sidecars_behind_and_overruled_rejects(conn, settings):
+  import time as time_
+  from fastapi.testclient import TestClient
+  from photoapp import api
+  d = settings.pictures_dir
+  for n in ("a", "b"):
+    touch(os.path.join(d, n + ".DNG"))
+    make_jpeg(os.path.join(d, n + ".JPG"))
+  write(os.path.join(d, "a.DNG.xmp"), XMP % (-1, ""), mtime=200)       # a: DNG reject, JPG picked
+  write(os.path.join(d, "a.JPG.xmp"), XMP % (1, ""), mtime=100)
+  write(os.path.join(d, "b.DNG.xmp"), XMP % (2, ""), mtime=100)        # b: the database gets a newer rating
+  write(os.path.join(d, "b.JPG.xmp"), XMP % (2, ""), mtime=100)
+  scan.scan(conn, d)
+  pid = conn.execute("SELECT photo_id FROM files WHERE path = 'b.DNG'").fetchone()[0]
+  conn.execute("UPDATE photos SET rating = 5, rating_updated_at = ?, rating_source = 'import' WHERE id = ?", (time_.time(), pid))
+  conn.commit()
+  from photoapp import ratings
+  ratings.refresh_photo(conn, pid)
+  r = survey.survey(conn)
+  assert r["rejects_overruled"] == 1 and r["sidecars_behind"] == 1
+  assert "single-file rejects overruled by a picked file: 1" in survey.format_report(r)
+  data = TestClient(api.create_app(conn, settings)).get("/api/attention").json()
+  assert [x["path"] for x in data["sidecars_behind"]] == ["b.JPG"]        # a pair is listed by its camera JPG

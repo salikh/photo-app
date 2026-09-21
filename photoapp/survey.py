@@ -40,12 +40,15 @@ def survey(conn):
   report = {"totals": dict(totals), "sidecar_count_per_photo": collections.Counter(),
             "rating_distribution": collections.Counter(),
             "conflicts": 0, "rating_conflicts": 0, "fav_conflicts": 0,
+            "sidecars_behind": 0, "rejects_overruled": 0,
             "newest_is_original": 0, "newest_is_other": 0,
             "disagreement_pairs": collections.Counter(), "samples": []}
   for pid, sidecars in by_photo.items():
     report["sidecar_count_per_photo"][len(sidecars)] += 1
-    resolved = ratings.resolve(sidecars)
+    resolved = ratings.resolve(sidecars, ratings.db_source(conn, pid))
     report["rating_distribution"][resolved.rating] += 1
+    report["rejects_overruled"] += resolved.reject_overruled
+    report["sidecars_behind"] += resolved.db_wins and resolved.conflict
     if not resolved.conflict:
       continue
     report["conflicts"] += 1
@@ -83,6 +86,8 @@ def format_report(r):
               r["rating_distribution"].items(), key=lambda kv: (kv[0] is None, kv[0]))),
       f"Photos whose sidecars disagree: {r['conflicts']} "
       f"(rating: {r['rating_conflicts']}, fav: {r['fav_conflicts']})",
+      f"Sidecars behind a newer database rating: {r['sidecars_behind']}   "
+      f"single-file rejects overruled by a picked file: {r['rejects_overruled']}",
       f"  newest sidecar is the original's: {r['newest_is_original']}, another file's: {r['newest_is_other']}",
       "  most common rating disagreements: " + ", ".join(
           f"{a}: {n}" for a, n in r["disagreement_pairs"].most_common(8)),

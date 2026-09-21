@@ -38,6 +38,9 @@ export async function attentionPage(main) {
     el('h2', {text: `Sidecars that disagree (${a.conflicts.length})`}),
     a.conflicts.length ? table(['Photo', 'Rating shown'], a.conflicts.map((c) => el('tr', {},
       el('td', {}, photoLink(c.path)), el('td', {text: c.rating})))) : el('p', {class: 'status ok', text: 'None.'}),
+    el('h2', {text: `Sidecars behind a newer rating in the database (${a.sidecars_behind.length})`}),
+    a.sidecars_behind.length ? table(['Photo', 'Rating shown'], a.sidecars_behind.map((c) => el('tr', {},
+      el('td', {}, photoLink(c.path)), el('td', {text: c.rating})))) : el('p', {class: 'status ok', text: 'None.'}),
     el('h2', {text: `Sidecars without a picture (${a.orphan_sidecars.length})`}),
     a.orphan_sidecars.length ? table(['Sidecar'], a.orphan_sidecars.map((p) => el('tr', {}, el('td', {}, photoLink(p)))))
       : el('p', {class: 'status ok', text: 'None.'}),

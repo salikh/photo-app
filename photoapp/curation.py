@@ -11,6 +11,7 @@ import datetime
 import hashlib
 import json
 import os
+import time
 import uuid
 
 from absl import logging
@@ -200,6 +201,11 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
     conn.commit()
     raise CurationError(error + (f" (already written: {', '.join(written)})"
                                  if written else ""))
+  # The database's own time for this state: the newest sidecar written (they tie, so the
+  # next scan sees database and sidecars agree), or now when no sidecar was written.
+  stamp = max((os.stat(os.path.join(settings.pictures_dir, rel)).st_mtime for rel in written),
+              default=time.time())
+  conn.execute("UPDATE photos SET rating_updated_at = ? WHERE id = ?", (stamp, photo_id))
   if "rating" in changes:
     # Rejecting erases the star count in the sidecar; remember it for un-reject.
     prev = photo["previous_stars"]

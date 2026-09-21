@@ -217,7 +217,15 @@ def create_app(conn, settings):
       orphans = [r["path"] for r in conn.execute(
           "SELECT path FROM xmp_sidecars WHERE file_id IS NULL "
           "ORDER BY path LIMIT 500")]
-      return {"conflicts": conflicts, "orphan_sidecars": orphans,
+      behind = [dict(r) for r in conn.execute(
+          "SELECT p.id, p.rating, rf.path FROM photos p JOIN files rf ON "
+          "rf.id = p.representative_file_id WHERE p.conflict = 1 AND "
+          "p.rating_updated_at IS NOT NULL AND p.rating_updated_at > "
+          "COALESCE((SELECT MAX(s.mtime) FROM xmp_sidecars s JOIN files f ON "
+          "f.id = s.file_id WHERE f.photo_id = p.id), 0) + 2 "
+          "ORDER BY rf.path LIMIT 500")]
+      return {"conflicts": conflicts, "sidecars_behind": behind,
+              "orphan_sidecars": orphans,
               "ambiguous_recovery": recovery.ambiguous(conn)}
 
   @app.get("/api/activity")

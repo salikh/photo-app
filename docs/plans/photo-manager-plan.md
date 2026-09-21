@@ -194,10 +194,26 @@ Design notes:
 - Combined rating `r` in [-1, 5]. UI mapping: digit `1..5` sets `r`, `0`
   clears, `X` toggles `-1`. `F` toggles fav. Tag entry edits `dc:subject`
   minus `fav`.
-- Read path (scan and on demand): parse every sidecar belonging to the Photo's
-  files. If values agree, that is the Photo's value. If they differ, the
-  sidecar with the newest mtime wins, `photos.conflict=1`, and the UI shows a
-  badge on reading.
+- Read path (scan and on demand): **the newest rating wins, whether it is in the
+  database or in a sidecar** (ticket 021, requirement change 2026-09-21). Sources:
+  every sidecar of the Photo (time = file mtime) and the database's own rating when
+  the database decided it (`photos.rating_source` in `app`, `import`,
+  `hash-recovery`; time = `photos.rating_updated_at`). A database rating that was
+  only read from a sidecar (`xmp`) is a cache and not a source. Sidecars are ordered
+  by time then path; a database time within 2 s of the newest sidecar (clock skew)
+  or later wins. A newer sidecar replaces the database value and its time; a newer
+  database value is kept and shows as `photos.conflict=1` ("sidecars behind") until
+  the next write brings the sidecars in line. The scan never writes sidecars.
+- Reject rule (ticket 053): darktable treats the DNG and JPG as separate images, so a
+  reject on one sidecar often only means "keep the other file". A reject that comes
+  from a sidecar does not reject the Photo while another sidecar is picked
+  (rating 1..5); the rating is then the newest picked sidecar's. A reject made in
+  this app is written to both sidecars and the database, so it stands, and a newer
+  app decision always wins.
+- Imported and recovered ratings carry the time they were originally set
+  (`image_metadata.py` `rating_time` = mtime of the file the rating came from); an
+  import applies only if that is newer than the Photo's database time and its
+  newest sidecar.
 - Write path (decided in ticket 023): rating, fav and tags are written to the
   sidecars of the original and its camera JPG (a missing JPG sidecar is
   created), each with its own first-seen backup. Writing therefore brings the

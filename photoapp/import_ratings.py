@@ -6,10 +6,14 @@ Usage:
 
 Rules:
   * Every row is remembered in rating_by_hash (for rename recovery).
-  * A Photo whose rating already comes from XMP or was set in the app is
-    never changed; if it differs from the import, it is reported.
-  * Otherwise the imported rating is stored in the database (source
-    'import') and logged. Sidecars are written only with --write_xmp.
+  * The newest rating wins (ticket 021). An imported rating carries the time it was
+    originally set (image_metadata.py's rating_time, the mtime of the file it came from;
+    0 when unknown) and is applied only if that is newer than the Photo's database time
+    and its newest sidecar. Otherwise the existing rating is kept, and reported when it
+    differs. An import without times therefore only fills Photos that have no dated
+    rating from a sidecar or the app.
+  * An applied rating is stored in the database with its own time (source 'import') and
+    logged. Sidecars are written only with --write_xmp, and only for winning ratings.
 """
 
 import dataclasses
@@ -23,6 +27,7 @@ from absl import logging
 from photoapp import config  # noqa: F401  (defines the shared flags)
 from photoapp import curation
 from photoapp import db as db_lib
+from photoapp import ratings
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("metadata_db", None,
@@ -47,8 +52,11 @@ def _load_rows(metadata_db):
   conn = sqlite3.connect(f"file:{metadata_db}?mode=ro", uri=True)
   conn.row_factory = sqlite3.Row
   try:
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(images)")}
+    time_column = "rating_time" if "rating_time" in columns else "NULL"
     return [dict(r) for r in conn.execute(
-        "SELECT hash, filepath, rating, merged_paths FROM images")]
+        f"SELECT hash, filepath, rating, {time_column} AS rating_time, merged_paths "
+        "FROM images")]
   finally:
     conn.close()
 
@@ -68,10 +76,11 @@ def import_ratings(conn, settings, metadata_db, write_xmp=False):
     report.rows += 1
     rating = max(-1, min(5, int(row["rating"])))
     conn.execute(
-        "INSERT INTO rating_by_hash (hash, rating, fav, last_path) "
-        "VALUES (?, ?, 0, ?) ON CONFLICT(hash) DO UPDATE SET "
-        "rating = excluded.rating, last_path = excluded.last_path",
-        (row["hash"], rating, row["filepath"]))
+        "INSERT INTO rating_by_hash (hash, rating, fav, last_path, rated_at) "
+        "VALUES (?, ?, 0, ?, ?) ON CONFLICT(hash) DO UPDATE SET "
+        "rating = excluded.rating, last_path = excluded.last_path, "
+        "rated_at = excluded.rated_at",
+        (row["hash"], rating, row["filepath"], row["rating_time"]))
     photos = set(by_hash.get(row["hash"], ()))
     for path in json.loads(row["merged_paths"]):
       if path in by_path:
@@ -80,39 +89,52 @@ def import_ratings(conn, settings, metadata_db, write_xmp=False):
       report.unmatched_rows += 1
       continue
     for pid in photos:
-      wanted.setdefault(pid, {}).setdefault(rating, []).append(row["filepath"])
+      group = wanted.setdefault(pid, {}).setdefault(rating, {"paths": [], "time": 0.0})
+      group["paths"].append(row["filepath"])
+      group["time"] = max(group["time"], row["rating_time"] or 0.0)
 
-  for pid, ratings in sorted(wanted.items()):
+  for pid, by_rating in sorted(wanted.items()):
     report.matched_photos += 1
-    if len(ratings) > 1:
-      report.ambiguous.append({"photo_id": pid, "ratings": sorted(ratings)})
+    if len(by_rating) > 1:
+      report.ambiguous.append({"photo_id": pid, "ratings": sorted(by_rating)})
       continue
-    (rating, paths), = ratings.items()
+    (rating, group), = by_rating.items()
+    paths, when = group["paths"], group["time"]
     if rating == 0:
       report.skipped_unrated += 1
       continue
-    photo = conn.execute("SELECT rating, rating_source FROM photos "
-                         "WHERE id = ?", (pid,)).fetchone()
-    if photo["rating_source"] in ("xmp", "app"):
+    photo = conn.execute(
+        "SELECT rating, rating_source, rating_updated_at FROM photos WHERE id = ?",
+        (pid,)).fetchone()
+    newest_sidecar = conn.execute(
+        "SELECT MAX(s.mtime) FROM xmp_sidecars s JOIN files f ON f.id = s.file_id "
+        "WHERE f.photo_id = ?", (pid,)).fetchone()[0] or 0.0
+    existing = max(photo["rating_updated_at"] or 0.0, newest_sidecar)
+    # nothing dated to compare with (no sidecar, no app decision): the import fills the gap
+    fills_gap = existing == 0.0 and photo["rating_source"] not in ("xmp", "app")
+    if not (when > existing or fills_gap):
       report.kept_existing += 1
       if photo["rating"] != rating:
         report.disagreements.append(
             {"photo_id": pid, "path": paths[0], "xmp_or_app": photo["rating"],
-             "imported": rating, "source": photo["rating_source"]})
+             "imported": rating, "source": photo["rating_source"],
+             "imported_time": when or None, "existing_time": existing or None})
       continue
     if write_xmp:
       curation.set_rating(conn, settings, pid, rating, cause="import")
       # dry run leaves the database alone
     elif photo["rating"] != rating:
-      conn.execute("UPDATE photos SET rating = ?, rating_source = 'import' "
-                   "WHERE id = ?", (rating, pid))
+      conn.execute("UPDATE photos SET rating = ?, rating_source = 'import', "
+                   "rating_updated_at = ? WHERE id = ?", (rating, when or None, pid))
       conn.execute(
           "INSERT INTO activity_log (ts, photo_id, xmp_path, field, old, new,"
           " cause) VALUES (?, ?, NULL, 'rating', ?, ?, 'import')",
           (curation._now(), pid, str(photo["rating"]), str(rating)))
     else:
-      conn.execute("UPDATE photos SET rating_source = 'import' WHERE id = ?",
-                   (pid,))
+      conn.execute("UPDATE photos SET rating_source = 'import', "
+                   "rating_updated_at = COALESCE(?, rating_updated_at) WHERE id = ?",
+                   (when or None, pid))
+    ratings.refresh_photo(conn, pid)      # sets the conflict flag when the sidecars are behind
     report.applied += 1
   conn.commit()
   return report

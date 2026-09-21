@@ -49,7 +49,7 @@ def test_rating_is_written_to_both_dng_and_jpg_sidecars_with_backups(conn, setti
              for dp, _, fs in os.walk(settings.state_dir) for f in fs if "xmp_backups" in dp}
   assert len(backups) == 2
   assert sorted(v for v in backups.values()) == sorted([dng_before, jpg_before])
-  assert conn.execute("SELECT rating_source FROM photos WHERE id = ?", (pid,)).fetchone()[0] == "xmp"
+  assert conn.execute("SELECT rating_source FROM photos WHERE id = ?", (pid,)).fetchone()[0] == "app"   # set here, sidecars tie
   log = curation.recent_activity(conn)
   assert [(l["field"], l["old"], l["new"], l["cause"]) for l in log] == [("rating", "1", "4", "user")]   # tie on mtime: the DNG sidecar (1) was shown
   curation.set_rating(conn, settings, pid, 5)                     # no new backups

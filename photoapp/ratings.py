@@ -40,34 +40,81 @@ def step(current, delta, previous_stars=None):
   return new
 
 
+# Clocks differ (the app machine versus the file server): a database time within this many
+# seconds of the newest sidecar counts as a tie, and a tie keeps the database value.
+SKEW_TOLERANCE = 2.0
+
+DATABASE = "(database)"
+
+
 @dataclasses.dataclass
 class Resolved:
-  rating: int = None    # None: no sidecar has an opinion
+  rating: int = None        # None: no source has an opinion
   fav: bool = False
   tags: tuple = ()
-  conflict: bool = False
-  source_path: str = None   # sidecar the values come from
+  conflict: bool = False    # sidecars disagree, or the database is ahead of a differing sidecar
+  source_path: str = None   # sidecar path the rating comes from, or DATABASE
+  db_wins: bool = False     # the database is the newest source (sidecars are behind or equal)
+  mtime: float = None       # time of the winning source
+  reject_overruled: bool = False   # a single file's reject was not applied to the Photo (see below)
 
 
-def resolve(sidecars):
-  """Resolve a Photo's state from its sidecars.
+def _newest_sidecar_first(sidecars):
+  return sorted(sidecars, key=lambda s: (-s["mtime"], s["path"]))
+
+
+def resolve(sidecars, db=None):
+  """Resolve a Photo's state: the newest source wins (ticket 021).
 
   sidecars: dicts with path, mtime, rating (None when absent), has_fav, tags.
-  The newest sidecar decides fav and tags, and the rating unless it has
-  none (then the newest sidecar that has one). Sidecars that disagree on
-  rating or fav set conflict; nothing is modified.
+  db: the database's own value, {mtime, rating, has_fav, tags}, or None when the database has no
+  dated rating. Both the database and every sidecar are eligible; the newest wins. Sidecars are
+  ordered by time then path; a database time within SKEW_TOLERANCE of the newest sidecar (or
+  later) wins the tie. The winner decides fav and tags too.
+
+  Reject rule (ticket 053): darktable treats the DNG and the JPG as separate images, so a reject
+  on one sidecar often only means "keep the other file". If the rating winner is a reject that
+  comes from a sidecar and another sidecar is picked (rating 1..5), the Photo is not rejected:
+  its rating is the newest picked sidecar's. A reject made in this app is written to every
+  sidecar and the database, so nothing is picked and it stands, and if the database is the
+  newest source its reject wins outright.
+
+  conflict: the sidecars disagree on rating or fav, or the database wins but a sidecar differs
+  from it ("sidecars behind"). Nothing is modified here.
   """
-  if not sidecars:
+  ordered = _newest_sidecar_first(sidecars)
+  if not ordered and not db:
     return Resolved()
-  newest_first = sorted(sidecars, key=lambda s: (-s["mtime"], s["path"]))
-  winner = newest_first[0]
-  rated = [s for s in newest_first if s["rating"] is not None]
-  rating = clamp(rated[0]["rating"]) if rated else None
-  conflict = (len({clamp(s["rating"]) for s in rated}) > 1
-              or len({bool(s["has_fav"]) for s in sidecars}) > 1)
-  return Resolved(rating=rating, fav=bool(winner["has_fav"]),
-                  tags=tuple(winner["tags"]), conflict=conflict,
-                  source_path=(rated[0] if rated else winner)["path"])
+  db_cand = dict(db, path=DATABASE) if db else None
+
+  def newest(sidecar_list):
+    best = sidecar_list[0] if sidecar_list else None
+    if db_cand and (best is None or db_cand["mtime"] + SKEW_TOLERANCE >= best["mtime"]):
+      return db_cand
+    return best
+
+  rated = [s for s in ordered if s["rating"] is not None]
+  winner_all = newest(ordered)
+  winner_rating = newest(rated) if (rated or db_cand) else None
+  overruled = False
+  if winner_rating is not None and winner_rating is not db_cand and winner_rating["rating"] == REJECT:
+    picked = [s for s in rated if s["rating"] > 0]
+    if picked:
+      winner_rating, overruled = picked[0], True     # newest picked sidecar
+  rating = clamp(winner_rating["rating"]) if winner_rating is not None else None
+  meta = winner_rating if overruled else winner_all
+  disagree = (len({clamp(s["rating"]) for s in rated}) > 1
+              or len({bool(s["has_fav"]) for s in ordered}) > 1)
+  db_wins = winner_rating is db_cand and db_cand is not None
+  behind = db_wins and any(
+      (s["rating"] is not None and clamp(s["rating"]) != clamp(db_cand["rating"]))
+      or bool(s["has_fav"]) != bool(db_cand["has_fav"]) for s in ordered)
+  return Resolved(
+      rating=rating, fav=bool(meta["has_fav"]) if meta else False,
+      tags=tuple(meta["tags"]) if meta else (), conflict=disagree or behind,
+      source_path=winner_rating["path"] if winner_rating else None,
+      db_wins=db_wins, mtime=winner_rating["mtime"] if winner_rating else None,
+      reject_overruled=overruled)
 
 
 def _sidecars_of(conn, photo_id):
@@ -78,20 +125,47 @@ def _sidecars_of(conn, photo_id):
   return [dict(r, tags=json.loads(r["tags"] or "[]")) for r in rows]
 
 
-def refresh_photo(conn, photo_id):
-  """Recompute one Photo's cached rating/fav/tags/conflict from its sidecars.
+# Where a database rating came from. Only ratings the database decided itself are an
+# independent source; one derived from a sidecar ('xmp') is just a cache of it.
+DECIDED_HERE = ("app", "import", "hash-recovery")
 
-  A Photo with no sidecar keeps what it has (for example an imported
-  rating). Returns the Resolved value.
+
+def db_source(conn, photo_id):
+  """The database's own dated rating for a Photo, or None.
+
+  None when the rating has no time, or when it was only read from a sidecar (a cache, not a
+  second opinion): then the sidecars alone decide.
+  """
+  p = conn.execute("SELECT rating, fav, rating_updated_at, rating_source FROM photos "
+                   "WHERE id = ?", (photo_id,)).fetchone()
+  if (p is None or not p["rating_updated_at"]
+      or p["rating_source"] not in DECIDED_HERE):
+    return None
+  tags = [r["tag"] for r in conn.execute(
+      "SELECT tag FROM tags WHERE photo_id = ? ORDER BY tag", (photo_id,))]
+  return {"mtime": p["rating_updated_at"], "rating": p["rating"],
+          "has_fav": p["fav"], "tags": tags}
+
+
+def refresh_photo(conn, photo_id):
+  """Recompute one Photo's cached rating/fav/tags/conflict: the newest of the database and
+  its sidecars wins (ticket 021).
+
+  A newer sidecar updates the database value and its time; a newer database value is kept
+  (the sidecars catch up on the next write) and shows as conflict. A Photo with no sidecar
+  keeps what it has (for example an imported rating). Returns the Resolved value.
   """
   sidecars = _sidecars_of(conn, photo_id)
-  r = resolve(sidecars)
+  r = resolve(sidecars, db_source(conn, photo_id))
   if not sidecars:
     conn.execute("UPDATE photos SET conflict = 0 WHERE id = ?", (photo_id,))
     return r
+  if r.db_wins:
+    conn.execute("UPDATE photos SET conflict = ? WHERE id = ?", (int(r.conflict), photo_id))
+    return r
   if r.rating is not None:
-    conn.execute("UPDATE photos SET rating = ?, rating_source = 'xmp' "
-                 "WHERE id = ?", (r.rating, photo_id))
+    conn.execute("UPDATE photos SET rating = ?, rating_source = 'xmp', "
+                 "rating_updated_at = ? WHERE id = ?", (r.rating, r.mtime, photo_id))
   conn.execute("UPDATE photos SET fav = ?, conflict = ? WHERE id = ?",
                (int(r.fav), int(r.conflict), photo_id))
   conn.execute("DELETE FROM tags WHERE photo_id = ?", (photo_id,))

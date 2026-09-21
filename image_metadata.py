@@ -17,6 +17,9 @@ database with one row per logical image:
     has_exported_copy   1 if any copy lives under an '/Exported/' path
     rating_source        'prod.db' / 'xmp' / NULL
     rating_source_path   the specific file the winning rating came from
+    rating_time          modification time (epoch seconds) of that file, i.e. when the rating
+                         was set; NULL if unknown. The photo manager compares it with the
+                         times of its own database and sidecars (newest rating wins).
     merged_paths  JSON list of every physical file merged into this image
 
 Only genuine image files are considered (see IMAGE_EXTENSIONS below) --
@@ -404,6 +407,21 @@ PHOTO_ARCHIVE_BONUS_PER_COPY = 200
 EXPORTED_BONUS_PER_COPY = 100
 
 
+def rating_time(source_path, root_dir):
+    """Modification time of the file a rating came from (when it was set), or None."""
+    if not source_path:
+        return None
+    candidates = [source_path]
+    if not os.path.isabs(source_path):
+        candidates.insert(0, os.path.join(root_dir, source_path))
+    for path in candidates:
+        try:
+            return os.path.getmtime(path)
+        except OSError:
+            continue
+    return None
+
+
 def compute_archive_bonus(image):
     photo_archive_copies = sum(
         1 for p in image['merged_paths'] if 'Photo Archive' in p.split('/'))
@@ -445,6 +463,7 @@ def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus):
             has_exported_copy INTEGER NOT NULL,
             rating_source TEXT,
             rating_source_path TEXT,
+            rating_time REAL,
             merged_paths TEXT NOT NULL
         )
     """)
@@ -458,11 +477,12 @@ def build_metadata_db(image_db_path, root_dir, output_path, exported_bonus):
         conn.execute(
             "INSERT INTO images (hash, filepath, rating, reject, popularity, "
             "copies, has_exported_copy, rating_source, rating_source_path, "
-            "merged_paths) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "rating_time, merged_paths) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 image['hash'], image['filepath'], rating, reject, popularity,
                 image['copies'], int(image['has_exported_copy']), source,
-                source_path, json.dumps(image['merged_paths']),
+                source_path, rating_time(source_path, root_dir),
+                json.dumps(image['merged_paths']),
             ),
         )
     conn.commit()

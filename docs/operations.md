@@ -44,7 +44,8 @@ affected. Restart the app after updating so the server code is current.
 
 | Path | Rebuildable from disk? | Back it up? |
 |---|---|---|
-| `app.sqlite` (files, photos, tags, sidecar cache, thumbs, jobs) | yes, by rescanning | not needed |
+| `app.sqlite` (files, photos, tags, sidecar cache, thumbs, jobs) | mostly: a rescan rebuilds everything that comes from the files | copy it anyway (see next row) |
+| `app.sqlite` ratings the database itself decided (`photos.rating_source` = `app`, `import`, `hash-recovery`) that are **not** in any sidecar (an import without `--write_xmp`) | **no**: the newest rating wins whether it is in the database or in a sidecar, so a database-only rating is real data | yes, copy the file |
 | `app.sqlite` tables `activity_log` (undo history) and `manual_links` | **no** | yes, copy the file |
 | `manual_links.jsonl` | it is the durable copy of `manual_links` | **yes** |
 | `xmp_backups/` (first-seen copy of every sidecar the app changed) | no | yes, it is the safety net |

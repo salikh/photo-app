@@ -120,6 +120,20 @@ MIGRATIONS = [
     """
     CREATE INDEX xmp_sidecars_file ON xmp_sidecars(file_id);
     """,
+    """
+    -- The database is an eligible source of the authoritative rating (ticket 021): the newest
+    -- of the database and the sidecars wins. rating_updated_at is when the rating was set here.
+    ALTER TABLE photos ADD COLUMN rating_updated_at REAL;     -- epoch seconds, NULL = unknown/oldest
+    ALTER TABLE rating_by_hash ADD COLUMN rated_at REAL;
+    UPDATE photos SET rating_updated_at = (
+        SELECT MAX(s.mtime) FROM xmp_sidecars s JOIN files f ON f.id = s.file_id
+        WHERE f.photo_id = photos.id AND s.rating = photos.rating)
+      WHERE rating_source = 'xmp';
+    UPDATE photos SET rating_updated_at = (
+        SELECT CAST(strftime('%s', MAX(a.ts), 'utc') AS REAL) FROM activity_log a
+        WHERE a.photo_id = photos.id AND a.field IN ('rating', 'fav', 'tags'))
+      WHERE rating_source = 'app';
+    """,
 ]
 
 
