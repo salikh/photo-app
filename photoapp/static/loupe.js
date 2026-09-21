@@ -8,7 +8,8 @@ import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
 import {label as filterLabel} from './filters.js';
-import {updateCell} from './grid.js';
+import {updateCell, settle, reinsertPhotos, loadRest} from './grid.js';
+import {matches} from './filters.js';
 
 const PRELOAD_NEXT = 3;
 const PRELOAD_PREV = 1;
@@ -156,6 +157,11 @@ function renderFilmstrip() {
 
 export function go(delta) {
   const next = index + delta;
+  if (delta > 0 && next >= state.photos.length && state.loaded < state.total) {
+    toast('loading more\u2026');                    // the rest of the folder is still coming in
+    loadRest(state.route).then(() => { if (isOpen()) go(delta); });
+    return;
+  }
   if (next < 0 || next >= state.photos.length) {
     toast(delta > 0 ? 'last picture' : 'first picture');
     return;
@@ -183,7 +189,7 @@ function renderHud() {
   ui.tagInput = el('input', {class: 'tags', placeholder: 'tag, -remove', hidden: true, onkeydown: onTagKey});
   setChildren(ui.hud,
     el('div', {class: 'name', title: p.path, text: p.name + (p.files > 1 ? `  (+${p.files - 1} files)` : '')}),
-    el('span', {class: 'pos', text: `${index + 1}/${state.photos.length}`}),
+    el('span', {class: 'pos', text: `${index + 1}/${Math.max(state.photos.length, state.total - state.removed)}`}),
     el('span', {class: 'stars' + (p.rating === REJECT ? ' reject' : ''), text: label(p.rating)}),
     p.fav ? el('span', {class: 'fav-on', text: '♥'}) : null,
     p.conflict ? el('span', {class: 'conflict', title: 'sidecars disagree', text: '⚠ conflict'}) : null,
@@ -211,6 +217,58 @@ function refresh(photo) {
   updateCell(photo);
 }
 
+// ------------------------------------------------ photos leaving the view (ticket 056)
+
+// After an edit, take the photo out of the view if it no longer matches the active filter
+// and, if it was the one on screen, move on to the next (or the previous, or close when none
+// is left). Returns the removed entries [{photo, index}] for undo.
+function leaveIfNoLongerMatching(photo) {
+  const at = state.photos.indexOf(photo);
+  const wasCurrent = current() === photo;
+  const entries = settle(photo);
+  if (!entries.length) return entries;
+  if (!isOpen()) return entries;
+  if (wasCurrent) {
+    if (!state.photos.length) {
+      if (state.loaded < state.total) {            // more photos are still loading
+        loadRest(state.route).then(() => {
+          if (!isOpen()) return;
+          if (state.photos.length) show(0); else { toast('no more photos in this filter'); closeToGrid(); }
+        });
+        return entries;
+      }
+      toast('no more photos in this filter'); closeToGrid(); return entries;
+    }
+    show(Math.min(at, state.photos.length - 1));
+  } else {
+    if (at < index) index -= 1;                    // keep showing the same photo
+    renderHud();
+    renderFilmstrip();
+  }
+  return entries;
+}
+
+// Bring the view in line with the server's answer for this photo: remove it if it no longer
+// matches, or put it back (and show it) if it was removed but does match after all (a failed
+// write, or a dry run).
+function reconcile(photo, left) {
+  const filter = state.route && state.route.filter;
+  const inList = state.photos.includes(photo);
+  const should = !filter || filter === 'all' || matches(photo, filter);
+  if (!should && inList) {
+    left.push(...leaveIfNoLongerMatching(photo));
+  } else if (should && !inList) {
+    const entry = left.find((e) => e.photo === photo);
+    if (entry) {
+      left.splice(left.indexOf(entry), 1);
+      reinsertPhotos([entry]);
+      if (isOpen()) show(state.photos.indexOf(photo));
+    }
+  } else {
+    refresh(photo);
+  }
+}
+
 // ------------------------------------------------------------------ edits
 
 function setRating(value) {
@@ -219,19 +277,21 @@ function setRating(value) {
   const before = {rating: photo.rating, previous_stars: photo.previous_stars};
   if (value === REJECT && photo.rating > 0) photo.previous_stars = photo.rating;
   photo.rating = value;
-  refresh(photo);
+  const left = leaveIfNoLongerMatching(photo);      // optimistic: it leaves at once
+  if (!left.length) refresh(photo);
   showPreview(value); hidePreview();
   return enqueue(async () => {
     try {
       const r = await post(`/api/photos/${photo.id}/rating`, {rating: value});
       Object.assign(photo, r.photo);
       if (r.dry_run) toast('dry run: nothing was saved');
-      if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids});
+      reconcile(photo, left);
+      if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids, left});
     } catch (e) {
       Object.assign(photo, before);
       toast(e.message, true);
+      reconcile(photo, left);                        // back where it was
     }
-    refresh(photo);
   });
 }
 
@@ -244,15 +304,20 @@ function toggleFav() {
   const photo = current();
   const value = !photo.fav;
   photo.fav = value;
-  refresh(photo);
+  const left = leaveIfNoLongerMatching(photo);
+  if (!left.length) refresh(photo);
   return enqueue(async () => {
     try {
       const r = await post(`/api/photos/${photo.id}/fav`, {fav: value});
       Object.assign(photo, r.photo);
       if (r.dry_run) toast('dry run: nothing was saved');
-      if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids});
-    } catch (e) { photo.fav = !value; toast(e.message, true); }
-    refresh(photo);
+      reconcile(photo, left);
+      if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids, left});
+    } catch (e) {
+      photo.fav = !value;
+      toast(e.message, true);
+      reconcile(photo, left);
+    }
   });
 }
 
@@ -277,9 +342,10 @@ function onTagKey(e) {
       const r = await post(`/api/photos/${photo.id}/tags`, {add, remove});
       Object.assign(photo, r.photo);
       if (r.dry_run) toast('dry run: nothing was saved');
-      if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids});
-    } catch (err) { toast(err.message, true); }
-    refresh(photo);
+      const left = [];
+      reconcile(photo, left);
+      if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids, left});
+    } catch (err) { toast(err.message, true); refresh(photo); }
   });
 }
 
@@ -298,9 +364,20 @@ export function undo() {
       } else {
         for (const id of [...item.ids].reverse()) results.push(await post(`/api/activity/${id}/undo`));
       }
+      const undoneIds = new Set();
       for (const r of results) {
         const photo = state.photos.find((p) => p.id === r.photo.id);
-        if (photo) { Object.assign(photo, r.photo); refresh(photo); }
+        if (photo) { Object.assign(photo, r.photo); refresh(photo); continue; }
+        // it had left the view after that change: it is put back where it was
+        const entry = (item.left || []).find((e) => e.photo.id === r.photo.id);
+        if (entry) { Object.assign(entry.photo, r.photo); undoneIds.add(entry.photo.id); }
+      }
+      // keep the removal order, so the reverse puts everything back exactly
+      const restored = (item.left || []).filter((e) => undoneIds.has(e.photo.id));
+      if (restored.length) {
+        reinsertPhotos(restored);
+        for (const e of restored) updateCell(e.photo);
+        if (isOpen()) show(state.photos.indexOf(restored[0].photo));   // show it again
       }
       if (!item.batch_id) toast('undone');
     } catch (e) { toast(e.message, true); }

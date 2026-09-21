@@ -5,8 +5,9 @@ import {el, toast, retryImage, enqueue, setChildren} from './util.js';
 import {href} from './route.js';
 import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
+import {matches} from './filters.js';
 
-const PAGE = 1000;
+const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
 
 export async function loadFolder(route) {
   state.route = route;
@@ -18,6 +19,8 @@ export async function loadFolder(route) {
   state.dirs = dirs;
   state.photos = first.photos;
   state.total = first.total;
+  state.loaded = first.photos.length;
+  state.removed = 0;
   return first;
 }
 
@@ -26,12 +29,22 @@ export async function loadFolder(route) {
 export function loadRest(route, onPage = () => {}) {
   if (state.rest && state.rest.route === route) return state.rest.promise;
   const promise = (async () => {
-    while (state.photos.length < state.total && state.route === route) {
-      const page = await get(`/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}` +
-                             `&filter=${route.filter}&offset=${state.photos.length}&limit=${PAGE}`);
-      if (state.route !== route || !page.photos.length) break;
-      state.photos.push(...page.photos);
-      onPage(page.photos);
+    while (state.loaded < state.total && state.route === route) {
+      // Photos that left the view no longer match on the server either, so its list is shorter by
+      // that many: the offset is what we hold. The fetch runs in the edit queue (after pending
+      // edits) and a page requested before a removal happened is discarded and asked again.
+      const epoch = state.epoch;
+      const page = await enqueue(() => get(
+          `/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}` +
+          `&filter=${route.filter}&offset=${state.loaded - state.removed}&limit=${PAGE}`));
+      if (state.route !== route) break;
+      if (epoch !== state.epoch) continue;
+      if (!page.photos.length) break;
+      const known = new Set(state.photos.map((p) => p.id));
+      const fresh = page.photos.filter((p) => !known.has(p.id));
+      state.loaded += page.photos.length;
+      state.photos.push(...fresh);
+      onPage(fresh);
     }
   })();
   state.rest = {route, promise};
@@ -55,7 +68,7 @@ export function updateCell(photo) {
   setChildren(cell.querySelector('.badges'), badges(photo));
 }
 
-function makeCell(photo) {
+export function makeCell(photo) {
   const img = el('img', {src: imgUrl('Thumb', photo.file_id), loading: 'lazy', alt: photo.name, decoding: 'async'});
   retryImage(img);
   const check = el('button', {class: 'check', 'aria-label': 'select', text: '✓', onclick: (e) => {
@@ -108,16 +121,88 @@ export function clearSelection() {
   renderSelectionBar();
 }
 
+// ---- photos leaving the view when their rating stops matching the filter (ticket 056) ----
+
+function statusText() {
+  const shown = state.photos.length;
+  const total = state.total - state.removed;
+  if (!total) {
+    return 'No photos in this folder' + (state.route && state.route.filter !== 'all' ? ' with this filter' : '');
+  }
+  return `${shown} of ${total} photos`;
+}
+
+export function updateStatus() {
+  const status = document.querySelector('.status');
+  if (status && document.getElementById('grid')) status.textContent = statusText();
+}
+
+// Take photos out of the list and the grid, one after the other. Returns the entries in removal
+// order, [{photo, index}], where index is the position at the moment of that removal, so that
+// putting them back in reverse order restores the list exactly (see reinsertPhotos).
+export function removePhotos(photos) {
+  const entries = [];
+  for (const photo of photos) {
+    const index = state.photos.indexOf(photo);
+    if (index < 0) continue;
+    state.photos.splice(index, 1);
+    entries.push({photo, index});
+  }
+  state.removed += entries.length;
+  state.epoch += 1;
+  for (const {photo} of entries) {
+    state.selected.delete(photo.id);
+    const cell = document.querySelector(`.cell[data-id="${photo.id}"]`);
+    if (cell) { cell.classList.add('leaving'); setTimeout(() => cell.remove(), 180); }
+  }
+  updateStatus();
+  renderSelectionBar();
+  return entries;
+}
+
+// Undo of removePhotos: entries (in the order they were removed) are put back in reverse order,
+// each at the index it had when it was removed.
+export function reinsertPhotos(entries) {
+  const gridEl = document.getElementById('grid');
+  for (const {photo, index} of [...entries].reverse()) {
+    if (state.photos.includes(photo)) continue;
+    const at = Math.min(index, state.photos.length);
+    state.photos.splice(at, 0, photo);
+    state.removed -= 1;
+    state.epoch += 1;
+    if (!gridEl) continue;
+    document.querySelectorAll(`.cell[data-id="${photo.id}"]`).forEach((c) => c.remove());
+    const next = state.photos[at + 1];
+    const before = next && gridEl.querySelector(`.cell[data-id="${next.id}"]:not(.leaving)`);
+    gridEl.insertBefore(makeCell(photo), before || null);
+  }
+  updateStatus();
+}
+
+// If the photo no longer matches the active filter, take it out of the view.
+// Returns the entries that were removed (empty when nothing changed).
+export function settle(photo) {
+  const filter = state.route && state.route.filter;
+  if (!filter || filter === 'all' || !state.photos.includes(photo) || matches(photo, filter)) return [];
+  return removePhotos([photo]);
+}
+
 function batchRate(ids, rating) {
   return enqueue(async () => {
     try {
       const r = await post('/api/photos/rating', {ids, rating});
+      const left = [];
       for (const res of r.results) {
         const photo = state.photos.find((p) => p.id === res.photo_id);
-        if (photo) { Object.assign(photo, res.photo); updateCell(photo); }
+        if (photo) {
+          Object.assign(photo, res.photo);
+          updateCell(photo);
+          left.push(...settle(photo));       // a photo that no longer matches the filter leaves
+        }
       }
+      clearSelection();
       if (r.results.some((x) => x.dry_run)) { toast('dry run: nothing was saved'); return; }
-      if (r.results.length) state.undoStack.push({batch_id: r.batch_id});
+      if (r.results.length) state.undoStack.push({batch_id: r.batch_id, left});
       toast(`rated ${r.results.length}` + (r.errors.length ? `, ${r.errors.length} failed` : '') + ' (press U to undo)', r.errors.length > 0);
     } catch (e) { toast(e.message, true); }
   });
@@ -142,14 +227,10 @@ export function renderFolder(main) {
   }, '📁 ' + d.name, el('span', {class: 'count', text: d.photos}))));
   const status = el('div', {class: 'status'});
   const grid = el('div', {class: 'grid' + (state.selecting ? ' selecting' : ''), id: 'grid'});
-  const setStatus = () => {
-    status.textContent = state.total
-      ? `${state.photos.length} of ${state.total} photos` : 'No photos in this folder' +
-        (route.filter !== 'all' ? ' with this filter' : '');
-  };
+  const setStatus = updateStatus;
   grid.append(...state.photos.map(makeCell));
-  setStatus();
   setChildren(main, dirs.dirs.length ? children : null, status, grid);
+  setStatus();
   loadRest(route, (more) => { grid.append(...more.map(makeCell)); setStatus(); });
   renderSelectionBar();
 }

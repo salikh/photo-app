@@ -20,6 +20,10 @@ The row under the title filters the folder by rating: `All`, `Rejected`, `Unrate
 (`★1` is left out with `--one_star_is_unrated`). The `more` menu has picked, rated, favorites and
 "sidecars disagree". The filter is kept in the URL and when you change folder, and the viewer shows it.
 
+While a filter is active, a photo whose rating stops matching it **leaves the view** at once (grid and viewer):
+in the viewer the next photo is shown, when the last one leaves the viewer closes, and `U` brings the photo
+back where it was. So `Unrated` + a rating key is the fast cull: rate, and the next unrated photo is in front of you.
+
 ## Keys in the viewer
 
 `←`/`→` navigate, `0`-`5` rate, `X` reject (again: restore), `F` favorite, `T` tags (`-name` removes),

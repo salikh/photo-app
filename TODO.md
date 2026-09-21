@@ -21,7 +21,7 @@ Check items off here when the ticket's status is done.
 ## Next: v1 filtering (user request 2026-09-21, do now)
 
 - [x] [055](docs/tickets/055.md) Rating filter buttons: All, Unrated, Rejected, exactly ★1..★5 (More menu keeps fav, conflict, picked)
-- [ ] [056](docs/tickets/056.md) A photo whose rating stops matching the filter disappears from the grid and the loupe advances (undo brings it back)
+- [x] [056](docs/tickets/056.md) A photo whose rating stops matching the filter disappears from the grid and the loupe advances (undo brings it back)
 - [ ] [057](docs/tickets/057.md) Counts on the filter buttons and grid shortcuts
 - [x] [058](docs/tickets/058.md) Move the reject button to the left of the rating buttons (loupe HUD and selection bar)
 
@@ -49,14 +49,13 @@ context, the question, options if any, and an empty **Answer** section). The que
 `Blocks:`; the blocked ticket has a `Blocked by:` line. When the user has answered, the question ticket is
 closed and the blocked ticket continues. A ticket is "actionable" when it has no open blocker.
 
-- [ ] [053](docs/tickets/053.md) Should a reject beat a newer sidecar that says 1 or 2 stars? (blocks the reject rule in 021)
 - [ ] [061](docs/tickets/061.md) Try the phone UI on a real phone (blocks 044, 045, 046; on hold by the user)
 - [ ] [062](docs/tickets/062.md) Try zoom gestures on an iPad / Android tablet (blocks 060; after 060 is built)
 - [ ] [063](docs/tickets/063.md) Try culling a real folder and tell how it feels (blocks 031)
 - [ ] [064](docs/tickets/064.md) Have a look at the dark theme (blocks 047)
 - [ ] [065](docs/tickets/065.md) How should ratings newer in the database be written to the sidecars? (blocks the sync item of 021)
 
-Answered so far: 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars),
+Answered so far: 053 (a single file's reject never rejects the pair while the other is picked; app rejects newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars),
 042 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
 Epics 006, 007, 008 and 043 close when their children are done.

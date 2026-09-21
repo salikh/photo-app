@@ -141,7 +141,10 @@ async function render() {
   previous = {dir: route.dir, filter: route.filter, sort: route.sort};
 
   if (route.photo) {
-    await grid.loadRest(state.route);
+    // Open at once if the photo is on the first page; otherwise (a direct link deep into a big
+    // folder) wait for the rest of the list.
+    if (!state.photos.some((p) => p.id === route.photo)) await grid.loadRest(state.route);
+    else grid.loadRest(state.route);
     if (loupe.isOpen()) loupe.showById(route.photo); else loupe.open(route.photo);
   } else {
     loupe.close();

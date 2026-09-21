@@ -480,3 +480,180 @@ def test_phone_filter_strip_is_one_scrollable_row_with_big_buttons(phone, server
   expect(phone.locator(".cell")).to_have_count(1)
   phone.locator(".filters button", has_text="\u26054").tap()              # scrolled into reach and tapped
   expect(phone.locator(".cell")).to_have_count(1)
+
+
+# --- photos leave the view when their rating stops matching the filter (ticket 056) ---------------
+
+def names_in_grid(page):
+  return page.locator(".cell").evaluate_all("els => els.map(e => e.title)")
+
+
+def open_unrated(page, server):
+  """Filter Unrated in 2024/trip: IMG_0001, 0004, 0005, 0006 (0002 has 4 stars, 0003 is rejected)."""
+  page.goto(server.url + "/#/2024/trip?filter=unrated")
+  expect(page.locator(".cell")).to_have_count(4)
+
+
+def test_rating_a_photo_out_of_the_filter_removes_it_and_advances(page, server):
+  open_unrated(page, server)
+  page.locator(".cell").first.click()
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  expect(page.locator(".hud .pos")).to_have_text("1/4")
+  page.keyboard.press("3")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0004")         # the next photo, at once
+  expect(page.locator(".hud .pos")).to_have_text("1/3")
+  assert f"photo={photo_ids(server)[3]}" in page.url                       # the URL follows
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") == 3)
+  page.keyboard.press("Escape")
+  expect(page.locator(".cell")).to_have_count(3)
+  assert names_in_grid(page) == ["IMG_0004.jpg", "IMG_0005.jpg", "IMG_0006.jpg"]
+  expect(page.locator(".status")).to_have_text("3 of 3 photos")
+  # in the "All" view nothing ever leaves
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+
+
+def test_same_rating_stays_and_each_key_press_advances_exactly_one_photo(page, server):
+  open_unrated(page, server)
+  page.locator(".cell").first.click()
+  page.keyboard.press("0")                                                 # already unrated: stays
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  expect(page.locator(".hud .pos")).to_have_text("1/4")
+  page.keyboard.press("2")
+  page.keyboard.press("2")                                                 # fast: the next photo, not the same one
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0005")
+  expect(page.locator(".hud .pos")).to_have_text("1/2")
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") == 2
+           and server.sidecar_rating("2024/trip/IMG_0004.jpg.xmp") == 2)
+
+
+def test_last_photo_out_closes_the_viewer(page, server):
+  page.goto(server.url + "/#/2024/trip?filter=rejected")                   # only IMG_0003
+  page.locator(".cell").first.click()
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("2")
+  expect(page.locator(".loupe")).to_be_hidden()
+  expect(page.locator("#toast")).to_contain_text("no more photos")
+  expect(page.locator(".cell")).to_have_count(0)
+  expect(page.locator(".status")).to_contain_text("No photos in this folder with this filter")
+
+
+def test_exactly_n_stars_filter_promote_and_demote_leave(page, server):
+  page.goto(server.url + "/#/2024/trip?filter=rating%3A4")                 # IMG_0002 only
+  page.locator(".cell").first.click()
+  page.keyboard.press("4")                                                 # same: stays
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("5")                                                 # leaves
+  expect(page.locator(".loupe")).to_be_hidden()
+  expect(page.locator(".cell")).to_have_count(0)
+
+
+def test_undo_brings_the_photo_back_where_it_was_and_shows_it(page, server):
+  open_unrated(page, server)
+  page.locator(".cell").nth(1).click()                                     # IMG_0004
+  page.keyboard.press("3")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0005")
+  page.keyboard.press("3")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0006")
+  page.keyboard.press("u")                                                 # undo the last: 0005 returns
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0005")
+  expect(page.locator(".hud .stars")).to_have_text("☆" * 5)
+  page.keyboard.press("u")                                                 # and 0004 before it
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0004")
+  expect(page.locator(".hud .pos")).to_have_text("2/4")                    # the original position
+  page.keyboard.press("Escape")
+  assert names_in_grid(page) == ["IMG_0001.jpg", "IMG_0004.jpg", "IMG_0005.jpg", "IMG_0006.jpg"]
+  expect(page.locator(".status")).to_have_text("4 of 4 photos")
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0004.jpg.xmp") == 0)
+
+
+def test_batch_rating_removes_the_selected_and_undo_restores_the_order(page, server):
+  open_unrated(page, server)
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").nth(1).click()
+  page.locator(".cell").nth(3).click()                                     # IMG_0004 and IMG_0006
+  page.locator(".selection-bar").get_by_role("button", name="4", exact=True).click()
+  expect(page.locator(".cell")).to_have_count(2)
+  assert names_in_grid(page) == ["IMG_0001.jpg", "IMG_0005.jpg"]
+  expect(page.locator(".status")).to_have_text("2 of 2 photos")
+  expect(page.locator(".selection-bar")).to_have_count(0)                  # the selection is cleared
+  page.keyboard.press("u")
+  expect(page.locator(".cell")).to_have_count(4)
+  assert names_in_grid(page) == ["IMG_0001.jpg", "IMG_0004.jpg", "IMG_0005.jpg", "IMG_0006.jpg"]
+  expect(page.locator(".status")).to_have_text("4 of 4 photos")
+
+
+def test_failed_write_puts_the_photo_back_and_shows_the_error(page, server):
+  open_unrated(page, server)
+  page.route("**/api/photos/*/rating", lambda route: route.fulfill(
+      status=500, content_type="application/json", body='{"detail": "internal server error"}'))
+  page.locator(".cell").nth(1).click()                                     # IMG_0004
+  page.keyboard.press("3")
+  expect(page.locator("#toast")).to_contain_text("internal server error")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0004")           # back in front of us
+  expect(page.locator(".hud .pos")).to_have_text("2/4")
+  expect(page.locator(".hud .stars")).to_have_text("☆" * 5)
+  page.keyboard.press("Escape")
+  assert names_in_grid(page) == ["IMG_0001.jpg", "IMG_0004.jpg", "IMG_0005.jpg", "IMG_0006.jpg"]
+  page.errors.clear()                                                      # the forced 500 is logged by the browser
+
+
+def test_unfavoriting_leaves_the_favorites_filter(page, server):
+  ids = photo_ids(server)
+  urllib.request.urlopen(urllib.request.Request(
+      f"{server.url}/api/photos/{ids[1]}/fav", data=json.dumps({"fav": True}).encode(),
+      headers={"Content-Type": "application/json"}))
+  page.goto(server.url + "/#/2024/trip?filter=fav")
+  expect(page.locator(".cell")).to_have_count(1)
+  page.locator(".cell").first.click()
+  page.keyboard.press("f")
+  expect(page.locator(".loupe")).to_be_hidden()
+  expect(page.locator(".cell")).to_have_count(0)
+
+
+def test_swipe_that_rates_a_photo_out_of_the_filter_advances_like_a_swipe(phone, server):
+  phone.goto(server.url + "/#/2024/trip?filter=unrated")
+  expect(phone.locator(".cell")).to_have_count(4)
+  phone.locator(".cell").first.tap()
+  expect(phone.locator(".hud .name")).to_contain_text("IMG_0001")
+  swipe(phone, 0, -120)                                                    # up: 1 star, no longer unrated
+  expect(phone.locator(".hud .name")).to_contain_text("IMG_0004")
+  expect(phone.locator(".hud .pos")).to_have_text("1/3")
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") == 1)
+
+
+def test_paging_stays_correct_when_photos_leave_while_a_page_is_loading(browser, server):
+  ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+  page = ctx.new_page()
+  page.add_init_script("window.__pageSize = 2")                            # test hook: pages of two
+  held = []
+  state = {"hold": True}
+
+  def handler(route):
+    if state["hold"] and "offset=" in route.request.url:
+      held.append(route)                                                   # keep the second page waiting
+    else:
+      route.continue_()
+
+  page.route("**/api/photos?*", handler)
+  page.goto(server.url + "/#/2024/trip?filter=unrated")
+  expect(page.locator(".cell")).to_have_count(2)                           # 0001, 0004 (first page)
+  wait_for(lambda: len(held) == 1)
+  page.locator(".cell").first.click()                                      # opens at once
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  expect(page.locator(".hud .pos")).to_have_text("1/4")                    # 4 in this filter, 2 loaded
+  page.keyboard.press("3")
+  page.keyboard.press("3")                                                 # both loaded photos leave
+  expect(page.locator("#toast")).not_to_contain_text("no more photos")     # more are still coming
+  state["hold"] = False
+  held[0].continue_()                                                      # the stale page arrives late
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0005")           # 0005 is the first left, none skipped
+  expect(page.locator(".hud .pos")).to_have_text("1/2")
+  page.keyboard.press("ArrowRight")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0006")
+  page.keyboard.press("3")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0005")
+  page.keyboard.press("3")
+  expect(page.locator(".loupe")).to_be_hidden()
+  wait_for(lambda: all(server.sidecar_rating(f"2024/trip/IMG_000{n}.jpg.xmp") == 3 for n in (1, 4, 5, 6)))
+  ctx.close()

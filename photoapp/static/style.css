@@ -102,6 +102,7 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cell.selected { outline: 3px solid var(--accent); }
 .cell.rejected img { opacity: 0.35; }
+.cell.leaving { opacity: 0; transform: scale(0.92); transition: opacity 0.15s, transform 0.15s; pointer-events: none; }
 .badges {
   position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px;
   padding: 2px 6px; font-size: 12px; color: var(--overlay-text);
