@@ -44,7 +44,11 @@ Primary workflow to optimize: **cull a folder fast, keyboard driven**
 (full-screen loupe, arrow keys, digit keys for rating, a key for reject,
 filmstrip, preloading of the next images).
 
-Added after the grill session: the UI must also work on a smartphone on the
+Added after the grill session (v1): filter buttons for culling: unrated only, rejected only and
+"rating == N", where a photo whose rating stops matching the active filter disappears from the view
+(`docs/tickets/055.md`, `056.md`, `057.md`).
+
+Also added: the UI must also work on a smartphone on the
 LAN (responsive layout, swipe left/right to move between pictures in a
 folder, swipe up/down to change the rating). Tracked in `docs/tickets/043.md`.
 
