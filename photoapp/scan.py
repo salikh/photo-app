@@ -430,7 +430,7 @@ class ScanManager:
       return True
 
   def _run(self, scan_dir, progress):
-    conn = db.connect(self._db_path)
+    conn = db.connect(self._db_path, busy_timeout=60.0)
     try:
       if scan_dir == self._pictures_dir:
         scan_all(conn, self._pictures_dir, None, self._hashes, progress,

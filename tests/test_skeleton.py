@@ -47,3 +47,26 @@ def test_stylesheet_is_served_and_defines_dark_theme(settings):
   assert css.status_code == 200
   assert "color-scheme: dark" in css.text and "--bg:" in css.text
   assert "/static/style.css" in client.get("/").text
+
+
+def test_settings_from_flags_maps_every_flag_by_name():
+  from absl import flags
+  from photoapp import config
+  f = flags.FLAGS
+  f.mark_as_parsed()      # (other modules define required flags; parsing a command line here would fail)
+  values = {"pictures_dir": "/p", "thumbs_dir": "/t", "state_dir": "/s", "busy_retry_seconds": 7.0,
+            "one_star_is_unrated": True, "scan_workers": 3, "job_workers": 5,
+            "nightly_scan_hour": 4, "xmp_dry_run": True, "new_raw_sidecar_style": "stem",
+            "hashes_db": "/h.db"}
+  saved = {name: f[name].value for name in values}
+  try:
+    for name, value in values.items():
+      f[name].value = value
+    s = config.Settings.from_flags()
+    assert (s.pictures_dir, s.thumbs_dir, s.state_dir, s.hashes_db) == ("/p", "/t", "/s", "/h.db")
+    assert s.busy_retry_seconds == 7 and s.one_star_is_unrated is True
+    assert (s.scan_workers, s.job_workers, s.nightly_scan_hour) == (3, 5, 4)
+    assert s.xmp_dry_run is True and s.new_raw_sidecar_style == "stem"
+  finally:
+    for name, value in saved.items():
+      f[name].value = value

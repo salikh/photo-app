@@ -8,6 +8,7 @@ the Photo is re-resolved from all its sidecars.
 """
 
 import datetime
+import glob
 import hashlib
 import json
 import os
@@ -97,9 +98,16 @@ def _sidecar_targets(conn, settings, photo):
 
 
 def _backup_path(settings, rel_sidecar):
-  ts = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
-  return os.path.join(settings.state_dir, "xmp_backups",
-                      f"{rel_sidecar}.{ts}")
+  """Where the first-seen copy of a sidecar is kept.
+
+  If one already exists (an earlier attempt of the same edit wrote it but the database
+  was busy and never recorded it), that one is returned, so it stays the first-seen copy.
+  """
+  base = os.path.join(settings.state_dir, "xmp_backups", rel_sidecar)
+  earlier = sorted(glob.glob(glob.escape(base) + ".*"))
+  if earlier:
+    return earlier[0]
+  return f"{base}.{datetime.datetime.now().strftime('%Y%m%dT%H%M%S')}"
 
 
 def _log(conn, photo_id, xmp_path, field, old, new, cause, batch_id=None):
@@ -160,87 +168,100 @@ def _apply(conn, settings, photo_id, rating=None, fav=None, add=(), remove=(),
                  [t["rel"] for t in targets], result["changes"])
     return result
 
-  written, error = [], None
-  for t in targets:
-    abs_sidecar = os.path.join(settings.pictures_dir, t["rel"])
-    backup = None
-    try:
-      if t["exists"]:
-        known_backup = conn.execute(
-            "SELECT backup_path FROM xmp_sidecars WHERE path = ?",
-            (t["rel"],)).fetchone()
-        backup = (known_backup["backup_path"] if known_backup and
-                  known_backup["backup_path"] else _backup_path(settings, t["rel"]))
-        upd = xmp.update_file(abs_sidecar, backup_path=backup, **edit)
-        if upd.backup_path is None and not os.path.exists(backup):
-          backup = None
-      elif default_state:
-        continue          # nothing worth a new file (unrated, no tags)
-      else:
-        xmp.create_file(abs_sidecar, rating=new_rating, tags=desired)
-    except (xmp.XmpEditError, OSError) as e:
-      error = f"cannot write {t['rel']}: {e}"
-      break
-    with open(abs_sidecar, "rb") as f:
-      data = f.read()
-    parsed = xmp.parse(data)
-    conn.execute(
-        "INSERT INTO xmp_sidecars (path, file_id, mtime, hash, rating, has_fav,"
-        " tags, backup_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(path) DO UPDATE SET file_id = excluded.file_id,"
-        " mtime = excluded.mtime, hash = excluded.hash, rating = excluded.rating,"
-        " has_fav = excluded.has_fav, tags = excluded.tags,"
-        " backup_path = COALESCE(xmp_sidecars.backup_path, excluded.backup_path)",
-        (t["rel"], t["file_id"], os.stat(abs_sidecar).st_mtime,
-         hashlib.sha224(data).hexdigest(), parsed.rating, int(parsed.fav),
-         json.dumps(list(parsed.tags)), backup))
-    written.append(t["rel"])
-  if error:
-    # Keep the cache truthful about what did get written, then report.
+  # Take the database write lock BEFORE touching any sidecar. If another writer holds it, this
+  # fails here (the caller retries) and nothing has been written to disk, so a failed edit
+  # never leaves changed sidecars behind a database that still shows the old value.
+  if not conn.in_transaction:      # (an open transaction from an earlier write already holds it)
+    conn.execute("BEGIN IMMEDIATE")
+
+  def write_and_record():
+    written, error = [], None
+    for t in targets:
+      abs_sidecar = os.path.join(settings.pictures_dir, t["rel"])
+      backup = None
+      try:
+        if t["exists"]:
+          known_backup = conn.execute(
+              "SELECT backup_path FROM xmp_sidecars WHERE path = ?",
+              (t["rel"],)).fetchone()
+          backup = (known_backup["backup_path"] if known_backup and
+                    known_backup["backup_path"] else _backup_path(settings, t["rel"]))
+          upd = xmp.update_file(abs_sidecar, backup_path=backup, **edit)
+          if upd.backup_path is None and not os.path.exists(backup):
+            backup = None
+        elif default_state:
+          continue          # nothing worth a new file (unrated, no tags)
+        else:
+          xmp.create_file(abs_sidecar, rating=new_rating, tags=desired)
+      except (xmp.XmpEditError, OSError) as e:
+        error = f"cannot write {t['rel']}: {e}"
+        break
+      with open(abs_sidecar, "rb") as f:
+        data = f.read()
+      parsed = xmp.parse(data)
+      conn.execute(
+          "INSERT INTO xmp_sidecars (path, file_id, mtime, hash, rating, has_fav,"
+          " tags, backup_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+          "ON CONFLICT(path) DO UPDATE SET file_id = excluded.file_id,"
+          " mtime = excluded.mtime, hash = excluded.hash, rating = excluded.rating,"
+          " has_fav = excluded.has_fav, tags = excluded.tags,"
+          " backup_path = COALESCE(xmp_sidecars.backup_path, excluded.backup_path)",
+          (t["rel"], t["file_id"], os.stat(abs_sidecar).st_mtime,
+           hashlib.sha224(data).hexdigest(), parsed.rating, int(parsed.fav),
+           json.dumps(list(parsed.tags)), backup))
+      written.append(t["rel"])
+    if error:
+      # Keep the cache truthful about what did get written, then report.
+      ratings.refresh_photo(conn, photo_id)
+      conn.commit()
+      raise CurationError(error + (f" (already written: {', '.join(written)})"
+                                   if written else ""))
+    # The database's own time for this state: the newest sidecar written (they tie, so the
+    # next scan sees database and sidecars agree), or now when no sidecar was written.
+    stamp = max((os.stat(os.path.join(settings.pictures_dir, rel)).st_mtime for rel in written),
+                default=time.time())
+    conn.execute("UPDATE photos SET rating_updated_at = ? WHERE id = ?", (stamp, photo_id))
+    if "rating" in changes:
+      # Rejecting erases the star count in the sidecar; remember it for un-reject.
+      prev = photo["previous_stars"]
+      if new_rating == ratings.REJECT and old_rating > 0:
+        prev = old_rating
+      conn.execute("UPDATE photos SET rating = ?, previous_stars = ?, "
+                   "rating_source = 'app' WHERE id = ?",
+                   (new_rating, prev, photo_id))
+    if "fav" in changes:
+      conn.execute("UPDATE photos SET fav = ? WHERE id = ?",
+                   (int(new_fav), photo_id))
+    if "tags" in changes:
+      conn.execute("DELETE FROM tags WHERE photo_id = ?", (photo_id,))
+      conn.executemany("INSERT OR IGNORE INTO tags (photo_id, tag) VALUES (?, ?)",
+                       [(photo_id, t) for t in new_tags])
+    result["activity_ids"] = [
+        _log(conn, photo_id, original["rel"], field, o, n, cause, batch_id)
+        for field, (o, n) in changes.items()]
     ratings.refresh_photo(conn, photo_id)
+    ratings.remember(conn, photo_id)
     conn.commit()
-    raise CurationError(error + (f" (already written: {', '.join(written)})"
-                                 if written else ""))
-  # The database's own time for this state: the newest sidecar written (they tie, so the
-  # next scan sees database and sidecars agree), or now when no sidecar was written.
-  stamp = max((os.stat(os.path.join(settings.pictures_dir, rel)).st_mtime for rel in written),
-              default=time.time())
-  conn.execute("UPDATE photos SET rating_updated_at = ? WHERE id = ?", (stamp, photo_id))
-  if "rating" in changes:
-    # Rejecting erases the star count in the sidecar; remember it for un-reject.
-    prev = photo["previous_stars"]
-    if new_rating == ratings.REJECT and old_rating > 0:
-      prev = old_rating
-    conn.execute("UPDATE photos SET rating = ?, previous_stars = ?, "
-                 "rating_source = 'app' WHERE id = ?",
-                 (new_rating, prev, photo_id))
-  if "fav" in changes:
-    conn.execute("UPDATE photos SET fav = ? WHERE id = ?",
-                 (int(new_fav), photo_id))
-  if "tags" in changes:
-    conn.execute("DELETE FROM tags WHERE photo_id = ?", (photo_id,))
-    conn.executemany("INSERT OR IGNORE INTO tags (photo_id, tag) VALUES (?, ?)",
-                     [(photo_id, t) for t in new_tags])
-  result["activity_ids"] = [
-      _log(conn, photo_id, original["rel"], field, o, n, cause, batch_id)
-      for field, (o, n) in changes.items()]
-  ratings.refresh_photo(conn, photo_id)
-  ratings.remember(conn, photo_id)
-  conn.commit()
-  return result
+    return result
+
+  try:
+    return write_and_record()
+  except BaseException:
+    conn.rollback()             # never leave the write lock held
+    raise
 
 
 def set_rating(conn, settings, photo_id, rating, cause="user"):
   return _apply(conn, settings, photo_id, rating=int(rating), cause=cause)
 
 
-def set_rating_batch(conn, settings, photo_ids, rating):
+def set_rating_batch(conn, settings, photo_ids, rating, batch_id=None):
   """Rate many Photos; failures do not stop the rest.
 
   All log entries share one batch_id so the whole action can be undone.
   Returns {"batch_id", "results": [...], "errors": [{photo_id, error}]}.
   """
-  batch_id = uuid.uuid4().hex
+  batch_id = batch_id or uuid.uuid4().hex
   results, errors = [], []
   for pid in dict.fromkeys(photo_ids):
     try:

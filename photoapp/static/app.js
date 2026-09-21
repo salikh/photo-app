@@ -163,6 +163,13 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape' && state.selected.size) { grid.clearSelection(); e.preventDefault(); }
 });
 
+// A request that failed where nobody was watching for it (network down, an unexpected error)
+// still tells the user, instead of failing silently.
+window.addEventListener('unhandledrejection', (e) => {
+  const message = (e.reason && e.reason.message) || 'unexpected error';
+  toast(message === 'Failed to fetch' ? 'cannot reach the server' : message, true);
+});
+
 window.addEventListener('hashchange', render);
 // The rating presentation depends on server settings, so load them first.
 get('/api/config').then(configure).catch(() => {}).finally(render);

@@ -15,6 +15,7 @@
 | `--nightly_scan_hour` | 3 | local hour of the nightly rescan, -1 disables |
 | `--one_star_is_unrated` | off | display-only: 1 star is shown as unrated (darktable's import default), `picked` means 2+ stars; nothing on disk changes |
 | `--job_workers` | 2 | background RAW render threads |
+| `--busy_retry_seconds` | 60 | how long the web app keeps retrying when another writer (a running scan) holds the database, before answering "database busy" |
 | `--scan_workers` | 8 | threads reading files during a scan (the NAS is latency bound) |
 | `--port`, `--host` | 8080, 0.0.0.0 | LAN only, no authentication |
 
@@ -31,6 +32,16 @@ running the same command again skips finished directories (by their mtime) and c
 `done <dir> (n/total)` with the files read and the peak memory after every step.
 `--scan_dirs=2001,2026` scans only those directories; `--scan_workers` sets the read threads.
 The **Rescan** button and the nightly scan work the same way (a folder-scoped rescan scans that folder).
+
+## A busy database
+
+The web app, a running scan (`photoapp.fullscan`, the Rescan button, the nightly scan) and the RAW render jobs
+write to the same sqlite file, and sqlite lets only one writer in at a time. When the web app finds the database
+locked it waits and retries (0.1 s, 0.2 s, 0.4 s ... up to 4 s between attempts) for about a minute
+(`--busy_retry_seconds`), then answers **"internal server error: database busy"**, which the page shows as a red
+message. During those retries other requests keep working (reads are never blocked), and a rating edit takes the
+database lock *before* it touches any sidecar, so a failed edit changes nothing on disk and can simply be repeated.
+The scan and the job workers wait up to a minute inside sqlite itself. A busy database while a big scan runs is normal.
 
 ## Hidden folders
 

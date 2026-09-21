@@ -27,7 +27,7 @@ class JobQueue:
     self._wake = threading.Event()
     self._stop = threading.Event()
     self._conn_lock = threading.Lock()
-    self._conn = db.connect(db_path)
+    self._conn = db.connect(db_path, busy_timeout=60.0)
 
   # -- enqueue / inspect ----------------------------------------------------
 
@@ -89,7 +89,7 @@ class JobQueue:
     return row
 
   def _run(self):
-    conn = db.connect(self._db_path)
+    conn = db.connect(self._db_path, busy_timeout=60.0)
     try:
       while not self._stop.is_set():
         job = self._claim(conn)

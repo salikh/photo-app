@@ -1,8 +1,12 @@
 """FastAPI application."""
 
 import dataclasses
+import functools
 import os
+import sqlite3
 import threading
+import time
+import uuid
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -11,8 +15,10 @@ from fastapi.responses import Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 import pydantic
+from absl import logging
 
 from photoapp import curation
+from photoapp import db as db_lib
 from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import jobs
@@ -59,6 +65,32 @@ def create_app(conn, settings):
   app.state.db = conn
   app.state.settings = settings
   app.state.db_lock = threading.Lock()
+  app.state.sleep = time.sleep      # injectable: tests do not want to wait
+
+  def run_db(fn):
+    """Run one database operation; if the database is busy (another writer holds the
+    lock) retry it with growing waits for about settings.busy_retry_seconds, then answer
+    500. The waits happen outside the in-process lock, and the connection is rolled back
+    before every retry so nothing half-done is kept."""
+    def rollback():
+      with app.state.db_lock:
+        try:
+          app.state.db.rollback()
+        except sqlite3.Error:
+          pass
+    try:
+      return db_lib.retry_busy(fn, settings.busy_retry_seconds,
+                               sleep=lambda s: app.state.sleep(s), on_retry=rollback)
+    except db_lib.DatabaseBusy as e:
+      logging.error("giving up: %s", e)
+      raise HTTPException(500, "internal server error: database busy")
+
+  def db_route(fn):
+    """Route decorator: re-run the whole route function while the database is busy."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+      return run_db(lambda: fn(*args, **kwargs))
+    return wrapper
   hashes = (fileinfo.load_precomputed_hashes(settings.hashes_db)
             if settings.hashes_db else None)
   app.state.scanner = scan_lib.ScanManager(
@@ -83,6 +115,7 @@ def create_app(conn, settings):
                                  settings.job_workers)
 
   @app.get("/api/jobs")
+  @db_route
   def list_jobs(limit: int = 100):
     return {"counts": app.state.jobs.counts(),
             "jobs": app.state.jobs.list(min(limit, 500))}
@@ -129,14 +162,17 @@ def create_app(conn, settings):
         raise HTTPException(status, str(e))
 
   @app.post("/api/photos/{photo_id}/rating")
+  @db_route
   def set_rating(photo_id: int, body: RatingBody):
     return curate(photo_id, curation.set_rating, body.rating)
 
   @app.post("/api/photos/{photo_id}/fav")
+  @db_route
   def set_fav(photo_id: int, body: FavBody):
     return curate(photo_id, curation.set_fav, body.fav)
 
   @app.post("/api/photos/{photo_id}/tags")
+  @db_route
   def edit_tags(photo_id: int, body: TagsBody):
     return curate(photo_id, curation.edit_tags, body.add, body.remove)
 
@@ -144,14 +180,19 @@ def create_app(conn, settings):
   def batch_rating(body: BatchRatingBody):
     if not body.ids or len(body.ids) > 2000:
       raise HTTPException(400, "give between 1 and 2000 photo ids")
-    with app.state.db_lock:
-      try:
-        return curation.set_rating_batch(app.state.db, settings, body.ids,
-                                         body.rating)
-      except curation.CurationError as e:
-        raise HTTPException(400, str(e))
+    batch_id = uuid.uuid4().hex        # one id for every attempt, so one undo covers the batch
+
+    def attempt():
+      with app.state.db_lock:
+        try:
+          return curation.set_rating_batch(app.state.db, settings, body.ids,
+                                           body.rating, batch_id)
+        except curation.CurationError as e:
+          raise HTTPException(400, str(e))
+    return run_db(attempt)
 
   @app.post("/api/activity/batch/{batch_id}/undo")
+  @db_route
   def undo_batch(batch_id: str):
     with app.state.db_lock:
       try:
@@ -160,6 +201,7 @@ def create_app(conn, settings):
         raise HTTPException(400, str(e))
 
   @app.post("/api/photos/{photo_id}/representative")
+  @db_route
   def representative(photo_id: int, body: RepresentativeBody):
     with app.state.db_lock:
       try:
@@ -176,6 +218,7 @@ def create_app(conn, settings):
     return row["path"]
 
   @app.post("/api/files/{file_id}/link")
+  @db_route
   def link_file(file_id: int, body: LinkBody):
     with app.state.db_lock:
       try:
@@ -188,6 +231,7 @@ def create_app(conn, settings):
         raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
 
   @app.post("/api/files/{file_id}/unlink")
+  @db_route
   def unlink_file(file_id: int):
     with app.state.db_lock:
       try:
@@ -199,6 +243,7 @@ def create_app(conn, settings):
         raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
 
   @app.get("/api/thumbs/usage")
+  @db_route
   def thumbs_usage(lacking: bool = False):
     with app.state.db_lock:
       result = {"usage": thumbs.usage(app.state.db)}
@@ -207,6 +252,7 @@ def create_app(conn, settings):
       return result
 
   @app.get("/api/attention")
+  @db_route
   def attention():
     with app.state.db_lock:
       conn = app.state.db
@@ -229,11 +275,13 @@ def create_app(conn, settings):
               "ambiguous_recovery": recovery.ambiguous(conn)}
 
   @app.get("/api/activity")
+  @db_route
   def activity(limit: int = 100):
     with app.state.db_lock:
       return curation.recent_activity(app.state.db, min(limit, 500))
 
   @app.post("/api/activity/{activity_id}/undo")
+  @db_route
   def undo(activity_id: int):
     with app.state.db_lock:
       try:
@@ -251,20 +299,24 @@ def create_app(conn, settings):
         raise HTTPException(400, str(e))
 
   @app.get("/api/dirs")
+  @db_route
   def dirs(path: str = "."):
     return read(library.list_dirs, path)
 
   @app.get("/api/photos")
+  @db_route
   def photos(dir: str = ".", sort: str = "date", filter: str = "all",
              offset: int = 0, limit: int = 200):
     return read(library.list_photos, dir, sort, filter, offset, limit,
                 settings.one_star_is_unrated)
 
   @app.get("/api/photos/counts")
+  @db_route
   def photo_counts(dir: str = "."):
     return read(library.filter_counts, dir, settings.one_star_is_unrated)
 
   @app.get("/api/photos/{photo_id}")
+  @db_route
   def photo(photo_id: int):
     detail = read(library.photo_detail, photo_id)
     if detail is None:
@@ -283,6 +335,7 @@ def create_app(conn, settings):
   cache = {"Cache-Control": "private, max-age=3600"}
 
   @app.get("/img/full/{file_id}")
+  @db_route
   def full(file_id: int):
     row = file_row(file_id)
     if not row["path"].lower().endswith(WEB_EXTENSIONS):
@@ -294,7 +347,7 @@ def create_app(conn, settings):
   async def image(size: str, file_id: int):
     if size not in thumbs.SIZES:
       raise HTTPException(404, "unknown size")
-    row = file_row(file_id)
+    row = await run_in_threadpool(run_db, lambda: file_row(file_id))
     if size == "Huge" and not fileinfo.is_raw(row["path"]):
       # Huge is the full size: an existing one, else the original if the
       # browser can show it. Never re-encode a full-size copy on request.
@@ -308,9 +361,11 @@ def create_app(conn, settings):
       path = None
       if made:
         path, source = made
-        with app.state.db_lock:
-          thumbs.record(app.state.db, file_id, size, path, source)
-          app.state.db.commit()
+        def record():
+          with app.state.db_lock:
+            thumbs.record(app.state.db, file_id, size, path, source)
+            app.state.db.commit()
+        await run_in_threadpool(run_db, record)
     if path is None and fileinfo.is_raw(row["path"]):
       # No usable embedded preview: demosaic in the background; the client
       # retries the image after a moment.

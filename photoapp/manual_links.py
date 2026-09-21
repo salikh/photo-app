@@ -46,11 +46,16 @@ def _resolve(conn, path, file_hash):
   return rows[0] if len(rows) == 1 else None
 
 
-def _record(conn, state_dir, entry):
+def _record(conn, entry):
   conn.execute(
       "INSERT INTO manual_links (path, hash, target_path, target_hash,"
       " action, role, created_at) VALUES (:path, :hash, :target_path,"
       " :target_hash, :action, :role, :created_at)", entry)
+
+
+def _append_jsonl(state_dir, entry):
+  """The durable copy. Written after the database commit, so a database step that is
+  repeated (busy database) never appends the same decision twice."""
   os.makedirs(state_dir, exist_ok=True)
   with open(_jsonl_path(state_dir), "a") as f:
     f.write(json.dumps(entry, sort_keys=True) + "\n")
@@ -90,16 +95,20 @@ def link(conn, state_dir, path, target_path, role="tuning"):
   if role not in LINK_ROLES:
     raise ValueError(f"role must be one of {LINK_ROLES}")
   _check_link(conn, _file_row(conn, path), _file_row(conn, target_path))
-  _record(conn, state_dir, _entry(conn, path, "link", target_path, role))
-  apply_all(conn)
+  entry = _entry(conn, path, "link", target_path, role)
+  _record(conn, entry)
+  apply_all(conn)                     # commits
+  _append_jsonl(state_dir, entry)
 
 
 def unlink(conn, state_dir, path):
   """Detach path into a Photo of its own."""
   if _file_row(conn, path) is None:
     raise ValueError("unknown file")
-  _record(conn, state_dir, _entry(conn, path, "unlink"))
-  apply_all(conn)
+  entry = _entry(conn, path, "unlink")
+  _record(conn, entry)
+  apply_all(conn)                     # commits
+  _append_jsonl(state_dir, entry)
 
 
 def _latest_decisions(conn):

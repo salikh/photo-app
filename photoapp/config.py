@@ -36,6 +36,11 @@ flags.DEFINE_boolean(
     "is 1 star, 76% of this library's sidecars). Hides the 1-star badge, makes "
     "'picked' mean rating >= 2 and 'unrated' include 1. Nothing on disk changes. "
     "See ticket 049.")
+flags.DEFINE_float(
+    "busy_retry_seconds", 60.0,
+    "When the database is locked by another writer (a running scan, a second instance), "
+    "the web app retries with growing waits for about this long, then answers with an "
+    "error ('database busy') that the page shows as a message.")
 flags.DEFINE_string("host", "0.0.0.0", "Address to listen on (LAN only).")
 flags.DEFINE_integer("port", 8080, "Port to listen on.")
 
@@ -51,6 +56,7 @@ class Settings:
   job_workers: int = 2
   nightly_scan_hour: int = -1
   scan_workers: int = 8
+  busy_retry_seconds: float = 60.0
   one_star_is_unrated: bool = False
 
   @property
@@ -60,7 +66,11 @@ class Settings:
   @classmethod
   def from_flags(cls):
     f = flags.FLAGS
-    return cls(os.path.abspath(f.pictures_dir), os.path.abspath(f.thumbs_dir),
-               os.path.abspath(f.state_dir), f.hashes_db, f.xmp_dry_run,
-               f.new_raw_sidecar_style, f.job_workers, f.nightly_scan_hour,
-               f.scan_workers, f.one_star_is_unrated)
+    return cls(
+        pictures_dir=os.path.abspath(f.pictures_dir),
+        thumbs_dir=os.path.abspath(f.thumbs_dir),
+        state_dir=os.path.abspath(f.state_dir), hashes_db=f.hashes_db,
+        xmp_dry_run=f.xmp_dry_run, new_raw_sidecar_style=f.new_raw_sidecar_style,
+        job_workers=f.job_workers, nightly_scan_hour=f.nightly_scan_hour,
+        scan_workers=f.scan_workers, busy_retry_seconds=f.busy_retry_seconds,
+        one_star_is_unrated=f.one_star_is_unrated)

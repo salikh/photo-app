@@ -52,7 +52,7 @@ class Server:
     self.settings = config.Settings(
         pictures_dir=self.pictures, thumbs_dir=str(tmp_path / "thumbs"),
         state_dir=str(tmp_path / "state"), **settings_overrides)
-    conn = db.open_state(self.settings.state_dir)
+    conn = db.open_state(self.settings.state_dir, busy_timeout=0.05)   # fail fast; the app retries
     self.app = api.create_app(conn, self.settings)
     self.app.state.jobs.start()
     self.port = free_port()

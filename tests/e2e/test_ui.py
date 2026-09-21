@@ -752,3 +752,35 @@ def test_shortcut_for_one_star_is_ignored_with_the_flag(browser, tmp_path):
     ctx.close()
   finally:
     srv.stop()
+
+
+# --- a busy database: retry, then a clear toast (ticket 052) ---------------------------------------
+
+def test_busy_database_shows_the_error_toast_reverts_and_works_again_after_release(browser, tmp_path):
+  import sqlite3
+  from tests.e2e.harness import Server
+  srv = Server(tmp_path, busy_retry_seconds=1.0).start()
+  writer = sqlite3.connect(srv.settings.db_path, isolation_level=None, timeout=0)
+  try:
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    pg = ctx.new_page()
+    ids = photo_ids(srv)
+    pg.goto(f"{srv.url}/#/2024/trip?photo={ids[0]}")
+    expect(pg.locator(".loupe")).to_be_visible()
+    writer.execute("BEGIN IMMEDIATE")                                       # another writer holds the lock
+    pg.keyboard.press("3")
+    expect(pg.locator(".hud .stars")).to_have_text("★★★☆☆")     # optimistic first
+    expect(pg.locator("#toast")).to_contain_text("database busy")           # after the retries: an error toast
+    expect(pg.locator("#toast")).to_have_class(re.compile("error"))
+    expect(pg.locator(".hud .stars")).to_have_text("☆" * 5)            # and the change is reverted
+    pg.goto(f"{srv.url}/#/2024/trip")                                       # reading still works while locked
+    expect(pg.locator(".cell")).to_have_count(6)
+    writer.execute("ROLLBACK")                                              # the lock is gone
+    pg.locator(".cell").first.click()
+    expect(pg.locator(".loupe")).to_be_visible()
+    pg.keyboard.press("3")
+    wait_for(lambda: srv.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") == 3)
+    expect(pg.locator(".hud .stars")).to_have_text("★★★☆☆")
+    ctx.close()
+  finally:
+    srv.stop()

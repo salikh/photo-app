@@ -6,6 +6,7 @@ tables listed in NOT_REBUILDABLE, which must be backed up.
 
 import os
 import sqlite3
+import time
 
 DB_NAME = "app.sqlite"
 
@@ -155,11 +156,52 @@ def migrate(conn):
     conn.commit()
 
 
-def connect(db_path):
-  """Open (creating if needed) and migrate the database at db_path."""
+class DatabaseBusy(Exception):
+  """The database stayed locked by another writer for the whole retry budget."""
+
+
+def is_busy(error):
+  """True for sqlite's 'database is locked' / 'database table is locked' / busy errors."""
+  if not isinstance(error, sqlite3.OperationalError):
+    return False
+  text = str(error).lower()
+  return "locked" in text or "busy" in text
+
+
+def retry_busy(fn, total_seconds=60.0, first_delay=0.1, max_delay=4.0,
+               sleep=time.sleep, clock=time.monotonic, on_retry=None):
+  """Call fn(); if the database is busy, wait (doubling, capped) and call it again.
+
+  Gives up with DatabaseBusy once about total_seconds have passed (measured on
+  clock, so waiting inside sqlite counts too). fn must be safe to run again;
+  on_retry() runs before each wait (for example to roll the connection back).
+  Errors that are not "busy" propagate at once.
+  """
+  start, delay = clock(), first_delay
+  while True:
+    try:
+      return fn()
+    except sqlite3.OperationalError as e:
+      if not is_busy(e):
+        raise
+      if on_retry:
+        on_retry()
+      if clock() - start + delay > total_seconds:
+        raise DatabaseBusy(f"database busy for {clock() - start:.0f} s: {e}") from e
+      sleep(delay)
+      delay = min(delay * 2, max_delay)
+
+
+def connect(db_path, busy_timeout=5.0):
+  """Open (creating if needed) and migrate the database at db_path.
+
+  busy_timeout: how long sqlite itself waits for a lock before failing with
+  'database is locked' (background workers use a long one; the web app uses a
+  short one and retries, see retry_busy).
+  """
   if db_path != ":memory:":
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
-  conn = sqlite3.connect(db_path, check_same_thread=False)
+  conn = sqlite3.connect(db_path, timeout=busy_timeout, check_same_thread=False)
   conn.row_factory = sqlite3.Row
   conn.execute("PRAGMA foreign_keys = ON")
   if db_path != ":memory:":
@@ -168,6 +210,6 @@ def connect(db_path):
   return conn
 
 
-def open_state(state_dir):
+def open_state(state_dir, busy_timeout=5.0):
   """Open the app database in state_dir."""
-  return connect(os.path.join(state_dir, DB_NAME))
+  return connect(os.path.join(state_dir, DB_NAME), busy_timeout)

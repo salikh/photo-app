@@ -36,7 +36,7 @@ def main(argv):
   if len(argv) != 1:
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
   settings = config.Settings.from_flags()
-  conn = db.open_state(settings.state_dir)
+  conn = db.open_state(settings.state_dir, busy_timeout=120.0)
   manual_links.restore_if_empty(conn, settings.state_dir)
   hashes = (fileinfo.load_precomputed_hashes(os.path.expanduser(settings.hashes_db))
             if settings.hashes_db else None)
