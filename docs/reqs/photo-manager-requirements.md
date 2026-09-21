@@ -116,6 +116,10 @@ a new file, GPS/caption editing, multi-user features, remote access.
   only"). Other files' sidecars (exports, tunings) are not modified. When
   reading, if the sources (database and sidecars) disagree the newest one wins and the UI
   shows a conflict badge until a write brings them back in sync.
+- **Rejects and the DNG/JPG pair** (decided 2026-09-21, ticket 053): darktable treats the DNG and the JPG as
+  separate images, so a reject on a single sidecar often means "keep only the other file". The combined Photo is
+  never rejected while any of its sidecars is picked (rating 1..5); its rating is then the newest picked sidecar's.
+  A reject made in this app (written to both sidecars) is newest-wins like any other change.
 - v2 idea: a function to delete DNG files to save space (most likely for
   rating 1); the rating then lives on in the JPG's sidecar.
 - Existing sidecars (`.XMP`, `.JPG.xmp`, ...) are read in any naming style and
