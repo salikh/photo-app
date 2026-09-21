@@ -139,6 +139,29 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
           "photos": [_photo_json(r, tags.get(r["id"], [])) for r in rows]}
 
 
+COUNT_FILTERS = ("all", "unrated", "rejected", "rating:1", "rating:2", "rating:3", "rating:4",
+                 "rating:5", "picked", "rated", "fav", "conflict")
+
+
+def filter_counts(conn, rel_dir=".", one_star_is_unrated=False):
+  """How many Photos each filter shows in rel_dir (the ones the grid lists there).
+
+  One query; the conditions are the ones list_photos uses, so a button's count always equals
+  what clicking it shows. With one_star_is_unrated there is no 'rating:1'.
+  """
+  rel_dir = _norm_dir(rel_dir)
+  lo, hi = _prefix_range(rel_dir)
+  names = [n for n in COUNT_FILTERS if not (one_star_is_unrated and n == "rating:1")]
+  sums = ", ".join(
+      f"COALESCE(SUM(CASE WHEN {filter_condition(n, one_star_is_unrated)} THEN 1 ELSE 0 END), 0)"
+      for n in names)
+  row = conn.execute(
+      f"SELECT {sums} FROM photos p JOIN files rf ON rf.id = p.representative_file_id "
+      "WHERE rf.path >= ? AND rf.path < ? AND instr(substr(rf.path, ?), '/') = 0 "
+      "AND rf.missing = 0", (lo, hi, len(lo) + 1)).fetchone()
+  return {"dir": rel_dir, "counts": dict(zip(names, row))}
+
+
 def photo_detail(conn, photo_id):
   """One Photo with all its files and sidecars, or None."""
   p = conn.execute("SELECT * FROM photos WHERE id = ?",

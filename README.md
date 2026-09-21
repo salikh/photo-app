@@ -19,6 +19,8 @@ cache. Originals are never moved or deleted.
 The row under the title filters the folder by rating: `All`, `Rejected`, `Unrated`, and exactly `★1`..`★5`
 (`★1` is left out with `--one_star_is_unrated`). The `more` menu has picked, rated, favorites and
 "sidecars disagree". The filter is kept in the URL and when you change folder, and the viewer shows it.
+Each button shows how many photos of the folder it holds (dimmed at 0), kept current as you rate. In the grid
+(not in the viewer): `Shift`+`A` all, `Shift`+`X` rejected, `Shift`+`0` unrated, `Shift`+`1`..`5` exactly that many stars.
 
 While a filter is active, a photo whose rating stops matching it **leaves the view** at once (grid and viewer):
 in the viewer the next photo is shown, when the last one leaves the viewer closes, and `U` brings the photo

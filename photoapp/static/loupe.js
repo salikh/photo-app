@@ -9,7 +9,7 @@ import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
 import {label as filterLabel} from './filters.js';
 import {updateCell, settle, reinsertPhotos, loadRest} from './grid.js';
-import {matches} from './filters.js';
+import {matches, scheduleCountsRefresh} from './filters.js';
 
 const PRELOAD_NEXT = 3;
 const PRELOAD_PREV = 1;
@@ -292,6 +292,7 @@ function setRating(value) {
       toast(e.message, true);
       reconcile(photo, left);                        // back where it was
     }
+    scheduleCountsRefresh();
   });
 }
 
@@ -318,6 +319,7 @@ function toggleFav() {
       toast(e.message, true);
       reconcile(photo, left);
     }
+    scheduleCountsRefresh();
   });
 }
 
@@ -346,6 +348,7 @@ function onTagKey(e) {
       reconcile(photo, left);
       if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids, left});
     } catch (err) { toast(err.message, true); refresh(photo); }
+    scheduleCountsRefresh();
   });
 }
 
@@ -381,6 +384,7 @@ export function undo() {
       }
       if (!item.batch_id) toast('undone');
     } catch (e) { toast(e.message, true); }
+    scheduleCountsRefresh();
   });
 }
 

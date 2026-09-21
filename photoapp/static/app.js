@@ -40,9 +40,9 @@ function filterRow(route) {
   const inMore = extra.some(([v]) => v === route.filter);
   return el('div', {class: 'filters', role: 'group', 'aria-label': 'filter'},
     filters.primary().map(([value, text, title]) => el('button', {
-      text, title, class: route.filter === value ? 'on' : '', 'aria-pressed': route.filter === value,
+      title, class: route.filter === value ? 'on' : '', 'aria-pressed': route.filter === value,
       dataset: {filter: value}, onclick: () => go(value),
-    })),
+    }, el('span', {class: 'lbl', text}), el('span', {class: 'n'}))),
     el('select', {'aria-label': 'more filters', class: inMore ? 'on' : '', onchange: (e) => e.target.value && go(e.target.value)},
       el('option', {value: '', text: 'more\u2026'}),
       extra.map(([v, text]) => el('option', {value: v, text, selected: v === route.filter}))));
@@ -66,6 +66,7 @@ function renderHeader(route) {
       el('a', {href: '#!usage', text: 'Thumbnails'}), el('a', {href: '#!jobs', text: 'Jobs'})));
   header ? header.replaceWith(newHeader) : app.prepend(newHeader);
   header = newHeader;
+  if (browsing) filters.applyCounts(state.counts);
 }
 
 function toggleSelecting() {
@@ -134,6 +135,7 @@ async function render() {
       return;
     }
     grid.renderFolder(main);
+    filters.applyCounts(state.counts);
     document.title = (route.dir === '.' ? 'Photos' : route.dir.split('/').pop()) + ' — Photos';
   } else {
     state.route.photo = route.photo;
@@ -153,7 +155,11 @@ async function render() {
 
 document.addEventListener('keydown', (e) => {
   if (loupe.isOpen() || isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === 'u' || e.key === 'U') { loupe.undo(); e.preventDefault(); }
+  const shortcut = e.shiftKey ? filters.shortcutFor(e.code) : null;
+  if (shortcut && state.route && state.route.page === 'browse') {
+    location.hash = href({...state.route, filter: shortcut, photo: null});
+    e.preventDefault();
+  } else if (e.key === 'u' || e.key === 'U') { loupe.undo(); e.preventDefault(); }
   else if (e.key === 'Escape' && state.selected.size) { grid.clearSelection(); e.preventDefault(); }
 });
 

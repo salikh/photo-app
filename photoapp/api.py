@@ -260,6 +260,10 @@ def create_app(conn, settings):
     return read(library.list_photos, dir, sort, filter, offset, limit,
                 settings.one_star_is_unrated)
 
+  @app.get("/api/photos/counts")
+  def photo_counts(dir: str = "."):
+    return read(library.filter_counts, dir, settings.one_star_is_unrated)
+
   @app.get("/api/photos/{photo_id}")
   def photo(photo_id: int):
     detail = read(library.photo_detail, photo_id)

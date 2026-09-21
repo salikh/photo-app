@@ -5,18 +5,20 @@ import {el, toast, retryImage, enqueue, setChildren} from './util.js';
 import {href} from './route.js';
 import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
-import {matches} from './filters.js';
+import {matches, scheduleCountsRefresh} from './filters.js';
 
 const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
 
 export async function loadFolder(route) {
   state.route = route;
   state.selected.clear();
-  const [dirs, first] = await Promise.all([
+  const [dirs, first, counts] = await Promise.all([
     get('/api/dirs?path=' + encodeURIComponent(route.dir)),
     get(`/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}&filter=${route.filter}&limit=${PAGE}`),
+    get('/api/photos/counts?dir=' + encodeURIComponent(route.dir)),
   ]);
   state.dirs = dirs;
+  state.counts = counts.counts;
   state.photos = first.photos;
   state.total = first.total;
   state.loaded = first.photos.length;
@@ -203,6 +205,7 @@ function batchRate(ids, rating) {
       clearSelection();
       if (r.results.some((x) => x.dry_run)) { toast('dry run: nothing was saved'); return; }
       if (r.results.length) state.undoStack.push({batch_id: r.batch_id, left});
+      scheduleCountsRefresh();
       toast(`rated ${r.results.length}` + (r.errors.length ? `, ${r.errors.length} failed` : '') + ' (press U to undo)', r.errors.length > 0);
     } catch (e) { toast(e.message, true); }
   });

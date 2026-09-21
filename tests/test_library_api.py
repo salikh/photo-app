@@ -210,3 +210,29 @@ def test_rating_n_filter_means_exactly_n_stars(settings):
   on = TestClient(api.create_app(conn, dataclasses.replace(settings, one_star_is_unrated=True)))
   assert on.get("/api/photos", params={"dir": "s", "filter": "rating:1"}).status_code == 400
   assert names(on, "rating:2") == ["1.jpg", "2.jpg"]
+
+
+def test_filter_counts_match_what_each_filter_lists(settings):
+  import dataclasses
+  d = settings.pictures_dir
+  for i, r in enumerate((1, 2, 2, 3, 0, 0, -1, 5)):
+    make_jpeg(os.path.join(d, "s", f"{i}.jpg"))
+    if r:
+      write(os.path.join(d, "s", f"{i}.jpg.xmp"), XMP % (r, FAV if i == 3 else ""), mtime=1_000_000)
+  make_jpeg(os.path.join(d, "s", ".hidden", "h.jpg"))                        # in a subfolder: not counted
+  make_jpeg(os.path.join(d, "other", "o.jpg"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  for flag in (False, True):
+    c = TestClient(api.create_app(conn, dataclasses.replace(settings, one_star_is_unrated=flag)))
+    counts = c.get("/api/photos/counts", params={"dir": "s"}).json()["counts"]
+    assert counts["all"] == 8
+    for name, n in counts.items():
+      listed = c.get("/api/photos", params={"dir": "s", "filter": name}).json()
+      assert listed["total"] == n, (flag, name, n, listed["total"])
+    assert ("rating:1" in counts) == (not flag)
+  plain = TestClient(api.create_app(conn, settings)).get("/api/photos/counts", params={"dir": "s"}).json()["counts"]
+  assert plain["unrated"] == 2 and plain["rejected"] == 1 and plain["rating:2"] == 2 and plain["fav"] == 1
+  assert plain["picked"] == 5 and plain["rated"] == 6
+  assert TestClient(api.create_app(conn, settings)).get("/api/photos/counts").json()["counts"]["all"] == 0   # root: no files directly in it
+  assert TestClient(api.create_app(conn, settings)).get("/api/photos/counts", params={"dir": "../x"}).status_code == 400

@@ -1,10 +1,14 @@
 """Browser tests against a live server and a synthetic library."""
 
 import json
+import re
 import time
 import urllib.request
 
 from playwright.sync_api import expect
+
+
+ON = re.compile(r"(^|\s)on(\s|$)")          # a filter button's class list may also hold 'zero'
 
 
 def api(server, path):
@@ -308,7 +312,7 @@ def test_one_star_is_unrated_flag_hides_star_1_and_skips_it(browser, tmp_path):
     expect(pg.locator(".cell")).to_have_count(6)
     expect(pg.locator(".badges .stars", has_text="4")).to_have_count(1)      # 4 stars still shown
     assert pg.locator(".badges .stars", has_text="1").count() == 0            # the 1-star badge is hidden
-    assert pg.locator(".filters button").all_inner_texts() == [
+    assert pg.locator(".filters button .lbl").all_inner_texts() == [
         "All", "\u2716 Rejected", "\u2606 Unrated", "\u26052", "\u26053", "\u26054", "\u26055"]   # no \u26051
     pg.get_by_label("more filters").select_option("picked")
     expect(pg.locator(".cell")).to_have_count(1)                              # only the 4-star photo
@@ -385,14 +389,16 @@ def test_filter_buttons_show_the_right_photos_and_keep_state(page, server):
         headers={"Content-Type": "application/json"}))
   page.goto(server.url + "/#/2024/trip")
   expect(page.locator(".cell")).to_have_count(6)
-  labels = page.locator(".filters button").all_inner_texts()
-  assert labels == ["All", "\u2716 Rejected", "\u2606 Unrated", "\u26051", "\u26052", "\u26053", "\u26054", "\u26055"]
-  expect(filter_button(page, "All")).to_have_class("on")
+  kinds = page.locator(".filters button").evaluate_all("els => els.map(e => e.dataset.filter)")
+  assert kinds == ["all", "rejected", "unrated", "rating:1", "rating:2", "rating:3", "rating:4", "rating:5"]
+  assert page.locator(".filters button .lbl").all_inner_texts() == [
+      "All", "\u2716 Rejected", "\u2606 Unrated", "\u26051", "\u26052", "\u26053", "\u26054", "\u26055"]
+  expect(filter_button(page, "All")).to_have_class(ON)
   filter_button(page, "Unrated").click()
   expect(page.locator(".cell")).to_have_count(2)                       # 0001 and 0006 have no rating
   assert "filter=unrated" in page.url
-  expect(filter_button(page, "Unrated")).to_have_class("on")
-  expect(filter_button(page, "All")).not_to_have_class("on")
+  expect(filter_button(page, "Unrated")).to_have_class(ON)
+  expect(filter_button(page, "All")).not_to_have_class(ON)
   filter_button(page, "\u26054").click()                               # exactly 4 stars
   expect(page.locator(".cell")).to_have_count(2)
   assert "filter=rating%3A4" in page.url
@@ -400,7 +406,7 @@ def test_filter_buttons_show_the_right_photos_and_keep_state(page, server):
   expect(page.locator(".cell")).to_have_count(0)
   expect(page.locator(".status")).to_contain_text("No photos")
   page.reload()                                                          # state is in the URL
-  expect(filter_button(page, "\u26053")).to_have_class("on")
+  expect(filter_button(page, "\u26053")).to_have_class(ON)
   filter_button(page, "Rejected").click()
   expect(page.locator(".cell")).to_have_count(1)
   page.get_by_label("more filters").select_option("fav")
@@ -657,3 +663,92 @@ def test_paging_stays_correct_when_photos_leave_while_a_page_is_loading(browser,
   expect(page.locator(".loupe")).to_be_hidden()
   wait_for(lambda: all(server.sidecar_rating(f"2024/trip/IMG_000{n}.jpg.xmp") == 3 for n in (1, 4, 5, 6)))
   ctx.close()
+
+
+# --- counts on the filter buttons and the grid shortcuts (ticket 057) ---------------------------
+
+def counts_on_buttons(page):
+  return page.locator(".filters button").evaluate_all(
+      "els => Object.fromEntries(els.map(e => [e.dataset.filter, e.querySelector('.n').textContent]))")
+
+
+def test_filter_buttons_show_counts_that_follow_ratings_and_undo(page, server):
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  expect(page.locator('.filters button[data-filter="unrated"] .n')).to_have_text("4")
+  assert counts_on_buttons(page) == {"all": "6", "rejected": "1", "unrated": "4", "rating:1": "0",
+                                     "rating:2": "0", "rating:3": "0", "rating:4": "1", "rating:5": "0"}
+  expect(page.locator('.filters button[data-filter="rating:3"]')).to_have_class("zero")     # dimmed, still clickable
+  expect(page.locator('.filters button[data-filter="rating:4"]')).not_to_have_class("zero")
+  # each number equals what its button shows
+  page.locator('.filters button[data-filter="unrated"]').click()
+  expect(page.locator(".cell")).to_have_count(4)
+  # rate the first unrated photo 3: the photo leaves, and the counts follow
+  page.locator(".cell").first.click()
+  expect(page.locator(".loupe")).to_be_visible()              # the key must not arrive before the viewer is open
+  page.keyboard.press("3")
+  expect(page.locator('.filters button[data-filter="unrated"] .n')).to_have_text("3")
+  expect(page.locator('.filters button[data-filter="rating:3"] .n')).to_have_text("1")
+  expect(page.locator('.filters button[data-filter="rating:3"]')).not_to_have_class("zero")
+  expect(page.locator('.filters button[data-filter="all"] .n')).to_have_text("6")
+  page.keyboard.press("u")
+  expect(page.locator('.filters button[data-filter="unrated"] .n')).to_have_text("4")
+  expect(page.locator('.filters button[data-filter="rating:3"] .n')).to_have_text("0")
+  # another folder has its own numbers
+  page.keyboard.press("Escape")
+  page.goto(server.url + "/#/2024/home")
+  expect(page.locator(".cell")).to_have_count(3)
+  expect(page.locator('.filters button[data-filter="all"] .n')).to_have_text("3")
+  expect(page.locator('.filters button[data-filter="rejected"] .n')).to_have_text("0")
+
+
+def test_grid_shortcuts_switch_the_filter(page, server):
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  page.keyboard.press("Shift+Digit0")
+  expect(page.locator(".cell")).to_have_count(4)
+  assert "filter=unrated" in page.url
+  page.keyboard.press("Shift+KeyX")
+  expect(page.locator(".cell")).to_have_count(1)
+  assert "filter=rejected" in page.url
+  page.keyboard.press("Shift+Digit4")
+  expect(page.locator('.filters button[data-filter="rating:4"]')).to_have_class(ON)
+  assert "filter=rating%3A4" in page.url
+  page.keyboard.press("Shift+KeyA")
+  expect(page.locator(".cell")).to_have_count(6)
+  assert "filter" not in page.url
+  # the tooltips say so
+  assert "Shift+3" in page.locator('.filters button[data-filter="rating:3"]').get_attribute("title")
+  assert "Shift+X" in page.locator('.filters button[data-filter="rejected"]').get_attribute("title")
+
+
+def test_grid_shortcuts_do_nothing_in_the_viewer_or_while_typing(page, server):
+  open_loupe(page, server)
+  page.keyboard.press("Shift+Digit3")                       # in the viewer: not a filter shortcut
+  expect(page.locator(".loupe")).to_be_visible()
+  assert "filter" not in page.url
+  page.keyboard.press("Escape")
+  page.keyboard.press("Tab")
+  page.get_by_label("sort").focus()
+  page.keyboard.press("Shift+Digit2")                       # focus is in a field: leave it alone
+  assert "filter" not in page.url
+
+
+def test_shortcut_for_one_star_is_ignored_with_the_flag(browser, tmp_path):
+  from tests.e2e.harness import Server
+  srv = Server(tmp_path, one_star_is_unrated=True).start()
+  try:
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    pg = ctx.new_page()
+    pg.goto(srv.url + "/#/2024/trip")
+    expect(pg.locator(".cell")).to_have_count(6)
+    pg.keyboard.press("Shift+Digit1")
+    pg.wait_for_timeout(300)
+    assert "filter" not in pg.url
+    pg.keyboard.press("Shift+Digit4")
+    assert "filter=rating%3A4" in pg.url
+    counts = pg.locator(".filters button").evaluate_all("els => els.map(e => e.dataset.filter)")
+    assert "rating:1" not in counts
+    ctx.close()
+  finally:
+    srv.stop()
