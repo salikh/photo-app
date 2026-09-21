@@ -111,11 +111,12 @@ def refresh_dirs(conn, rel_dirs):
   wanted = set(rel_dirs)
   if not wanted:
     return 0
+  from photoapp import paths
   photo_ids = set()
-  for r in conn.execute(
-      "SELECT path, photo_id FROM files WHERE photo_id IS NOT NULL"):
-    if (r["path"].rpartition("/")[0] or ".") in wanted:
-      photo_ids.add(r["photo_id"])
+  for d in wanted:
+    for r in paths.files_in_dir(conn, d, "photo_id"):
+      if r["photo_id"] is not None:
+        photo_ids.add(r["photo_id"])
   for pid in sorted(photo_ids):
     refresh_photo(conn, pid)
     remember(conn, pid)

@@ -117,6 +117,9 @@ MIGRATIONS = [
     """
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);  -- e.g. grouping_version
     """,
+    """
+    CREATE INDEX xmp_sidecars_file ON xmp_sidecars(file_id);
+    """,
 ]
 
 

@@ -20,6 +20,18 @@
 
 Try a first session with `--xmp_dry_run` to see what would be written.
 
+## Scanning the library
+
+`python -m photoapp.fullscan --hashes_db=~/zoo.db` scans the whole library from the command line
+(read-only on the library; it writes only the state database). It works **one top-level (year)
+directory at a time**, in sorted order, after the files directly in the root. Each step is complete on
+its own: files read, Photos grouped, ratings resolved, thumbnails indexed, vanished files marked. So
+an interrupted run (Ctrl-C, a reboot, low memory) leaves every finished year usable in the app, and
+running the same command again skips finished directories (by their mtime) and continues. It logs
+`done <dir> (n/total)` with the files read and the peak memory after every step.
+`--scan_dirs=2001,2026` scans only those directories; `--scan_workers` sets the read threads.
+The **Rescan** button and the nightly scan work the same way (a folder-scoped rescan scans that folder).
+
 ## What is in the state directory, and what to back up
 
 | Path | Rebuildable from disk? | Back it up? |

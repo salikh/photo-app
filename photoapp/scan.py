@@ -12,6 +12,7 @@ import dataclasses
 import hashlib
 import json
 import os
+import resource
 import threading
 
 from absl import logging
@@ -20,6 +21,7 @@ from photoapp import db
 from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import manual_links
+from photoapp import paths
 from photoapp import ratings
 from photoapp import thumbs
 from photoapp import xmp
@@ -33,6 +35,9 @@ class Progress:
   files_seen: int = 0
   files_processed: int = 0
   sidecars_processed: int = 0
+  current_dir: str = None    # top-level step being scanned (per-year scans)
+  steps_done: int = 0
+  steps_total: int = 0
   error: str = None
 
 
@@ -54,6 +59,24 @@ def _upsert_file(conn, rel_path, record):
        record["exif_date"]))
 
 
+def _lookup_files(conn, rel_dir, names, columns="id, path, mtime, bytesize, missing"):
+  """{path: row} for the given file names in rel_dir, by exact path.
+
+  Cost is proportional to the names asked for, not to the size of the
+  directory's subtree (LIKE 'dir/%' would read every file below it).
+  """
+  prefix = "" if rel_dir == "." else rel_dir + "/"
+  wanted = [prefix + n for n in names]
+  found = {}
+  for i in range(0, len(wanted), 500):
+    chunk = wanted[i:i + 500]
+    for row in conn.execute(
+        f"SELECT {columns} FROM files WHERE path IN ({','.join('?' * len(chunk))})",
+        chunk):
+      found[row["path"]] = row
+  return found
+
+
 def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
                 progress, pool):
   """Read new or changed image files of one directory.
@@ -62,12 +85,7 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
   network file system latency; database writes stay on this thread.
   """
   changed = False
-  known = {
-      row["path"]: row for row in conn.execute(
-          "SELECT path, mtime, bytesize, missing FROM files "
-          "WHERE path LIKE ? ESCAPE '\\'",
-          (_like_prefix(rel_dir) + "%",))
-  }
+  known = _lookup_files(conn, rel_dir, filenames)
 
   def work(name):
     filepath = os.path.join(dirpath, name)
@@ -129,11 +147,7 @@ def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress,
   changed = False
   if not sidecar_names and not known:
     return changed
-  file_ids = {
-      r["path"]: r["id"] for r in conn.execute(
-          "SELECT id, path FROM files WHERE path LIKE ? ESCAPE '\\'",
-          (_like_prefix(rel_dir) + "%",))
-  }
+  file_ids = {p: r["id"] for p, r in _lookup_files(conn, rel_dir, images).items()}
   prefix = "" if rel_dir == "." else rel_dir + "/"
   owners = _sidecar_owners(images, sidecar_names)
   def work(name):
@@ -183,87 +197,117 @@ def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress,
   return changed
 
 
-def _load_known_sidecars(conn):
-  """Return {rel_dir: {sidecar_name: row}} for all sidecars in the database."""
+def _load_known_sidecars(conn, rel_scan, recursive=True):
+  """{rel_dir: {sidecar_name: row}} for the sidecars under rel_scan."""
+  lo, hi = paths.subtree_range(rel_scan)
   result = {}
   for row in conn.execute(
-      "SELECT path, file_id, mtime FROM xmp_sidecars"):
+      "SELECT path, file_id, mtime FROM xmp_sidecars WHERE path >= ? AND path < ?",
+      (lo, hi)):
     dirname, _, name = row["path"].rpartition("/")
-    result.setdefault(dirname or ".", {})[name] = row
+    d = dirname or "."
+    if recursive or d == rel_scan:
+      result.setdefault(d, {})[name] = row
   return result
 
 
-def _like_prefix(rel_dir):
-  """LIKE pattern prefix for paths directly or indirectly under rel_dir."""
-  if rel_dir == ".":
-    return ""
-  escaped = rel_dir.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-  return escaped + "/"
+def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
+                  thumbs_dir, on_done, pool):
+  """One complete unit of work: read a subtree, then make it visible.
+
+  Everything after the walk (grouping, ratings, thumbnails, missing files)
+  is limited to this subtree, so when it returns the subtree is fully
+  usable in the app even if a later subtree is never scanned.
+  """
+  rel_scan = _rel(pictures_dir, scan_dir)
+  seen = set()
+  changed_dirs = set()
+  known_sidecars = _load_known_sidecars(conn, rel_scan, recursive)
+  for dirpath, dirnames, filenames in os.walk(scan_dir):
+    dirnames.sort()
+    if not recursive:
+      dirnames[:] = []
+    rel_dir = _rel(pictures_dir, dirpath)
+    images = sorted(n for n in filenames if fileinfo.is_image(n))
+    progress.dirs_seen += 1
+    progress.files_seen += len(images)
+    seen.update(images if rel_dir == "." else
+                (f"{rel_dir}/{n}" for n in images))
+
+    mtime = os.stat(dirpath).st_mtime
+
+    def sync_sidecars():
+      if _sync_sidecars(conn, dirpath, rel_dir, filenames, images,
+                        known_sidecars.get(rel_dir, {}), progress, pool):
+        changed_dirs.add(rel_dir)
+
+    row = conn.execute(
+        "SELECT mtime FROM dir_mtimes WHERE dirpath = ?",
+        (rel_dir,)).fetchone()
+    if row is not None and row["mtime"] == mtime:
+      progress.dirs_skipped += 1
+      sync_sidecars()
+      continue
+
+    if _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
+                   progress, pool):
+      changed_dirs.add(rel_dir)
+    sync_sidecars()
+    conn.execute(
+        "INSERT INTO dir_mtimes (dirpath, mtime) VALUES (?, ?) "
+        "ON CONFLICT(dirpath) DO UPDATE SET mtime = excluded.mtime",
+        (rel_dir, mtime))
+    conn.commit()
+
+  _mark_missing(conn, rel_scan, recursive, seen)
+  conn.commit()
+  # Also directories of this subtree left ungrouped by an interrupted scan.
+  lo, hi = paths.subtree_range(rel_scan)
+  for r in conn.execute(
+      "SELECT path FROM files WHERE photo_id IS NULL AND path >= ? AND path < ?",
+      (lo, hi)):
+    d = paths.dirname(r["path"])
+    if recursive or d == rel_scan:
+      changed_dirs.add(d)
+  grouping.regroup(conn, changed_dirs)
+  _apply_grouping_rule_version(conn, rel_scan, recursive, scan_dir == pictures_dir)
+  manual_links.apply_all(conn)
+  ratings.refresh_dirs(conn, changed_dirs)
+  ratings.refresh_unresolved(conn)
+  if thumbs_dir:
+    thumbs.index_existing(conn, thumbs_dir, changed_dirs)
+  if on_done:
+    on_done(conn)
+
+
+def _apply_grouping_rule_version(conn, rel_scan, recursive, whole_library):
+  """Regroup a scope once when the grouping rule has changed since it was done.
+
+  The version is kept per scope that is a complete unit (the whole library,
+  a top-level directory, or the files directly in the root), so per-year
+  scans migrate one year at a time.
+  """
+  if whole_library and recursive:
+    grouping.regroup_if_rule_changed(conn)
+  elif rel_scan == "." and not recursive:
+    grouping.regroup_scope_if_rule_changed(conn, ".", False)
+  elif recursive and "/" not in rel_scan and rel_scan != ".":
+    grouping.regroup_scope_if_rule_changed(conn, rel_scan, True)
 
 
 def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
-         thumbs_dir=None, on_done=None, workers=8):
+         thumbs_dir=None, on_done=None, workers=8, recursive=True):
   """Scan scan_dir (default: pictures_dir) into conn. Returns the Progress.
 
   With thumbs_dir, thumbnails that already exist for new files are recorded.
+  recursive=False reads only the files directly in scan_dir.
   """
   progress = progress or Progress()
   progress.running = True
   pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers))
-  scan_dir = scan_dir or pictures_dir
-  seen = set()
-  changed_dirs = set()
-  known_sidecars = _load_known_sidecars(conn)
   try:
-    for dirpath, dirnames, filenames in os.walk(scan_dir):
-      dirnames.sort()
-      rel_dir = _rel(pictures_dir, dirpath)
-      images = sorted(n for n in filenames if fileinfo.is_image(n))
-      progress.dirs_seen += 1
-      progress.files_seen += len(images)
-      seen.update(images if rel_dir == "." else
-                  (f"{rel_dir}/{n}" for n in images))
-
-      mtime = os.stat(dirpath).st_mtime
-
-      def sync_sidecars():
-        if _sync_sidecars(conn, dirpath, rel_dir, filenames, images,
-                          known_sidecars.get(rel_dir, {}), progress, pool):
-          changed_dirs.add(rel_dir)
-
-      row = conn.execute(
-          "SELECT mtime FROM dir_mtimes WHERE dirpath = ?",
-          (rel_dir,)).fetchone()
-      if row is not None and row["mtime"] == mtime:
-        progress.dirs_skipped += 1
-        sync_sidecars()
-        continue
-
-      if _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
-                     progress, pool):
-        changed_dirs.add(rel_dir)
-      sync_sidecars()
-      conn.execute(
-          "INSERT INTO dir_mtimes (dirpath, mtime) VALUES (?, ?) "
-          "ON CONFLICT(dirpath) DO UPDATE SET mtime = excluded.mtime",
-          (rel_dir, mtime))
-      conn.commit()
-
-    _mark_missing(conn, pictures_dir, scan_dir, seen)
-    conn.commit()
-    # Also directories left ungrouped by an earlier interrupted scan.
-    changed_dirs.update(
-        r["path"].rpartition("/")[0] or "." for r in conn.execute(
-            "SELECT path FROM files WHERE photo_id IS NULL"))
-    grouping.regroup(conn, changed_dirs)
-    grouping.regroup_if_rule_changed(conn)
-    manual_links.apply_all(conn)
-    ratings.refresh_dirs(conn, changed_dirs)
-    ratings.refresh_unresolved(conn)
-    if thumbs_dir:
-      thumbs.index_existing(conn, thumbs_dir, changed_dirs)
-    if on_done:
-      on_done(conn)
+    _scan_subtree(conn, pictures_dir, scan_dir or pictures_dir, recursive,
+                  hashes, progress, thumbs_dir, on_done, pool)
   except Exception as e:
     logging.exception("scan failed")
     progress.error = str(e)
@@ -273,13 +317,83 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
   return progress
 
 
-def _mark_missing(conn, pictures_dir, scan_dir, seen):
-  """Mark files under scan_dir that were not seen this pass as missing."""
-  rel_scan = _rel(pictures_dir, scan_dir)
-  rows = conn.execute(
-      "SELECT id, path FROM files WHERE missing = 0 AND path LIKE ? "
-      "ESCAPE '\\'", (_like_prefix(rel_scan) + "%",)).fetchall()
-  gone = [(r["id"],) for r in rows if r["path"] not in seen]
+def top_level_steps(pictures_dir):
+  """The steps of a whole-library scan: the root's own files, then each
+  top-level directory in sorted order. [(rel_dir, recursive)]"""
+  names = sorted(e.name for e in os.scandir(pictures_dir)
+                 if e.is_dir(follow_symlinks=False))
+  return [(".", False)] + [(n, True) for n in names]
+
+
+def scan_all(conn, pictures_dir, dirs=None, hashes=None, progress=None,
+             thumbs_dir=None, on_done=None, workers=8):
+  """Scan the library one top-level directory at a time.
+
+  Each step is complete on its own (see _scan_subtree), so an interrupted
+  run leaves every finished directory usable, and a rerun skips them by
+  mtime. dirs restricts the steps to the given relative directories (each
+  scanned recursively). Returns the shared Progress.
+  """
+  progress = progress or Progress()
+  progress.running = True
+  pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers))
+  try:
+    steps = ([(d.strip("/") or ".", True) for d in dirs] if dirs
+             else top_level_steps(pictures_dir))
+    progress.steps_total = len(steps)
+    progress.steps_done = 0
+    for rel_dir, recursive in steps:
+      progress.current_dir = "(files in the root)" if rel_dir == "." else rel_dir
+      before = (progress.files_seen, progress.files_processed,
+                progress.sidecars_processed)
+      target = pictures_dir if rel_dir == "." else os.path.join(pictures_dir, rel_dir)
+      if not os.path.isdir(target):
+        logging.warning("skipping %s: not a directory", target)
+      else:
+        _scan_subtree(conn, pictures_dir, target, recursive, hashes, progress,
+                      thumbs_dir, on_done, pool)
+      progress.steps_done += 1
+      logging.info("done %s (%d/%d): %d files seen, %d read, %d sidecars, "
+                   "peak memory %d MB", progress.current_dir, progress.steps_done,
+                   progress.steps_total, progress.files_seen - before[0],
+                   progress.files_processed - before[1],
+                   progress.sidecars_processed - before[2],
+                   resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024)
+    if not dirs:
+      _mark_missing_top_levels(conn, {d for d, _ in steps})
+      conn.commit()
+  except Exception as e:
+    logging.exception("scan failed")
+    progress.error = str(e)
+  finally:
+    pool.shutdown(wait=True)
+    progress.current_dir = None
+    progress.running = False
+  return progress
+
+
+def _mark_missing_top_levels(conn, present):
+  """Mark files under top-level directories that no longer exist as missing."""
+  tops = {r[0] for r in conn.execute(
+      "SELECT DISTINCT substr(path, 1, instr(path, '/') - 1) FROM files "
+      "WHERE instr(path, '/') > 0")}
+  for top in sorted(tops - present):
+    lo, hi = paths.subtree_range(top)
+    conn.execute("UPDATE files SET missing = 1 WHERE path >= ? AND path < ? "
+                 "AND missing = 0", (lo, hi))
+
+
+def _mark_missing(conn, rel_scan, recursive, seen):
+  """Mark files under rel_scan that were not seen this pass as missing."""
+  lo, hi = paths.subtree_range(rel_scan)
+  gone = []
+  for r in conn.execute(
+      "SELECT id, path FROM files WHERE missing = 0 AND path >= ? AND path < ?",
+      (lo, hi)).fetchall():
+    if not recursive and paths.dirname(r["path"]) != rel_scan:
+      continue
+    if r["path"] not in seen:
+      gone.append((r["id"],))
   conn.executemany("UPDATE files SET missing = 1 WHERE id = ?", gone)
   return len(gone)
 
@@ -318,8 +432,12 @@ class ScanManager:
   def _run(self, scan_dir, progress):
     conn = db.connect(self._db_path)
     try:
-      scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
-           self._thumbs_dir, self._on_done, self._workers)
+      if scan_dir == self._pictures_dir:
+        scan_all(conn, self._pictures_dir, None, self._hashes, progress,
+                 self._thumbs_dir, self._on_done, self._workers)
+      else:
+        scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
+             self._thumbs_dir, self._on_done, self._workers)
     finally:
       conn.close()
 

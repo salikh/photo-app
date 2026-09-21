@@ -127,3 +127,123 @@ def test_parallel_scan_matches_serial_and_is_actually_concurrent(settings, monke
   assert [tuple(r) for r in serial.execute(f"SELECT {cols} FROM files ORDER BY path")] == \
          [tuple(r) for r in parallel.execute(f"SELECT {cols} FROM files ORDER BY path")]
   assert serial_time > 1.1 and parallel_time < serial_time / 3
+
+
+# --- per-directory (per-year) scans, ticket 051 ------------------------------
+
+def build_years(pics):
+  from tests.test_grouping import touch
+  for year in ("2019", "2020", "2021"):
+    touch(os.path.join(pics, year, "a.DNG"))
+    make_jpeg(os.path.join(pics, year, "a.JPG"))
+    make_jpeg(os.path.join(pics, year, "sub", "b.jpg"))
+  make_jpeg(os.path.join(pics, "loose.jpg"))
+
+
+def snapshot(conn):
+  files = [tuple(r) for r in conn.execute(
+      "SELECT path, role, missing, photo_id IS NOT NULL FROM files ORDER BY path")]
+  photos = conn.execute("SELECT COUNT(*) FROM photos").fetchone()[0]
+  return files, photos
+
+
+def test_scan_all_matches_a_single_recursive_scan(conn, settings, tmp_path):
+  from photoapp import db
+  build_years(settings.pictures_dir)
+  progress = scan.scan_all(conn, settings.pictures_dir)
+  assert progress.error is None and not progress.running and progress.current_dir is None
+  assert progress.steps_total == 4 and progress.steps_done == 4      # root files + 3 years
+  other = db.connect(str(tmp_path / "other.sqlite"))
+  scan.scan(other, settings.pictures_dir)
+  assert snapshot(conn) == snapshot(other)
+  assert all(grouped for *_, grouped in snapshot(conn)[0])
+
+
+def test_each_step_is_complete_when_a_later_step_never_runs(conn, settings, monkeypatch):
+  from photoapp import grouping
+  build_years(settings.pictures_dir)
+  real = grouping.regroup
+  calls = []
+
+  def dying(conn_, rel_dirs=None):
+    calls.append(sorted(rel_dirs or []))
+    if "2020" in (rel_dirs or []):         # the 2020 step dies before grouping
+      raise RuntimeError("killed")
+    return real(conn_, rel_dirs)
+
+  monkeypatch.setattr(grouping, "regroup", dying)
+  progress = scan.scan_all(conn, settings.pictures_dir)
+  assert progress.error == "killed" and progress.steps_done == 2      # root files, 2019 done
+  by_dir = {}
+  for path, _, _, grouped in snapshot(conn)[0]:
+    by_dir.setdefault(path.rpartition("/")[0] or ".", []).append(grouped)
+  assert all(by_dir["2019"]) and all(by_dir["2019/sub"]) and all(by_dir["."])   # finished: usable
+  assert not any(by_dir["2020"])                                      # read, not yet grouped
+  assert "2021" not in by_dir                                          # never reached
+
+  monkeypatch.setattr(grouping, "regroup", real)
+  progress = scan.scan_all(conn, settings.pictures_dir)               # resume
+  assert progress.error is None
+  assert all(grouped for *_, grouped in snapshot(conn)[0])
+  assert progress.dirs_skipped >= 3                                    # finished directories not re-read
+
+
+def test_a_step_only_groups_its_own_subtree(conn, settings):
+  build_years(settings.pictures_dir)
+  scan.scan(conn, settings.pictures_dir, os.path.join(settings.pictures_dir, "2019"))
+  grouped = {p.split("/")[0] for p, _, _, g in snapshot(conn)[0] if g}
+  assert grouped == {"2019"}
+  # a second, ungrouped year in the database is left for its own step
+  scan.scan(conn, settings.pictures_dir, os.path.join(settings.pictures_dir, "2020"))
+  assert {p.split("/")[0] for p, _, _, g in snapshot(conn)[0] if g} == {"2019", "2020"}
+
+
+def test_root_step_reads_only_the_files_directly_in_the_root(conn, settings):
+  build_years(settings.pictures_dir)
+  progress = scan.scan(conn, settings.pictures_dir, recursive=False)
+  assert [r["path"] for r in conn.execute("SELECT path FROM files")] == ["loose.jpg"]
+  assert progress.dirs_seen == 1
+
+
+def test_removed_year_directory_is_marked_missing_by_the_full_scan(conn, settings):
+  import shutil
+  build_years(settings.pictures_dir)
+  scan.scan_all(conn, settings.pictures_dir)
+  shutil.rmtree(os.path.join(settings.pictures_dir, "2020"))
+  scan.scan_all(conn, settings.pictures_dir)
+  by_year = {}
+  for path, _, missing, _ in snapshot(conn)[0]:
+    by_year.setdefault(path.split("/")[0], set()).add(missing)
+  assert by_year["2020"] == {1} and by_year["2019"] == {0} and by_year["loose.jpg"] == {0}
+
+
+def test_scan_all_with_dirs_scans_only_those(conn, settings):
+  build_years(settings.pictures_dir)
+  p = scan.scan_all(conn, settings.pictures_dir, dirs=["2019", "2021"])
+  assert p.steps_total == 2
+  assert {r["path"].split("/")[0] for r in conn.execute("SELECT path FROM files")} == {"2019", "2021"}
+
+
+def test_a_scoped_scan_never_reads_the_whole_files_table(conn, settings):
+  import re
+  build_years(settings.pictures_dir)
+  scan.scan_all(conn, settings.pictures_dir)                        # two more years exist
+  statements = []
+  conn.set_trace_callback(statements.append)
+  scan.scan(conn, settings.pictures_dir, os.path.join(settings.pictures_dir, "2019"),
+            thumbs_dir=settings.thumbs_dir)
+  unbounded = [s_ for s_ in statements if re.search(r"FROM files\b", s_) and "WHERE" not in s_.upper()]
+  assert unbounded == []
+
+
+def test_api_scan_without_a_directory_runs_year_by_year_and_reports_steps(settings):
+  from fastapi.testclient import TestClient
+  from photoapp import api, db
+  build_years(settings.pictures_dir)
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  client = TestClient(app)
+  assert client.post("/api/scan").json() == {"started": True}
+  app.state.scanner.wait()
+  status = client.get("/api/scan/status").json()
+  assert status["steps_total"] == 4 and status["steps_done"] == 4 and status["error"] is None
+  assert status["current_dir"] is None and not status["running"]

@@ -15,6 +15,7 @@ of any member (preferring one that is already rated).
 import os
 
 from photoapp import fileinfo
+from photoapp import paths
 
 # Bump when the automatic rule changes: scan() then regroups every directory
 # once, so databases scanned by an older rule catch up.
@@ -98,19 +99,24 @@ def regroup(conn, rel_dirs=None):
   rel_dirs holds directory paths relative to the pictures dir ('.' for the
   root). Returns the number of Photos created.
   """
-  rows = conn.execute(
-      "SELECT id, path, photo_id, link_source FROM files").fetchall()
-  by_dir = {}
-  for r in rows:
-    by_dir.setdefault(_dirname(r["path"]), []).append(r)
-  dirs = sorted(by_dir) if rel_dirs is None else sorted(
-      d for d in rel_dirs if d in by_dir)
+  if rel_dirs is None:
+    dirs = sorted({_dirname(r[0]) for r in conn.execute("SELECT path FROM files")})
+  else:
+    dirs = sorted(set(rel_dirs))
 
-  # photo ids currently attached to a file (auto or manual), per file id
-  attached = {}
-  for r in rows:
-    if r["photo_id"] is not None:
-      attached.setdefault(r["id"], []).append(r["photo_id"])
+  # Rows are read one directory at a time (by path range), so the work and the
+  # memory are proportional to the directories asked for, not to the library.
+  by_dir = {}
+  attached = {}      # photo ids currently attached to a file, per file id
+  for d in dirs:
+    rows = paths.files_in_dir(conn, d, "id, path, photo_id, link_source")
+    if not rows:
+      continue
+    by_dir[d] = rows
+    for r in rows:
+      if r["photo_id"] is not None:
+        attached.setdefault(r["id"], []).append(r["photo_id"])
+  dirs = sorted(by_dir)
 
   created = 0
   for d in dirs:
@@ -228,5 +234,24 @@ def regroup_if_rule_changed(conn):
       "INSERT INTO meta (key, value) VALUES ('grouping_version', ?) "
       "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
       (GROUPING_VERSION,))
+  conn.commit()
+  return True
+
+
+def regroup_scope_if_rule_changed(conn, rel_scan, recursive):
+  """Like regroup_if_rule_changed, for one scope of the library.
+
+  The version is stored per scope (a top-level directory, or the root's own
+  files as '.'), so a per-year scan brings just that year up to date.
+  """
+  key = f"grouping_version:{rel_scan}" + ("" if recursive else ":files")
+  row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+  if row is not None and row["value"] == GROUPING_VERSION:
+    return False
+  regroup(conn, paths.dirs_in_subtree(conn, rel_scan, recursive))
+  conn.execute(
+      "INSERT INTO meta (key, value) VALUES (?, ?) "
+      "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      (key, GROUPING_VERSION))
   conn.commit()
   return True

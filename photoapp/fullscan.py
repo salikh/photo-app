@@ -2,12 +2,14 @@
 
   python -m photoapp.fullscan --hashes_db=~/zoo.db [--pictures_dir=...] [--state_dir=...]
 
-Read-only on the library (only the state database is written). --scan_dirs=2001,2026
-restricts it to those directories. Safe to
-interrupt and rerun: finished directories are skipped by their mtime.
+Read-only on the library (only the state database is written). The library is
+scanned one top-level (year) directory at a time, in sorted order, after the
+files directly in the root. Each directory is complete when its step ends
+(grouped, ratings resolved, thumbnails indexed), so an interrupted run leaves
+every finished directory usable and a rerun skips them by their mtime.
+--scan_dirs=2001,2026 restricts the run to those directories.
 """
 
-import os
 import threading
 import time
 
@@ -46,26 +48,17 @@ def main(argv):
   def report():
     start = time.time()
     while not done.wait(30):
-      logging.info("dirs=%d skipped=%d files_seen=%d processed=%d sidecars=%d (%.1f files/s)",
+      logging.info("[%d/%d %s] dirs=%d skipped=%d files_seen=%d processed=%d sidecars=%d (%.1f files/s)",
+                   progress.steps_done, progress.steps_total, progress.current_dir,
                    progress.dirs_seen, progress.dirs_skipped, progress.files_seen,
-                   progress.files_processed,
-                   progress.sidecars_processed,
+                   progress.files_processed, progress.sidecars_processed,
                    progress.files_processed / max(1, time.time() - start))
 
   threading.Thread(target=report, daemon=True).start()
-  targets = [os.path.join(settings.pictures_dir, d.strip("/")) for d in FLAGS.scan_dirs] \
-      or [settings.pictures_dir]
-  for target in targets:
-    if not os.path.isdir(target):
-      raise SystemExit(f"not a directory: {target}")
-  for target in targets:
-    logging.info("scanning %s", target)
-    scan.scan(conn, settings.pictures_dir, target, hashes=hashes,
-              progress=progress, thumbs_dir=settings.thumbs_dir,
-              on_done=lambda c: recovery.recover(c, settings),
-              workers=settings.scan_workers)
-    if progress.error:
-      break
+  scan.scan_all(conn, settings.pictures_dir, dirs=FLAGS.scan_dirs or None,
+                hashes=hashes, progress=progress, thumbs_dir=settings.thumbs_dir,
+                on_done=lambda c: recovery.recover(c, settings),
+                workers=settings.scan_workers)
   done.set()
   logging.info("finished: %s", progress)
   for table in ("files", "photos", "xmp_sidecars", "tags"):

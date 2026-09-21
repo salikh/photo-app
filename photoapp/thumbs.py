@@ -13,6 +13,7 @@ from PIL import Image
 from PIL import ImageOps
 
 from photoapp import fileinfo
+from photoapp import paths
 from photoapp import previews
 
 # Smallest to largest. Huge is the full size of the source.
@@ -175,13 +176,8 @@ def index_existing(conn, thumbs_dir, rel_dirs):
   Lists each thumbnail directory once instead of statting every file.
   """
   found = 0
-  all_files = None
   for rel_dir in sorted(set(rel_dirs)):
-    if all_files is None:
-      all_files = {}
-      for f in conn.execute("SELECT id, path FROM files"):
-        all_files.setdefault(_dirname(f["path"]), []).append(f)
-    files = all_files.get(rel_dir, [])
+    files = paths.files_in_dir(conn, rel_dir, "id, path")
     if not files:
       continue
     for size in SIZES:
