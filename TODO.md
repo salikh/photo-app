@@ -12,7 +12,7 @@ Check items off here when the ticket's status is done.
 - [x] [003](docs/tickets/003.md) Grouping
 - [x] [004](docs/tickets/004.md) Thumbs inspection and lookup
 - [x] [005](docs/tickets/005.md) XMP module and tests
-- [ ] [006](docs/tickets/006.md) Import and ratings
+- [x] [006](docs/tickets/006.md) Import and ratings
 - [ ] [007](docs/tickets/007.md) Read-only UI
 - [ ] [008](docs/tickets/008.md) Curation
 - [x] [009](docs/tickets/009.md) Grouping UI

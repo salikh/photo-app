@@ -47,3 +47,11 @@ hash of the thumbnail or of its source; check before using it for content addres
   JPGs. Treat `Huge` as optional and fall back to `Medium`, then the original.
 - Counts of Photos lacking each size: needs a full library scan first (ticket 012 output).
   Deferred to ticket 017.
+
+## Measured on the whole library (2026-09-21, after the full scan, ticket 048)
+
+Files with a recorded thumbnail (of 94,616 live files): Thumb 60,496 (2.6 GB), Small 60,564 (5.2 GB),
+Medium 60,590 (10.9 GB), Huge 27,934 (28.8 GB). Lacking: Thumb/Small/Medium about 35% (whole
+directories: 2021, 2022, 2023, 2024, 2025, most of 2026, `Exported`, `Receipts`, and parts of 2018 and
+2019), Huge 70%. These are created on demand when a photo is opened.
+
