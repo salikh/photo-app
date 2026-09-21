@@ -10,6 +10,7 @@ every finished directory usable and a rerun skips them by their mtime.
 --scan_dirs=2001,2026 restricts the run to those directories.
 """
 
+import os
 import threading
 import time
 
