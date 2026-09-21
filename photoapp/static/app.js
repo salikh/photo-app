@@ -8,9 +8,9 @@ import * as grid from './grid.js';
 import * as loupe from './loupe.js';
 import * as pages from './pages.js';
 import {configure} from './rating.js';
+import * as filters from './filters.js';
 
 const app = document.getElementById('app');
-const FILTERS = ['all', 'unrated', 'rejected', 'picked', 'rated', 'fav', 'conflict'];
 const SORTS = [['date', 'date'], ['name', 'name']];
 const PAGES = {activity: pages.activityPage, attention: pages.attentionPage,
                usage: pages.usagePage, jobs: pages.jobsPage};
@@ -33,6 +33,21 @@ function select(options, value, onchange, label) {
     options.map(([v, text]) => el('option', {value: v, text, selected: v === value})));
 }
 
+// One toggle button per rating mode, plus a menu for the less common filters.
+function filterRow(route) {
+  const go = (filter) => { location.hash = href({...route, filter, photo: null}); };
+  const extra = filters.more();
+  const inMore = extra.some(([v]) => v === route.filter);
+  return el('div', {class: 'filters', role: 'group', 'aria-label': 'filter'},
+    filters.primary().map(([value, text, title]) => el('button', {
+      text, title, class: route.filter === value ? 'on' : '', 'aria-pressed': route.filter === value,
+      dataset: {filter: value}, onclick: () => go(value),
+    })),
+    el('select', {'aria-label': 'more filters', class: inMore ? 'on' : '', onchange: (e) => e.target.value && go(e.target.value)},
+      el('option', {value: '', text: 'more\u2026'}),
+      extra.map(([v, text]) => el('option', {value: v, text, selected: v === route.filter}))));
+}
+
 function renderHeader(route) {
   const browsing = route.page === 'browse';
   const scanStatus = el('span', {class: 'dim', id: 'scan-status'});
@@ -40,8 +55,7 @@ function renderHeader(route) {
     el('a', {class: 'title', href: '#/', text: 'Photos'}),
     browsing ? crumbs(route) : el('div', {class: 'crumbs'}, el('a', {href: href({}), text: '← folders'})),
     el('div', {class: 'spacer'}),
-    browsing ? select(FILTERS.map((f) => [f, f]), route.filter,
-      (v) => { location.hash = href({...route, filter: v, photo: null}); }, 'filter') : null,
+    browsing ? filterRow(route) : null,
     browsing ? select(SORTS, route.sort,
       (v) => { location.hash = href({...route, sort: v, photo: null}); }, 'sort') : null,
     browsing ? el('button', {class: state.selecting ? 'on' : '', text: 'Select', onclick: toggleSelecting}) : null,

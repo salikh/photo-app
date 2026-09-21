@@ -3,8 +3,10 @@ Photo detail. Paths are relative to the pictures dir with '/' separators.
 """
 
 import json
+import re
 
 FILTERS = ("all", "unrated", "rejected", "picked", "rated", "fav", "conflict")
+RATING_FILTER_RE = re.compile(r"^rating:([1-5])$")   # exactly N stars
 SORTS = ("date", "name")
 
 _FILTER_SQL = {
@@ -24,6 +26,21 @@ _FILTER_SQL_ONE_STAR_UNRATED = dict(
     picked="p.rating > 1",
     rated="p.rating NOT IN (0, 1)",
 )
+
+
+def filter_condition(name, one_star_is_unrated=False):
+  """SQL condition (on photos p) for a filter name; ValueError if unknown.
+
+  Names: FILTERS, and 'rating:N' for exactly N stars (N in 1..5). With
+  one_star_is_unrated there is no 'rating:1' (1 star counts as unrated).
+  """
+  filters = _FILTER_SQL_ONE_STAR_UNRATED if one_star_is_unrated else _FILTER_SQL
+  if name in filters:
+    return filters[name]
+  m = RATING_FILTER_RE.match(name or "")
+  if m and not (one_star_is_unrated and m.group(1) == "1"):
+    return f"p.rating = {int(m.group(1))}"
+  raise ValueError(f"filter must be one of {FILTERS} or rating:1..5")
 
 
 def _prefix_range(rel_dir):
@@ -91,14 +108,12 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
   rel_dir = _norm_dir(rel_dir)
   if sort not in SORTS:
     raise ValueError(f"sort must be one of {SORTS}")
-  if filter not in FILTERS:
-    raise ValueError(f"filter must be one of {FILTERS}")
+  filter_sql = filter_condition(filter, one_star_is_unrated)
   limit = max(1, min(int(limit), 1000))
   offset = max(0, int(offset))
   lo, hi = _prefix_range(rel_dir)
-  filters = _FILTER_SQL_ONE_STAR_UNRATED if one_star_is_unrated else _FILTER_SQL
   where = ("rf.path >= ? AND rf.path < ? AND instr(substr(rf.path, ?), '/') = 0"
-           " AND rf.missing = 0 AND " + filters[filter])
+           " AND rf.missing = 0 AND " + filter_sql)
   args = (lo, hi, len(lo) + 1)
   order = ("COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path"
            if sort == "date" else "rf.path COLLATE NOCASE")

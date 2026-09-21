@@ -14,10 +14,17 @@ cache. Originals are never moved or deleted.
   [docs/reqs/thumbs-layout.md](docs/reqs/thumbs-layout.md)
 - Work tracking: [TODO.md](TODO.md) and [docs/tickets/](docs/tickets/)
 
+## Filtering (culling)
+
+The row under the title filters the folder by rating: `All`, `Rejected`, `Unrated`, and exactly `★1`..`★5`
+(`★1` is left out with `--one_star_is_unrated`). The `more` menu has picked, rated, favorites and
+"sidecars disagree". The filter is kept in the URL and when you change folder, and the viewer shows it.
+
 ## Keys in the viewer
 
 `←`/`→` navigate, `0`-`5` rate, `X` reject (again: restore), `F` favorite, `T` tags (`-name` removes),
 `Z` zoom to full size, `G` cycle the shown file of a DNG+JPG pair, `I` files panel, `U` undo, `Esc` back.
+The buttons under the photo are `✖ ☆ 1 2 3 4 5` (reject first), then favorite, tag, undo, files, close.
 On a phone: swipe left/right for the next/previous picture, swipe up/down to raise/lower the rating.
 
 ## Layout

@@ -123,7 +123,7 @@ def test_url_state_survives_reload_and_back_closes_loupe(page, server):
 
 def test_filter_and_sort_are_in_the_url(page, server):
   page.goto(server.url + "/#/2024/trip")
-  page.get_by_label("filter").select_option("rejected")
+  page.get_by_role("button", name="Rejected").click()
   expect(page.locator(".cell")).to_have_count(1)
   assert "filter=rejected" in page.url
 
@@ -308,7 +308,9 @@ def test_one_star_is_unrated_flag_hides_star_1_and_skips_it(browser, tmp_path):
     expect(pg.locator(".cell")).to_have_count(6)
     expect(pg.locator(".badges .stars", has_text="4")).to_have_count(1)      # 4 stars still shown
     assert pg.locator(".badges .stars", has_text="1").count() == 0            # the 1-star badge is hidden
-    pg.get_by_label("filter").select_option("picked")
+    assert pg.locator(".filters button").all_inner_texts() == [
+        "All", "\u2716 Rejected", "\u2606 Unrated", "\u26052", "\u26053", "\u26054", "\u26055"]   # no \u26051
+    pg.get_by_label("more filters").select_option("picked")
     expect(pg.locator(".cell")).to_have_count(1)                              # only the 4-star photo
     pg.goto(f"{srv.url}/#/2024/trip?photo={ids[3]}")                          # IMG_0004, real rating 1
     expect(pg.locator(".hud .stars")).to_have_text("☆☆☆☆☆")
@@ -366,3 +368,115 @@ def test_folders_starting_with_a_dot_are_not_shown_as_chips(page, server):
   expect(page.locator(".folders a")).to_have_count(0)                       # only .nu below: nothing shown
   page.goto(server.url + "/#/2024/trip/.nu")                                # still reachable by path
   expect(page.locator(".cell")).to_have_count(1)
+
+
+# --- filter buttons (ticket 055) and the reject-first order (ticket 058) ---------------------------
+
+def filter_button(page, name):
+  return page.locator(".filters button", has_text=name)
+
+
+def test_filter_buttons_show_the_right_photos_and_keep_state(page, server):
+  # IMG_0002 = 4 stars, IMG_0003 = reject; make IMG_0004 2 stars and IMG_0005 4 stars
+  ids = photo_ids(server)
+  for pid, r in ((ids[3], 2), (ids[4], 4)):
+    urllib.request.urlopen(urllib.request.Request(
+        f"{server.url}/api/photos/{pid}/rating", data=json.dumps({"rating": r}).encode(),
+        headers={"Content-Type": "application/json"}))
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  labels = page.locator(".filters button").all_inner_texts()
+  assert labels == ["All", "\u2716 Rejected", "\u2606 Unrated", "\u26051", "\u26052", "\u26053", "\u26054", "\u26055"]
+  expect(filter_button(page, "All")).to_have_class("on")
+  filter_button(page, "Unrated").click()
+  expect(page.locator(".cell")).to_have_count(2)                       # 0001 and 0006 have no rating
+  assert "filter=unrated" in page.url
+  expect(filter_button(page, "Unrated")).to_have_class("on")
+  expect(filter_button(page, "All")).not_to_have_class("on")
+  filter_button(page, "\u26054").click()                               # exactly 4 stars
+  expect(page.locator(".cell")).to_have_count(2)
+  assert "filter=rating%3A4" in page.url
+  filter_button(page, "\u26053").click()
+  expect(page.locator(".cell")).to_have_count(0)
+  expect(page.locator(".status")).to_contain_text("No photos")
+  page.reload()                                                          # state is in the URL
+  expect(filter_button(page, "\u26053")).to_have_class("on")
+  filter_button(page, "Rejected").click()
+  expect(page.locator(".cell")).to_have_count(1)
+  page.get_by_label("more filters").select_option("fav")
+  expect(page.locator(".cell")).to_have_count(0)
+  assert "filter=fav" in page.url
+
+
+def test_filter_is_kept_when_changing_folder_and_shown_in_the_loupe(page, server):
+  page.goto(server.url + "/#/2024?filter=unrated")
+  page.get_by_role("link", name="trip").first.click()
+  assert "filter=unrated" in page.url
+  expect(page.locator(".cell")).to_have_count(4)                         # 6 minus the 4-star and the reject
+  page.locator(".cell").first.click()
+  expect(page.locator(".loupe")).to_be_visible()
+  expect(page.locator(".hud .filter-tag")).to_contain_text("Unrated")
+  expect(page.locator(".hud .pos")).to_have_text("1/4")                  # navigation stays in the filtered list
+
+
+def test_reject_button_is_left_of_the_rating_buttons_in_loupe_and_selection_bar(page, server):
+  open_loupe(page, server)
+  titles = page.locator(".hud .buttons button").evaluate_all("els => els.map(e => e.title)")
+  assert titles[:7] == ["reject (X)", "rate 0", "rate 1", "rate 2", "rate 3", "rate 4", "rate 5"], titles
+  xs = [b["x"] for b in [page.locator(".hud .buttons button").nth(i).bounding_box() for i in range(3)]]
+  assert xs == sorted(xs)                                                # visually left to right
+  page.keyboard.press("Escape")
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").nth(0).click()
+  bar = page.locator(".selection-bar button").evaluate_all("els => els.map(e => e.title)")
+  assert bar[:2] == ["reject", "rate 0"], bar
+
+
+def test_client_side_filter_matching_agrees_with_the_server(page, server):
+  ids = photo_ids(server)
+  for pid, r in ((ids[0], 1), (ids[3], 2), (ids[4], 3), (ids[5], 5)):
+    urllib.request.urlopen(urllib.request.Request(
+        f"{server.url}/api/photos/{pid}/rating", data=json.dumps({"rating": r}).encode(),
+        headers={"Content-Type": "application/json"}))
+  urllib.request.urlopen(urllib.request.Request(
+      f"{server.url}/api/photos/{ids[2]}/fav", data=json.dumps({"fav": True}).encode(),
+      headers={"Content-Type": "application/json"}))
+  page.goto(server.url + "/")
+  result = page.evaluate("""async () => {
+    const f = await import('/static/filters.js');
+    const r = await import('/static/rating.js');
+    const out = {};
+    for (const flag of [false, true]) {
+      r.configure({one_star_is_unrated: flag});
+      const all = (await (await fetch('/api/photos?dir=2024/trip&sort=name')).json()).photos;
+      const names = ['all', 'unrated', 'rejected', 'picked', 'rated', 'fav', 'conflict', 'rating:1', 'rating:2', 'rating:3', 'rating:4', 'rating:5'];
+      for (const name of names) {
+        const res = await fetch('/api/photos?dir=2024/trip&sort=name&filter=' + encodeURIComponent(name));
+        const server = res.ok ? (await res.json()).photos.map(p => p.name) : 'error';
+        out[flag + ':' + name] = [all.filter(p => f.matches(p, name)).map(p => p.name), server];
+      }
+    }
+    return out;
+  }""")
+  # the server test client runs without the flag, so only compare that half; with the flag the client
+  # must at least never claim a match for a filter the server would reject
+  for key, (client, server_names) in result.items():
+    flag, name = key.split(":", 1)
+    if flag == "false":
+      assert client == server_names, (key, client, server_names)
+
+
+def test_phone_filter_strip_is_one_scrollable_row_with_big_buttons(phone, server):
+  phone.goto(server.url + "/#/2024/trip")
+  expect(phone.locator(".cell")).to_have_count(6)
+  assert phone.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+  strip = phone.locator(".filters").bounding_box()
+  assert strip["x"] >= 0 and strip["x"] + strip["width"] <= 391            # inside the screen
+  ys = {round(b.bounding_box()["y"]) for b in phone.locator(".filters button").all()}
+  assert len(ys) == 1                                                       # one row, no wrapping
+  assert all(b.bounding_box()["height"] >= 43 for b in phone.locator(".filters button").all())
+  assert phone.evaluate("(() => { const f = document.querySelector('.filters'); return f.scrollWidth > f.clientWidth; })()")
+  phone.locator(".filters button", has_text="Rejected").tap()
+  expect(phone.locator(".cell")).to_have_count(1)
+  phone.locator(".filters button", has_text="\u26054").tap()              # scrolled into reach and tapped
+  expect(phone.locator(".cell")).to_have_count(1)

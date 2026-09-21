@@ -20,10 +20,10 @@ Check items off here when the ticket's status is done.
 
 ## Next: v1 filtering (user request 2026-09-21, do now)
 
-- [ ] [055](docs/tickets/055.md) Rating filter buttons: All, Unrated, Rejected, exactly ★1..★5 (More menu keeps fav, conflict, picked)
+- [x] [055](docs/tickets/055.md) Rating filter buttons: All, Unrated, Rejected, exactly ★1..★5 (More menu keeps fav, conflict, picked)
 - [ ] [056](docs/tickets/056.md) A photo whose rating stops matching the filter disappears from the grid and the loupe advances (undo brings it back)
 - [ ] [057](docs/tickets/057.md) Counts on the filter buttons and grid shortcuts
-- [ ] [058](docs/tickets/058.md) Move the reject button to the left of the rating buttons (loupe HUD and selection bar)
+- [x] [058](docs/tickets/058.md) Move the reject button to the left of the rating buttons (loupe HUD and selection bar)
 
 ## Later (requested, not for now)
 

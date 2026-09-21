@@ -181,3 +181,32 @@ def test_folders_starting_with_a_dot_are_not_listed_or_counted(settings):
   listed = c.get("/api/photos", params={"dir": "2001/trip/.nu"}).json()
   assert listed["total"] == 2
   assert c.get("/api/dirs", params={"path": "2001/trip/.nu"}).json()["dirs"] == []
+
+
+def test_rating_n_filter_means_exactly_n_stars(settings):
+  import dataclasses
+  d = settings.pictures_dir
+  for i, r in enumerate((1, 2, 2, 3, 0, -1)):
+    make_jpeg(os.path.join(d, "s", f"{i}.jpg"))
+    if r:
+      write(os.path.join(d, "s", f"{i}.jpg.xmp"), XMP % (r, ""), mtime=1_000_000)
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  c = TestClient(api.create_app(conn, settings))
+
+  def names(client, f):
+    r = client.get("/api/photos", params={"dir": "s", "filter": f, "sort": "name"})
+    assert r.status_code == 200, (f, r.text)
+    return [p["name"] for p in r.json()["photos"]]
+
+  assert names(c, "rating:1") == ["0.jpg"]
+  assert names(c, "rating:2") == ["1.jpg", "2.jpg"]
+  assert names(c, "rating:3") == ["3.jpg"]
+  assert names(c, "rating:4") == [] and names(c, "rating:5") == []
+  for bad in ("rating:0", "rating:6", "rating:", "rating:x", "rating:-1", "stars:3"):
+    assert c.get("/api/photos", params={"dir": "s", "filter": bad}).status_code == 400, bad
+  # the total in the response follows the filter, so the button and the grid agree
+  assert c.get("/api/photos", params={"dir": "s", "filter": "rating:2"}).json()["total"] == 2
+  on = TestClient(api.create_app(conn, dataclasses.replace(settings, one_star_is_unrated=True)))
+  assert on.get("/api/photos", params={"dir": "s", "filter": "rating:1"}).status_code == 400
+  assert names(on, "rating:2") == ["1.jpg", "2.jpg"]

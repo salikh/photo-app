@@ -81,6 +81,12 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .folders .count { color: var(--text-dim); font-size: 13px; }
 .status { color: var(--text-dim); margin: 8px 0; }
 
+/* rating filter buttons (ticket 055) */
+.filters { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+.filters button, .filters select { flex: none; padding: 0 10px; }
+.filters select.on { border-color: var(--accent); color: var(--accent); }
+.hud .filter-tag { color: var(--accent); border-color: var(--accent); }
+
 /* ---------- grid ---------- */
 
 .grid {
@@ -216,6 +222,9 @@ h2 { margin: 16px 0 8px; }
   header.bar .spacer { display: none; }
   header.bar select { max-width: 92px; padding: 0 6px; }
   header.bar button { padding: 0 10px; }
+  header.bar .crumbs { order: 0; }
+  header.bar .filters { order: 1; flex: 1 0 100%; }   /* its own scrollable row */
+  header.bar > select, header.bar > button { order: 2; }
   header.bar nav { order: 3; width: 100%; gap: 16px; }
   .hud .name { flex-basis: 100%; }
   .files-panel { width: 100%; }

@@ -7,6 +7,7 @@ import {href} from './route.js';
 import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
+import {label as filterLabel} from './filters.js';
 import {updateCell} from './grid.js';
 
 const PRELOAD_NEXT = 3;
@@ -187,10 +188,12 @@ function renderHud() {
     p.fav ? el('span', {class: 'fav-on', text: '♥'}) : null,
     p.conflict ? el('span', {class: 'conflict', title: 'sidecars disagree', text: '⚠ conflict'}) : null,
     p.tags.map((t) => el('span', {class: 'tag', text: t})),
+    state.route && state.route.filter !== 'all'
+      ? el('span', {class: 'tag filter-tag', title: 'active filter', text: 'filter: ' + filterLabel(state.route.filter)}) : null,
     ui.tagInput,
     el('div', {class: 'buttons'},
-      choices().map(rate),
       el('button', {text: '✖', title: 'reject (X)', class: p.rating === REJECT ? 'on' : '', onclick: () => setRating(afterKey(p.rating, 'x', p.previous_stars))}),
+      choices().map(rate),
       el('button', {text: '♥', title: 'fav (F)', class: p.fav ? 'on' : '', onclick: toggleFav}),
       el('button', {text: 'tag', title: 'tags (T)', onclick: openTagInput}),
       el('button', {text: '↶', title: 'undo (U)', onclick: undo}),

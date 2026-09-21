@@ -95,8 +95,8 @@ export function renderSelectionBar() {
   const rate = (rating) => batchRate(ids, rating);
   setChildren(bar,
     el('strong', {text: n + ' selected'}),
-    ...choices().map((r) => el('button', {text: r === 0 ? '☆' : String(r), title: 'rate ' + r, onclick: () => rate(r)})),
     el('button', {text: '✖', title: 'reject', onclick: () => rate(REJECT)}),
+    ...choices().map((r) => el('button', {text: r === 0 ? '☆' : String(r), title: 'rate ' + r, onclick: () => rate(r)})),
     n === 2 ? el('button', {text: 'Link 2nd as tuning of 1st', onclick: () => linkSelected(ids)}) : null,
     el('button', {text: 'Clear', onclick: clearSelection}),
   );
