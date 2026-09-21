@@ -149,8 +149,10 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   transition: transform 0.18s ease-out; -webkit-user-drag: none; pointer-events: none;
 }
 .stage.dragging img.main { transition: none; }
-.stage.zoomed { overflow: auto; touch-action: pan-x pan-y pinch-zoom; align-items: flex-start; justify-content: flex-start; }
-.stage.zoomed img.main { max-width: none; max-height: none; pointer-events: auto; }
+/* zoomed: the photo is drawn at its original size and moved/scaled by a transform (zoom.js), so only the
+   photo scales, never the page */
+.stage.zoomed { overflow: hidden; touch-action: none; cursor: grab; }
+.stage.zoomed img.main { position: absolute; left: 0; top: 0; max-width: none; max-height: none; transform-origin: 0 0; transition: none; will-change: transform; }
 .nav-hint {
   position: absolute; top: 50%; transform: translateY(-50%); width: var(--touch); height: 96px;
   display: none; align-items: center; justify-content: center; font-size: 28px;

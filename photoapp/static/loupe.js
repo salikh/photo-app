@@ -10,6 +10,7 @@ import {attachSwipe} from './gestures.js';
 import {label as filterLabel} from './filters.js';
 import * as preloader from './preload.js';
 import {createFilmstrip} from './filmstrip.js';
+import {createZoom} from './zoom.js';
 import {updateCell, settle, reinsertPhotos, loadRest} from './grid.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
 
@@ -27,7 +28,7 @@ function build() {
   window.__preloadedUrls = preloader.urls;      // test hook: what is being held ahead of time
   ui.img = el('img', {class: 'main', alt: '', draggable: 'false'});
   ui.preview = el('div', {class: 'rate-preview'});
-  ui.stage = el('div', {class: 'stage', onclick: () => toggleZoom()},
+  ui.stage = el('div', {class: 'stage'},
     ui.img, ui.preview,
     el('button', {class: 'nav-hint prev', 'aria-label': 'previous', text: '‹', onclick: (e) => { e.stopPropagation(); go(-1); }}),
     el('button', {class: 'nav-hint next', 'aria-label': 'next', text: '›', onclick: (e) => { e.stopPropagation(); go(1); }}));
@@ -41,6 +42,10 @@ function build() {
   root = el('div', {class: 'loupe', hidden: true, role: 'dialog', 'aria-label': 'photo viewer'},
             ui.stage, ui.filmstrip, ui.hud);
   document.body.append(root);
+
+  // Pinch, drag, double tap, Ctrl+wheel: see zoom.js. The viewer supplies the photo's real size and
+  // what to show while zoomed.
+  ui.zoom = createZoom(ui.stage, ui.img, {fullSize, onEnter: enterZoom, onExit: exitZoom});
 
   attachSwipe(ui.stage, {
     enabled: () => !zoomed,
@@ -109,6 +114,7 @@ export function close() {
   document.body.style.overflow = '';
   document.removeEventListener('keydown', onKey);
   closeFiles();
+  ui.zoom.reset();
   zoomed = false;
   ui.stage.classList.remove('zoomed');
 }
@@ -117,6 +123,7 @@ function show(i) {
   const delta = index >= 0 && i !== index ? Math.sign(i - index) : 1;   // direction of travel
   index = i;
   const photo = current();
+  ui.zoom.reset();
   zoomed = false;
   ui.stage.classList.remove('zoomed');
   resetDrag();
@@ -168,13 +175,53 @@ export function go(delta) {
   show(next);
 }
 
-function toggleZoom(force) {
-  zoomed = force === undefined ? !zoomed : force;
-  ui.stage.classList.toggle('zoomed', zoomed);
+// The photo's size in original pixels, in the orientation it is shown: the long edge from the
+// scan, the shape from the picture on screen (which the browser has already rotated).
+function fullSize() {
   const photo = current();
-  ui.img.src = imgUrl(zoomed ? 'Huge' : 'Medium', photo.file_id);
-  ui.img.onerror = zoomed ? () => { ui.img.src = imgUrl('Medium', photo.file_id); toast('full size not available'); } : null;
-  if (zoomed) { ui.stage.scrollLeft = 0; ui.stage.scrollTop = 0; }
+  const shown = ui.img;
+  if (!photo || !shown.naturalWidth) return null;
+  const aspect = shown.naturalWidth / shown.naturalHeight;
+  const long = Math.max(photo.width || 0, photo.height || 0) || Math.max(shown.naturalWidth, shown.naturalHeight);
+  return aspect >= 1 ? {W: long, H: long / aspect} : {W: long * aspect, H: long};
+}
+
+function enterZoom() {
+  zoomed = true;
+  ui.stage.classList.add('zoomed');
+  const photo = current();
+  const url = imgUrl('Huge', photo.file_id);
+  const full = new Image();                          // swap in the full-size picture once it is there
+  full.onload = () => {
+    if (zoomed && current() === photo) {
+      ui.img.src = url;
+      ui.zoom.setFullSize(full.naturalWidth, full.naturalHeight);
+    }
+  };
+  full.onerror = () => {
+    if (current() !== photo) return;
+    toast('full size not available');
+    ui.zoom.exit();
+  };
+  full.src = url;
+}
+
+function exitZoom() {
+  zoomed = false;
+  ui.stage.classList.remove('zoomed');
+  const photo = current();
+  if (photo) ui.img.src = imgUrl('Medium', photo.file_id);
+}
+
+// Zoom needs the size of the picture on screen; if it has not loaded yet (a slow link), wait for it.
+function whenShown(fn) {
+  if (ui.img.complete && ui.img.naturalWidth) fn();
+  else ui.img.addEventListener('load', fn, {once: true});
+}
+
+function toggleZoom() {
+  if (ui.zoom.isActive()) ui.zoom.exit();
+  else whenShown(() => ui.zoom.enter({scale: 1}));   // 100%, around the middle
 }
 
 // ------------------------------------------------------------------- HUD
@@ -471,6 +518,8 @@ function onKey(e) {
   else if (key === 'f' || key === 'F') toggleFav();
   else if (key === 't' || key === 'T') openTagInput();
   else if (key === 'z' || key === 'Z') toggleZoom();
+  else if (key === '+' || key === '=') whenShown(() => ui.zoom.zoomIn());
+  else if (key === '-' || key === '_') whenShown(() => ui.zoom.zoomOut());
   else if (key === 'g' || key === 'G') cycleRepresentative();
   else if (key === 'u' || key === 'U') undo();
   else if (key === 'i' || key === 'I') filesOpen ? closeFiles() : openFiles();

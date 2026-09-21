@@ -12,8 +12,14 @@ const MIN_VELOCITY = 0.5;      // px/ms, allows a short fast flick
 
 export function attachSwipe(element, handlers) {
   let start = null;
+  const down = new Set();             // pointers currently pressed
 
   element.addEventListener('pointerdown', (e) => {
+    down.add(e.pointerId);
+    if (down.size > 1) {                // a second finger: a pinch, not a swipe
+      if (start) { start = null; if (handlers.onCancel) handlers.onCancel(); }
+      return;
+    }
     if (e.button > 0 || (handlers.enabled && !handlers.enabled())) return;
     start = {x: e.clientX, y: e.clientY, t: performance.now(), axis: null, id: e.pointerId};
     element.setPointerCapture(e.pointerId);
@@ -31,6 +37,7 @@ export function attachSwipe(element, handlers) {
   });
 
   const finish = (e, cancelled) => {
+    down.delete(e.pointerId);
     if (!start || e.pointerId !== start.id) return;
     const s = start;
     start = null;

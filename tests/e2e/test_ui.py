@@ -169,9 +169,10 @@ def test_zoom_loads_full_size_and_toggles(page, server):
   assert "/img/Medium/" in src
   page.keyboard.press("z")
   expect(page.locator(".stage.zoomed")).to_have_count(1)
-  assert "/img/Huge/" in page.locator(".stage img.main").get_attribute("src")
+  expect(page.locator(".stage img.main")).to_have_attribute("src", re.compile("/img/Huge/"))   # swapped in once loaded
   page.keyboard.press("z")
-  assert "/img/Medium/" in page.locator(".stage img.main").get_attribute("src")
+  expect(page.locator(".stage.zoomed")).to_have_count(0)
+  expect(page.locator(".stage img.main")).to_have_attribute("src", re.compile("/img/Medium/"))
 
 
 def test_files_panel_and_representative_for_pair(page, server, tmp_path):
@@ -270,13 +271,21 @@ def test_phone_buttons_and_undo_work_without_keyboard(phone, server):
   expect(phone.locator(".loupe")).to_be_hidden()
 
 
-def test_tap_toggles_zoom_but_swipe_does_not(phone, server):
+def test_double_tap_toggles_zoom_but_a_swipe_and_a_single_tap_do_not(phone, server):
   open_loupe(phone, server)
   swipe(phone, -150, 0)
   expect(phone.locator(".hud .pos")).to_have_text("2/6")
   expect(phone.locator(".stage.zoomed")).to_have_count(0)     # the drag was not a tap
-  phone.locator(".stage").tap(position={"x": 195, "y": 300})
+  phone.wait_for_timeout(500)
+  phone.touchscreen.tap(195, 300)                              # one tap: nothing (a double tap is needed on touch)
+  phone.wait_for_timeout(500)
+  expect(phone.locator(".stage.zoomed")).to_have_count(0)
+  phone.touchscreen.tap(195, 300)
+  phone.touchscreen.tap(195, 300)                              # a double tap zooms
   expect(phone.locator(".stage.zoomed")).to_have_count(1)
+  phone.touchscreen.tap(195, 300)
+  phone.touchscreen.tap(195, 300)                              # and another one goes back
+  expect(phone.locator(".stage.zoomed")).to_have_count(0)
 
 
 def test_dry_run_says_nothing_was_saved(browser, tmp_path):
@@ -1091,3 +1100,249 @@ def test_strip_is_slim_visible_and_tappable_on_a_phone(browser, tmp_path):
     ctx.close()
   finally:
     srv.stop()
+
+
+# --- pinch zoom and pan on tablets and phones (ticket 060) --------------------------------------
+
+class Touch:
+  """Multi-touch through the DevTools protocol (Chrome turns it into Pointer Events)."""
+
+  def __init__(self, page):
+    self.cdp = page.context.new_cdp_session(page)
+
+  def send(self, kind, points):
+    self.cdp.send("Input.dispatchTouchEvent", {
+        "type": kind, "touchPoints": [{"x": x, "y": y, "id": i} for i, (x, y) in enumerate(points)]})
+
+  def pinch(self, page, center, start_gap, end_gap, steps=10, vertical=False):
+    cx, cy = center
+
+    def pts(gap):
+      return [(cx, cy - gap / 2), (cx, cy + gap / 2)] if vertical else [(cx - gap / 2, cy), (cx + gap / 2, cy)]
+
+    self.send("touchStart", pts(start_gap))
+    for i in range(1, steps + 1):
+      self.send("touchMove", pts(start_gap + (end_gap - start_gap) * i / steps))
+    self.send("touchEnd", [])
+    page.wait_for_timeout(120)
+
+  def drag(self, page, start, end, steps=10):
+    self.send("touchStart", [start])
+    for i in range(1, steps + 1):
+      self.send("touchMove", [(start[0] + (end[0] - start[0]) * i / steps, start[1] + (end[1] - start[1]) * i / steps)])
+    self.send("touchEnd", [])
+    page.wait_for_timeout(120)
+
+
+def zoom_state(page):
+  return page.evaluate("""() => {
+    const img = document.querySelector('.stage img.main');
+    const m = new DOMMatrix(getComputedStyle(img).transform);
+    const r = document.querySelector('.stage').getBoundingClientRect();
+    return {scale: m.a, x: m.e, y: m.f, W: parseFloat(img.style.width) || 0, H: parseFloat(img.style.height) || 0,
+            SW: r.width, SH: r.height, left: r.left, top: r.top,
+            zoomed: document.querySelector('.stage').classList.contains('zoomed'),
+            pageScale: window.visualViewport.scale};
+  }""")
+
+
+def fit_of(z):
+  return min(z["SW"] / z["W"], z["SH"] / z["H"])
+
+
+def test_zoom_math_pure_functions_in_the_browser(page, server):
+  page.goto(server.url + "/")
+  r = page.evaluate("""async () => {
+    const z = await import('/static/zoom.js');
+    const out = {};
+    out.fit = z.fitScale(4000, 2000, 1000, 800);                       // width limits: 0.25
+    out.fitTall = z.fitScale(2000, 4000, 1000, 800);                   // height limits: 0.2
+    out.small = z.clampOffset(-999, -999, 1, 600, 400, 1000, 800);     // smaller than the stage: centered
+    out.big = z.clampOffset(50, 50, 1, 3000, 2000, 1000, 800);         // larger: cannot leave a gap on the left/top
+    out.bigFar = z.clampOffset(-9999, -9999, 1, 3000, 2000, 1000, 800);// ... nor on the right/bottom
+    out.bigOk = z.clampOffset(-500, -300, 1, 3000, 2000, 1000, 800);
+    const a = z.zoomAround(-500, -300, 1, 2, 400, 300);                // the point (400,300) stays put
+    out.anchorBefore = [(400 - -500) / 1, (300 - -300) / 1];
+    out.anchorAfter = [(400 - a.x) / 2, (300 - a.y) / 2];
+    out.max = z.MAX_SCALE;
+    return out;
+  }""")
+  assert (r["fit"], round(r["fitTall"], 6)) == (0.25, 0.2)
+  assert (r["small"]["x"], r["small"]["y"]) == (200, 200)
+  assert (r["big"]["x"], r["big"]["y"]) == (0, 0)
+  assert (r["bigFar"]["x"], r["bigFar"]["y"]) == (1000 - 3000, 800 - 2000)
+  assert (r["bigOk"]["x"], r["bigOk"]["y"]) == (-500, -300)
+  assert r["anchorBefore"] == r["anchorAfter"] and r["max"] == 4
+
+
+def test_pinch_out_zooms_the_photo_around_the_fingers_and_never_the_page(phone, server):
+  open_loupe(phone, server)
+  phone.wait_for_timeout(600)
+  touch = Touch(phone)
+  hud_before = phone.locator(".hud").bounding_box()
+  strip_before = phone.locator(".filmstrip").bounding_box()
+  mid = (150, 300)
+  touch.pinch(phone, mid, 60, 260)
+  z = zoom_state(phone)
+  fit = fit_of(z)
+  assert z["zoomed"] and fit * 1.5 < z["scale"] <= 4, (z, fit)
+  # the point of the photo that was under the midpoint is still under it
+  x0, y0 = (z["SW"] - z["W"] * fit) / 2, (z["SH"] - z["H"] * fit) / 2       # where the fitted photo sat
+  before = ((mid[0] - z["left"] - x0) / fit, (mid[1] - z["top"] - y0) / fit)
+  after = ((mid[0] - z["left"] - z["x"]) / z["scale"], (mid[1] - z["top"] - z["y"]) / z["scale"])
+  assert abs(before[0] - after[0]) < 4 and abs(before[1] - after[1]) < 4, (before, after)
+  assert z["pageScale"] == 1                                                 # the browser did not zoom the page
+  assert phone.locator(".hud").bounding_box() == hud_before                  # buttons untouched
+  assert phone.locator(".filmstrip").bounding_box() == strip_before
+  assert phone.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+  expect(phone.locator(".stage img.main")).to_have_attribute("src", re.compile("/img/Huge/"))
+
+
+def test_pinch_in_back_to_fit_leaves_the_zoom(phone, server):
+  open_loupe(phone, server)
+  phone.wait_for_timeout(500)
+  touch = Touch(phone)
+  touch.pinch(phone, (195, 300), 60, 300)
+  assert zoom_state(phone)["zoomed"]
+  touch.pinch(phone, (195, 300), 300, 40)                                    # pinch in past the fitted size
+  expect(phone.locator(".stage.zoomed")).to_have_count(0)
+  expect(phone.locator(".stage img.main")).to_have_attribute("src", re.compile("/img/Medium/"))
+  assert phone.locator(".stage img.main").evaluate("e => e.style.transform") == ""
+
+
+def test_pinch_is_capped_at_four_times_the_original_and_never_below_fit(phone, server):
+  open_loupe(phone, server)
+  phone.wait_for_timeout(500)
+  touch = Touch(phone)
+  touch.pinch(phone, (195, 300), 20, 380, steps=14)
+  touch.pinch(phone, (195, 300), 20, 380, steps=14)
+  touch.pinch(phone, (195, 300), 20, 380, steps=14)
+  z = zoom_state(phone)
+  assert 3.9 <= z["scale"] <= 4.0001, z
+
+
+def test_dragging_pans_a_zoomed_photo_but_never_out_of_view(phone, server):
+  open_loupe(phone, server)
+  phone.wait_for_timeout(500)
+  phone.keyboard.press("z")                                                  # 100%
+  expect(phone.locator(".stage.zoomed")).to_have_count(1)
+  touch = Touch(phone)
+  z0 = zoom_state(phone)
+  touch.drag(phone, (300, 400), (100, 300))
+  z1 = zoom_state(phone)
+  assert abs((z1["x"] - z0["x"]) - (-200)) < 2 and abs((z1["y"] - z0["y"]) - (-100)) < 2, (z0, z1)   # it followed the finger
+  right, bottom = z0["left"] + z0["SW"] - 10, z0["top"] + z0["SH"] - 10       # corners of the stage (inside it)
+  left, top = z0["left"] + 10, z0["top"] + 10
+  for _ in range(4):                                                         # drag far more than the photo is wide
+    touch.drag(phone, (right, bottom), (left, top), steps=6)
+  z2 = zoom_state(phone)
+  w, h = z2["W"] * z2["scale"], z2["H"] * z2["scale"]
+  assert abs(z2["x"] - (z2["SW"] - w)) < 1 and abs(z2["y"] - (z2["SH"] - h)) < 1, z2   # stopped exactly at the far edges
+  for _ in range(4):
+    touch.drag(phone, (left, top), (right, bottom), steps=6)
+  z3 = zoom_state(phone)
+  assert abs(z3["x"]) < 1 and abs(z3["y"]) < 1, z3                             # and exactly at the near edges
+  expect(phone.locator(".hud .pos")).to_have_text("1/6")                     # panning never navigates
+
+
+def test_double_tap_zooms_to_the_tapped_point(phone, server):
+  open_loupe(phone, server)
+  phone.wait_for_timeout(500)
+  tap = (300, 350)
+  phone.touchscreen.tap(*tap)
+  phone.touchscreen.tap(*tap)
+  expect(phone.locator(".stage.zoomed")).to_have_count(1)
+  z = zoom_state(phone)
+  assert abs(z["scale"] - 1) < 0.01                                          # 100% of the original pixels
+  # the point of the photo under the finger did not move on screen: it is under the finger now
+  fit = fit_of(z)
+  x0, y0 = (z["SW"] - z["W"] * fit) / 2, (z["SH"] - z["H"] * fit) / 2
+  before = ((tap[0] - z["left"] - x0) / fit, (tap[1] - z["top"] - y0) / fit)
+  after = ((tap[0] - z["left"] - z["x"]) / z["scale"], (tap[1] - z["top"] - z["y"]) / z["scale"])
+  assert abs(before[0] - after[0]) < 4 and abs(before[1] - after[1]) < 4, (before, after)
+
+
+def test_a_two_finger_pinch_at_fit_size_does_not_navigate_or_rate(phone, server):
+  open_loupe(phone, server)
+  phone.wait_for_timeout(500)
+  touch = Touch(phone)
+  stars = phone.locator(".hud .stars").inner_text()
+  touch.pinch(phone, (195, 300), 200, 80, vertical=False)                    # pinch in at fit: nothing to do
+  touch.pinch(phone, (195, 300), 80, 200, vertical=True)                     # a vertical pinch out: zooms, no rating
+  expect(phone.locator(".hud .pos")).to_have_text("1/6")
+  assert phone.locator(".hud .stars").inner_text() == stars
+  assert server.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") is None
+
+
+def test_swiping_stays_off_while_zoomed_and_navigation_resets_the_zoom(phone, server):
+  open_loupe(phone, server)
+  phone.wait_for_timeout(500)
+  phone.keyboard.press("z")
+  expect(phone.locator(".stage.zoomed")).to_have_count(1)
+  Touch(phone).drag(phone, (300, 500), (100, 500))                           # this pans; it must not go to photo 2
+  expect(phone.locator(".hud .pos")).to_have_text("1/6")
+  phone.keyboard.press("ArrowRight")
+  expect(phone.locator(".hud .pos")).to_have_text("2/6")
+  expect(phone.locator(".stage.zoomed")).to_have_count(0)
+  assert phone.locator(".stage img.main").evaluate("e => e.style.transform") == ""
+  swipe(phone, -150, 0)                                                      # swipes work again at fit size
+  expect(phone.locator(".hud .pos")).to_have_text("3/6")
+
+
+def test_ctrl_wheel_and_plus_minus_keys_zoom_on_a_desktop(page, server):
+  open_loupe(page, server)
+  page.wait_for_timeout(500)
+  box = page.locator(".stage").bounding_box()
+  page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+  page.keyboard.down("Control")
+  page.mouse.wheel(0, -400)                                                  # a trackpad pinch: ctrl + wheel
+  page.keyboard.up("Control")
+  z = zoom_state(page)
+  assert z["zoomed"] and z["scale"] > fit_of(z) * 1.2, z
+  page.keyboard.press("+")
+  z2 = zoom_state(page)
+  assert z2["scale"] > z["scale"]
+  page.keyboard.press("-")
+  page.keyboard.press("-")
+  page.keyboard.press("-")
+  page.keyboard.press("-")
+  page.keyboard.press("-")
+  page.keyboard.press("-")
+  expect(page.locator(".stage.zoomed")).to_have_count(0)                     # zoomed out to fit: back to normal
+  page.keyboard.press("-")                                                   # nothing to zoom out of: no error, no zoom
+  expect(page.locator(".stage.zoomed")).to_have_count(0)
+
+
+def test_mouse_click_toggles_and_a_drag_pans_when_zoomed_but_navigates_at_fit(page, server):
+  open_loupe(page, server)
+  page.wait_for_timeout(500)
+  box = page.locator(".stage").bounding_box()
+  cx, cy = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+  page.mouse.click(cx, cy)
+  expect(page.locator(".stage.zoomed")).to_have_count(1)
+  z0 = zoom_state(page)
+  page.mouse.move(cx, cy)
+  page.mouse.down()
+  for i in range(1, 9):
+    page.mouse.move(cx - i * 30, cy - i * 10)
+  page.mouse.up()
+  z1 = zoom_state(page)
+  assert z1["x"] < z0["x"] and z1["y"] < z0["y"]
+  expect(page.locator(".hud .pos")).to_have_text("1/6")                      # the drag panned, it did not navigate
+  page.mouse.click(cx, cy)                                                   # back to fit
+  expect(page.locator(".stage.zoomed")).to_have_count(0)
+  page.mouse.move(cx, cy)
+  page.mouse.down()
+  for i in range(1, 9):
+    page.mouse.move(cx - i * 25, cy)
+  page.mouse.up()
+  expect(page.locator(".hud .pos")).to_have_text("2/6")                      # at fit size a drag is a swipe again
+
+
+def test_zoom_before_the_picture_has_loaded_waits_for_it(page, server):
+  page.route("**/img/Medium/*", lambda route: (page.wait_for_timeout(700), route.continue_()))   # a slow link
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("z")                                                   # pressed before the image is there
+  expect(page.locator(".stage.zoomed")).to_have_count(1, timeout=10000)

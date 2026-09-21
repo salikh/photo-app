@@ -13,7 +13,7 @@ Check items off here when the ticket's status is done.
 - [x] [004](docs/tickets/004.md) Thumbs inspection and lookup
 - [x] [005](docs/tickets/005.md) XMP module and tests
 - [ ] [006](docs/tickets/006.md) Import and ratings (021 reopened: the newest of database and XMP is authoritative)
-- [ ] [007](docs/tickets/007.md) Read-only UI
+- [x] [007](docs/tickets/007.md) Read-only UI
 - [ ] [008](docs/tickets/008.md) Curation
 - [x] [009](docs/tickets/009.md) Grouping UI
 - [x] [010](docs/tickets/010.md) Hash recovery and nightly scan

@@ -26,6 +26,11 @@ While a filter is active, a photo whose rating stops matching it **leaves the vi
 in the viewer the next photo is shown, when the last one leaves the viewer closes, and `U` brings the photo
 back where it was. So `Unrated` + a rating key is the fast cull: rate, and the next unrated photo is in front of you.
 
+## Zoom
+
+`Z`, a click, or a double tap zooms to 100% of the original pixels; pinch (two fingers, or a trackpad, or `Ctrl`+wheel) zooms
+between fit and 4x around the fingers, drag pans, `+`/`-` zoom, double tap or `Z` goes back. Only the photo scales, not the page.
+
 ## The thumbnail strip
 
 Under the photo, a strip shows every photo of the folder (and filter). Scroll it (wheel, trackpad, or a sideways swipe on a phone) and

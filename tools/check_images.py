@@ -35,6 +35,8 @@ def main():
   ap.add_argument("--year", required=True)
   ap.add_argument("--sample", type=int, default=60)
   ap.add_argument("--dngs", type=int, default=15, help="extra samples: RAW originals of Photos without a camera JPG")
+  ap.add_argument("--raw_originals", type=int, default=0,
+                  help="extra samples: the DNG original of paired Photos (what the G key shows)")
   ap.add_argument("--sizes", default="Thumb,Medium,Huge")
   ap.add_argument("--state_dir", default=os.path.expanduser("~/.local/share/photos"))
   ap.add_argument("--pictures_dir", default="/zoo/Pictures")
@@ -64,8 +66,13 @@ def main():
       "WHERE rf.path >= ? AND rf.path < ? AND rf.missing = 0 AND lower(rf.path) LIKE '%.dng' "
       "AND NOT EXISTS (SELECT 1 FROM files c WHERE c.photo_id = p.id AND c.role = 'camera' AND c.missing = 0)",
       (lo, hi)).fetchall()
-  sample = rnd.sample(reps, min(args.sample, len(reps))) + rnd.sample(raw_only, min(args.dngs, len(raw_only)))
-  print(f"{args.year}: {len(reps)} photos ({len(raw_only)} RAW without a JPG); checking {len(sample)}", flush=True)
+  raw_orig = conn.execute(
+      "SELECT f.id, f.path FROM files f WHERE f.path >= ? AND f.path < ? AND f.missing = 0 AND "
+      "f.role = 'original' AND lower(f.path) LIKE '%.dng'", (lo, hi)).fetchall()
+  sample = (rnd.sample(reps, min(args.sample, len(reps))) + rnd.sample(raw_only, min(args.dngs, len(raw_only)))
+            + rnd.sample(raw_orig, min(args.raw_originals, len(raw_orig))))
+  print(f"{args.year}: {len(reps)} photos ({len(raw_only)} RAW without a JPG, {len(raw_orig)} DNG originals); "
+        f"checking {len(sample)}", flush=True)
 
   sizes = args.sizes.split(",")
   failures, ok, times = [], collections.Counter(), collections.defaultdict(list)
