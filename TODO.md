@@ -24,6 +24,8 @@ Check items off here when the ticket's status is done.
 - [x] [041](docs/tickets/041.md) start.sh to bring up a local server
 - [ ] [043](docs/tickets/043.md) Mobile UI (built and tested in an emulated phone; needs a real-phone try)
 - [ ] [047](docs/tickets/047.md) Dark theme (built, contrast checked; needs your look)
+- [ ] [051](docs/tickets/051.md) Incremental scan on subdirectories, run in sequence per year directory
+- [ ] [052](docs/tickets/052.md) Retry with backoff on 'database is busy' (about a minute), then a 500 shown as a toast
 - [ ] [050](docs/tickets/050.md) Preload the big image data of photos within +/-2 of the current one (faster transitions)
 - [ ] [048](docs/tickets/048.md) Library scan and reports (2001 + 2026 done; a wider scan is a ~90 minute job)
 
