@@ -24,10 +24,10 @@ Check items off here when the ticket's status is done.
 - [x] [041](docs/tickets/041.md) start.sh to bring up a local server
 - [ ] [043](docs/tickets/043.md) Mobile UI (built and tested in an emulated phone; needs a real-phone try)
 - [ ] [047](docs/tickets/047.md) Dark theme (built, contrast checked; needs your look)
-- [ ] [051](docs/tickets/051.md) Incremental scan on subdirectories, run in sequence per year directory
+- [x] [051](docs/tickets/051.md) Incremental scan on subdirectories, run in sequence per year directory
 - [ ] [052](docs/tickets/052.md) Retry with backoff on 'database is busy' (about a minute), then a 500 shown as a toast
 - [ ] [050](docs/tickets/050.md) Preload the big image data of photos within +/-2 of the current one (faster transitions)
-- [ ] [048](docs/tickets/048.md) Library scan and reports (2001 + 2026 done; a wider scan is a ~90 minute job)
+- [x] [048](docs/tickets/048.md) Library scan and reports (whole library scanned 2026-09-21: 94,616 files, 66,352 Photos)
 
 ## Waiting on the user
 
@@ -44,10 +44,11 @@ Decisions (each ticket has the options and the evidence; 024 and 042 were answer
 - [ ] [015](docs/tickets/015.md) Manual link decisions are mirrored to `manual_links.jsonl` (implemented); confirm
 - [x] [046](docs/tickets/046.md) Swipe up/down = one rating step, clamped (confirmed 2026-09-21)
 
+- [ ] [053](docs/tickets/053.md) 75 rejects are hidden by newest-wins (a newer sidecar says 1 or 2): keep, or let a reject win?
+
 Needs a real device or your time:
 
 - [ ] [044](docs/tickets/044.md), [045](docs/tickets/045.md), [046](docs/tickets/046.md) Try the phone UI over the LAN (`./start.sh`, open `http://<host>:8080/`)
 - [ ] [031](docs/tickets/031.md) Timed culling trial on a real folder
-- [ ] [048](docs/tickets/048.md) Go-ahead for a wider library scan (`python -m photoapp.fullscan --hashes_db=~/zoo.db`), then re-run [023](docs/tickets/023.md)
 
 Epics 006, 007, 008 and 043 close when the items above are settled.
