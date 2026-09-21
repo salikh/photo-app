@@ -334,6 +334,14 @@ def create_app(conn, settings):
 
   cache = {"Cache-Control": "private, max-age=3600"}
 
+  # The viewer preloads several sizes of the neighboring photos at once (ticket 050); rendering
+  # a thumbnail or a RAW preview costs CPU, so only a few run at the same time.
+  render_slots = threading.BoundedSemaphore(3)
+
+  def render_limited(*args):
+    with render_slots:
+      return thumbs.make(*args)
+
   @app.get("/img/full/{file_id}")
   @db_route
   def full(file_id: int):
@@ -356,7 +364,7 @@ def create_app(conn, settings):
         path = os.path.join(settings.pictures_dir, row["path"])
     else:
       made = await run_in_threadpool(
-          thumbs.make, settings.pictures_dir, settings.thumbs_dir,
+          render_limited, settings.pictures_dir, settings.thumbs_dir,
           row["path"], size)
       path = None
       if made:

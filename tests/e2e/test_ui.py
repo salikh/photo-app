@@ -784,3 +784,132 @@ def test_busy_database_shows_the_error_toast_reverts_and_works_again_after_relea
     ctx.close()
   finally:
     srv.stop()
+
+
+# --- preloading the photos within +/-2 of the current one (ticket 050) ---------------------------
+
+def img_requests(page):
+  seen = []
+  page.on("request", lambda r: seen.append(r.url) if "/img/" in r.url else None)
+  return seen
+
+
+def kind_ids(urls):
+  """[(size, file_id)] in request order, without repeats."""
+  out = []
+  for u in urls:
+    parts = u.split("/img/")[1].split("?")[0].split("/")
+    item = (parts[0], int(parts[1]))
+    if item not in out:
+      out.append(item)
+  return out
+
+
+def file_ids_of(server, folder="2024/trip"):
+  return [p["file_id"] for p in api(server, f"/api/photos?dir={folder}&sort=name")["photos"]]
+
+
+def test_preloads_medium_then_huge_for_the_two_neighbors_each_way(page, server):
+  fids = file_ids_of(server)
+  seen = img_requests(page)
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[2]}")                     # the third of six
+  expect(page.locator(".loupe")).to_be_visible()
+  wait_for(lambda: len([k for k in kind_ids(seen) if k[0] in ("Medium", "Huge") and k[1] != fids[2]]) >= 8)
+  requested = kind_ids(seen)
+  window = {fids[0], fids[1], fids[3], fids[4]}
+  for size in ("Medium", "Huge"):
+    assert {f for s_, f in requested if s_ == size and f != fids[2]} == window, (size, requested)
+  assert (("Medium", fids[5]) not in requested) and (("Huge", fids[5]) not in requested)      # 3 away: not preloaded
+  # (after a pause on a photo its own full-size image is fetched too, see preload.decodeCurrentHuge)
+  # Medium is started before any Huge (what is shown on arrival comes first)
+  first_huge = min(i for i, k in enumerate(requested) if k[0] == "Huge")
+  assert all(k[0] != "Medium" or i < first_huge for i, k in enumerate(requested) if k[1] != fids[2])
+  assert set(held_pairs(page)) - {("Huge", fids[2])} == {(sz, f) for sz in ("Medium", "Huge") for f in window}   # the window (and, after a pause, the current photo's own full size)
+
+
+def held_pairs(page):
+  return sorted((u.split("/img/")[1].split("/")[0], int(u.split("/")[-1])) for u in page.evaluate("window.__preloadedUrls()"))
+
+
+def test_the_window_follows_the_direction_and_releases_what_left_it(page, server):
+  fids = file_ids_of(server)
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.wait_for_timeout(600)
+  # the window (1 and 2 ahead) plus, after the pause, the current photo's own full-size image
+  assert held_pairs(page) == sorted([("Medium", fids[1]), ("Medium", fids[2]), ("Huge", fids[1]), ("Huge", fids[2]), ("Huge", fids[0])])
+  for _ in range(4):
+    page.keyboard.press("ArrowRight")
+  expect(page.locator(".hud .pos")).to_have_text("5/6")                   # index 4
+  page.wait_for_timeout(600)
+  now = held_pairs(page)
+  # everything held lies within two positions of the current photo (index 4): 2, 3, 4 (own), 5
+  assert {f for _, f in now} <= {fids[2], fids[3], fids[4], fids[5]}, now
+  assert not {f for _, f in now} & {fids[0], fids[1]}                     # what was left behind is released
+  assert ("Medium", fids[3]) in now and ("Medium", fids[5]) in now         # one back, one ahead are ready
+  assert ("Huge", fids[5]) in now and ("Huge", fids[3]) in now
+  assert len(now) <= 8
+
+
+def test_holding_an_arrow_key_does_not_leave_a_pile_of_preloads(page, server):
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  for _ in range(5):
+    page.keyboard.press("ArrowRight")
+  for _ in range(5):
+    page.keyboard.press("ArrowLeft")
+  expect(page.locator(".hud .pos")).to_have_text("1/6")
+  page.wait_for_timeout(500)
+  fids = file_ids_of(server)
+  now = held_pairs(page)                                                  # at the first photo: the window is 1 and 2 ahead
+  assert {f for _, f in now} <= {fids[0], fids[1], fids[2]}, now         # (plus the current photo's own entries)
+  assert len(now) <= 6
+  page.keyboard.press("Escape")
+  assert page.evaluate("window.__preloadedUrls()") == []                  # closing the viewer releases everything
+
+
+def test_zoom_uses_the_preloaded_full_size_image_without_a_new_request(page, server):
+  ids = photo_ids(server)
+  fids = file_ids_of(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("ArrowRight")                                       # now on photo 2; its Huge was preloaded from photo 1
+  expect(page.locator(".hud .pos")).to_have_text("2/6")
+  page.wait_for_timeout(800)
+  seen = img_requests(page)                                               # record only from here on
+  page.keyboard.press("z")
+  expect(page.locator(".stage.zoomed")).to_have_count(1)
+  page.wait_for_function("document.querySelector('.stage img.main').complete && document.querySelector('.stage img.main').naturalWidth >= 1600 && document.querySelector('.stage img.main').src.includes('/Huge/')")
+  assert not [u for u in seen if f"/img/Huge/{fids[1]}" in u], seen       # served from the cache: no second request
+
+
+def test_no_full_size_preload_on_a_data_saving_connection(browser, server):
+  ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+  pg = ctx.new_page()
+  pg.add_init_script("Object.defineProperty(navigator, 'connection', {value: {saveData: true, effectiveType: '4g'}})")
+  seen = img_requests(pg)
+  ids = photo_ids(server)
+  fids = file_ids_of(server)
+  pg.goto(f"{server.url}/#/2024/trip?photo={ids[2]}")
+  expect(pg.locator(".loupe")).to_be_visible()
+  pg.wait_for_timeout(1000)
+  kinds = kind_ids(seen)
+  assert {s_ for s_, f in kinds if f != fids[2] and s_ in ("Medium", "Huge")} == {"Medium"}     # Medium only
+  assert {f for s_, f in kinds if s_ == "Medium" and f != fids[2]} == {fids[0], fids[1], fids[3], fids[4]}
+  ctx.close()
+
+
+def test_slow_connection_type_also_skips_the_full_size(browser, server):
+  ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+  pg = ctx.new_page()
+  pg.add_init_script("Object.defineProperty(navigator, 'connection', {value: {saveData: false, effectiveType: '3g'}})")
+  seen = img_requests(pg)
+  ids = photo_ids(server)
+  pg.goto(f"{server.url}/#/2024/trip?photo={ids[1]}")
+  expect(pg.locator(".loupe")).to_be_visible()
+  pg.wait_for_timeout(800)
+  assert "Huge" not in {s_ for s_, f in kind_ids(seen)}
+  ctx.close()

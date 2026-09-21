@@ -8,11 +8,10 @@ import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
 import {label as filterLabel} from './filters.js';
+import * as preloader from './preload.js';
 import {updateCell, settle, reinsertPhotos, loadRest} from './grid.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
 
-const PRELOAD_NEXT = 3;
-const PRELOAD_PREV = 1;
 const FILMSTRIP_RADIUS = 6;
 
 let root = null;
@@ -25,6 +24,7 @@ const current = () => state.photos[index];
 
 function build() {
   if (root) return;
+  window.__preloadedUrls = preloader.urls;      // test hook: what is being held ahead of time
   ui.img = el('img', {class: 'main', alt: '', draggable: 'false'});
   ui.preview = el('div', {class: 'rate-preview'});
   ui.stage = el('div', {class: 'stage', onclick: () => toggleZoom()},
@@ -98,6 +98,7 @@ export function showById(photoId) {
 export function close() {
   if (!root || root.hidden) return;
   root.hidden = true;
+  preloader.clear();
   document.body.style.overflow = '';
   document.removeEventListener('keydown', onKey);
   closeFiles();
@@ -106,6 +107,7 @@ export function close() {
 }
 
 function show(i) {
+  const delta = index >= 0 && i !== index ? Math.sign(i - index) : 1;   // direction of travel
   index = i;
   const photo = current();
   zoomed = false;
@@ -116,7 +118,7 @@ function show(i) {
   retryOnce(ui.img, photo);
   renderHud();
   renderFilmstrip();
-  preload();
+  preload(delta);
   if (state.route) {
     state.route.photo = photo.id;
     history.replaceState(null, '', href(state.route));
@@ -134,14 +136,11 @@ function retryOnce(img, photo) {
   };
 }
 
-function preload() {
-  const wanted = [];
-  for (let d = 1; d <= PRELOAD_NEXT; d++) wanted.push(index + d);
-  for (let d = 1; d <= PRELOAD_PREV; d++) wanted.push(index - d);
-  for (const i of wanted) {
-    const p = state.photos[i];
-    if (p) new Image().src = imgUrl('Medium', p.file_id);
-  }
+function preload(delta) {
+  const photo = current();
+  preloader.update(state.photos, index, delta,
+                   [imgUrl('Medium', photo.file_id), imgUrl('Huge', photo.file_id)]);
+  preloader.decodeCurrentHuge(photo);
 }
 
 function renderFilmstrip() {

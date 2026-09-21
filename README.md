@@ -26,6 +26,12 @@ While a filter is active, a photo whose rating stops matching it **leaves the vi
 in the viewer the next photo is shown, when the last one leaves the viewer closes, and `U` brings the photo
 back where it was. So `Unrated` + a rating key is the fast cull: rate, and the next unrated photo is in front of you.
 
+## Speed of the viewer
+
+Moving to another photo or zooming is meant to be instant: the viewer preloads the pictures of the two photos each side of the
+current one (2000 px first, then the full-size image, which is also decoded ahead after a short pause), and stops on a data-saving
+or slow connection. `tools/measure_navigation.py` measures it on large synthetic photos.
+
 ## Keys in the viewer
 
 `←`/`→` navigate, `0`-`5` rate, `X` reject (again: restore), `F` favorite, `T` tags (`-name` removes),
