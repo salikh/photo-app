@@ -20,6 +20,8 @@ anticipated — each such departure is called out explicitly.
   busy-database retry, and a real race bug that was found and fixed along the way
 - [frontend-viewer.md](frontend-viewer.md) — preloading, the virtualized filmstrip, pinch zoom, filters, and
   another real race bug found and fixed along the way
+- [databases.md](databases.md) — every sqlite database the app touches: where each lives, its schema table by
+  table, and why the state database is separate from the library and split the way it is
 
 ## Two bugs worth knowing about specifically
 
