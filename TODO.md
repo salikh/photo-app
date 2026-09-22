@@ -33,7 +33,7 @@ All ten build-order epics are done.
 - [x] [060](docs/tickets/060.md) Pinch zoom in/out and pan of the zoomed (original size) photo on tablets (real iPad: "works good")
 - [x] [066](docs/tickets/066.md) Background low-priority population of /zoo/Thumbs with dcraw (queue visible on the Jobs page)
 - [x] [067](docs/tickets/067.md) ArrowUp/ArrowDown to step the rating in the viewer
-- [ ] [072](docs/tickets/072.md) "Delete" button on the Rejected view: review screen with Medium thumbnails, big red Delete button removes the source files from /zoo/Pictures (needs design decisions first, see the ticket)
+- [x] [072](docs/tickets/072.md) "Delete" button on the Rejected view: review screen with Medium thumbnails, big red Delete button removes the source files from /zoo/Pictures (needs design decisions first, see the ticket)
 - [x] [073](docs/tickets/073.md) Load-adaptive background worker: watch CPU/memory load, auto start/stop a low-priority nice/ionice worker on the job queue
 - [x] [074](docs/tickets/074.md) Jobs page progress indicator: total, incomplete, and completed in the last day/hour/minute
 - [x] [075](docs/tickets/075.md) Delete completed jobs older than 1 week on a full rescan
@@ -43,6 +43,7 @@ All ten build-order epics are done.
 - [x] [079](docs/tickets/079.md) Loupe "..."/Debug button to force-rerender a photo's thumbnails (fixes broken ones)
 - [ ] [080](docs/tickets/080.md) Prioritize the currently-open folder in the background thumbnail queue (spun out of 069's investigation)
 - [ ] [081](docs/tickets/081.md) Automatic purge of Pictures/.trash after a retention window (spun out of 072's decisions)
+- [ ] [082](docs/tickets/082.md) "Delete this file" button in the loupe's Files panel, with a Medium-thumbnail confirmation screen
 
 ## Cross-cutting
 
@@ -83,7 +84,8 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
 **No open question tickets right now.** Every build-order and cross-cutting item above is done. What remains is
-072, 080 (none blocked, none urgent) and whatever the next `/loop` iteration or the user asks for.
+080, 081, 082 (none blocked, none urgent; 080/081 need design decisions before they're actionable) and
+whatever the next `/loop` iteration or the user asks for.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
 `http://<this machine>:8080/` on the phone or tablet.
