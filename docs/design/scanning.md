@@ -25,10 +25,13 @@ actual memory spike behind the failures, not the file-reading itself.
 ## Why file reads are parallel but everything else is not
 
 `--scan_workers` (default 8) runs the per-file work (stat, decode dimensions, hash) in a thread pool, because
-this is a network filesystem (`/zoo` is NAS-mounted) and the work is dominated by round-trip latency, not CPU —
-measured at 2.2 files/s single-threaded versus up to 21 files/s with `--scan_workers=8` on the same directory
-(small, sparse directories parallelize worse than large ones: real runs saw as little as 4-6 files/s on them
-even with the pool).
+the work is dominated by storage I/O latency, not CPU — measured at 2.2 files/s single-threaded versus up to
+21 files/s with `--scan_workers=8` on the same directory (small, sparse directories parallelize worse than
+large ones: real runs saw as little as 4-6 files/s on them even with the pool). Earlier notes describe `/zoo`
+as NAS-mounted; ticket 069's investigation (2026-09-23) checked the actual mount on the running deployment and
+found it is a local ZFS pool on two SATA HDDs in a mirror (`zpool status zoo`), not a network filesystem — the
+latency is real (mechanical seek time across large RAW files, not round-trip network cost), just not from the
+cause these notes originally assumed. The parallelism reasoning and the measured numbers above are unaffected.
 Everything that writes to sqlite (grouping, ratings, thumbnail recording) stays single-threaded and runs after
 the parallel read phase completes for that directory, because sqlite allows only one writer at a time — see
 [concurrency-and-jobs.md](concurrency-and-jobs.md) for how the rest of the app handles that same constraint.

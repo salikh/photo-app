@@ -16,7 +16,7 @@
 | `--one_star_is_unrated` | off | display-only: 1 star is shown as unrated (darktable's import default), `picked` means 2+ stars; nothing on disk changes |
 | `--job_workers` | 2 | background RAW render threads |
 | `--busy_retry_seconds` | 60 | how long the web app keeps retrying when another writer (a running scan) holds the database, before answering "database busy" |
-| `--scan_workers` | 8 | threads reading files during a scan (the NAS is latency bound) |
+| `--scan_workers` | 8 | threads reading files during a scan (storage I/O is latency bound — `/zoo` is a local ZFS mirror on spinning disks, not a NAS despite earlier notes; see scanning.md) |
 | `--port`, `--host` | 8080, 0.0.0.0 | LAN only, no authentication |
 | `--load_worker_enabled` | on | run the background thumbnail worker automatically when the machine is idle (ticket 073) |
 | `--load_check_seconds` | 30 | how often the load-adaptive worker samples CPU/memory load |

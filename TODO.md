@@ -41,6 +41,7 @@ All ten build-order epics are done.
 - [x] [077](docs/tickets/077.md) Filter/sort changes use replaceState so they are not their own browser-history stop (Back always means "previous folder")
 - [x] [078](docs/tickets/078.md) Document the sqlite database(s) — location, schema, meaning — in docs/design/databases.md
 - [ ] [079](docs/tickets/079.md) Loupe "..."/Debug button to force-rerender a photo's thumbnails (fixes broken ones)
+- [ ] [080](docs/tickets/080.md) Prioritize the currently-open folder in the background thumbnail queue (spun out of 069's investigation)
 
 ## Cross-cutting
 
@@ -57,7 +58,7 @@ All ten build-order epics are done.
 ## Not blocked, not yet started
 
 - [x] [068](docs/tickets/068.md) Batch sync of XMP sidecars out of sync with the computed rating (future; answer to 065)
-- [ ] [069](docs/tickets/069.md) Investigate: opening a folder for the first time feels slow (observation from the 063 culling trial)
+- [x] [069](docs/tickets/069.md) Investigate: opening a folder for the first time feels slow (observation from the 063 culling trial)
 - [x] [070](docs/tickets/070.md) vlog(1..7) logging in the populate_thumbs tool (user request 2026-09-22)
 - [x] [071](docs/tickets/071.md) vlog(1..7) logging in the scan and in-line thumbnail paths (user request 2026-09-22)
 
@@ -81,7 +82,7 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
 **No open question tickets right now.** Every build-order and cross-cutting item above is done. What remains is
-068 and 069 (neither blocked, neither urgent) and whatever the next `/loop` iteration or the user asks for.
+072, 079, 080 (none blocked, none urgent) and whatever the next `/loop` iteration or the user asks for.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
 `http://<this machine>:8080/` on the phone or tablet.
