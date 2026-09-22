@@ -135,6 +135,12 @@ MIGRATIONS = [
         WHERE a.photo_id = photos.id AND a.field IN ('rating', 'fav', 'tags'))
       WHERE rating_source = 'app';
     """,
+    """
+    -- A job's unit of work is usually a file (file_id), but ticket 076's scan_dir jobs are
+    -- scoped to a directory instead -- target holds that relative directory path, file_id is
+    -- NULL for those. Every existing job kind leaves target NULL.
+    ALTER TABLE jobs ADD COLUMN target TEXT;
+    """,
 ]
 
 

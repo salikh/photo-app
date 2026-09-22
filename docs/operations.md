@@ -18,6 +18,10 @@
 | `--busy_retry_seconds` | 60 | how long the web app keeps retrying when another writer (a running scan) holds the database, before answering "database busy" |
 | `--scan_workers` | 8 | threads reading files during a scan (the NAS is latency bound) |
 | `--port`, `--host` | 8080, 0.0.0.0 | LAN only, no authentication |
+| `--load_worker_enabled` | on | run the background thumbnail worker automatically when the machine is idle (ticket 073) |
+| `--load_check_seconds` | 30 | how often the load-adaptive worker samples CPU/memory load |
+| `--load_start_threshold` / `--load_stop_threshold` | 0.5 / 1.5 | 1-minute load average to start / stop the background worker |
+| `--mem_start_percent` / `--mem_stop_percent` | 20 / 10 | % RAM available to start / stop the background worker |
 
 Try a first session with `--xmp_dry_run` to see what would be written.
 
@@ -31,7 +35,18 @@ an interrupted run (Ctrl-C, a reboot, low memory) leaves every finished year usa
 running the same command again skips finished directories (by their mtime) and continues. It logs
 `done <dir> (n/total)` with the files read and the peak memory after every step.
 `--scan_dirs=2001,2026` scans only those directories; `--scan_workers` sets the read threads.
-The **Rescan** button and the nightly scan work the same way (a folder-scoped rescan scans that folder).
+The **Rescan** button works the same way (a folder-scoped rescan scans that folder), and runs
+immediately, at normal priority, regardless of the nightly scan or the load-adaptive worker below.
+
+As of ticket 076, the **nightly scan** (`--nightly_scan_hour`, local hour, -1 disables) no longer runs
+one big scan synchronously at that hour. Instead it queues one `scan_dir` job per top-level directory
+(the same units `fullscan.py` and the table above already scan one at a time) into the same
+low-priority queue as the background thumbnail worker, and ticket 073's load-adaptive worker drains
+them over time, only while the machine looks idle -- so a rescan still happens every night but never
+forces itself onto a busy machine at 3am, and can spill into the following day if it needs to. This
+depends on `--load_worker_enabled` (on by default): if that's off, nightly-queued scan jobs sit
+unprocessed until it's turned on or they're drained some other way. Progress and any per-directory
+failures show on the Jobs page like any other background job.
 
 ## A busy database
 
@@ -57,6 +72,16 @@ render queue. It never overwrites a thumbnail that already exists. Run it detach
 shell too (belt-and-braces, since it already reduces its own priority):
 
     nice -n19 ionice -c3 python -m photoapp.populate_thumbs &
+
+As of ticket 073, the running server does this automatically: whenever the machine looks idle (1-minute
+load average and % RAM available past the `--load_start_threshold`/`--mem_start_percent` thresholds,
+checked every `--load_check_seconds`), it starts the same low-priority worker on its own and stops it
+again as soon as either threshold is crossed the other way (`--load_stop_threshold`/`--mem_stop_percent`,
+deliberately looser than the start thresholds, so it doesn't flap right at one boundary). Every sample is
+logged at `--verbosity=3` (see `photoapp/load_worker.py`'s docstring) — the memory thresholds are a first
+guess and are meant to be tuned from real observation, not treated as final. `python -m photoapp.populate_thumbs` (above) still works standalone for an explicit,
+immediate catch-up run (e.g. right after adding a lot of new files), independent of the automatic worker.
+Disable the automatic worker with `--load_worker_enabled=false` if you'd rather only ever run it by hand.
 
 It writes to the same state database the running app uses, so its progress — queued/running/done/failed counts
 and any per-file error — shows on the app's **Jobs** page immediately, no restart needed. Safe to interrupt

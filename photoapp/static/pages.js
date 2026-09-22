@@ -62,11 +62,32 @@ export async function usagePage(main) {
     el('p', {class: 'status', text: 'Counts cover files the app has scanned; sizes are created on demand.'}));
 }
 
+function completedLine(label, text, completed) {
+  const c = completed[label];
+  return `${text}: ${c.done} done, ${c.failed} failed`;
+}
+
 export async function jobsPage(main) {
   const j = await get('/api/jobs');
+  const p = j.progress;
+  const kinds = Object.keys(p.by_kind).sort();
   main.replaceChildren(
     el('h2', {text: 'Background jobs'}),
-    el('p', {class: 'status', text: Object.entries(j.counts).map(([k, v]) => `${k}: ${v}`).join('   ') || 'No jobs.'}),
+    el('p', {class: 'status', text:
+      `Total: ${p.total} (all time so far)   Incomplete: ${p.incomplete}`}),
+    el('p', {class: 'status', text: [
+      completedLine('last_minute', 'Last minute', p.completed),
+      completedLine('last_hour', 'Last hour', p.completed),
+      completedLine('last_day', 'Last day', p.completed),
+    ].join('   ')}),
+    kinds.length ? table(['Kind', 'Queued', 'Running', 'Done', 'Failed'],
+      kinds.map((kind) => {
+        const s = p.by_kind[kind];
+        return el('tr', {},
+          el('td', {text: kind}), el('td', {text: s.queued || 0}),
+          el('td', {text: s.running || 0}), el('td', {class: 'ok', text: s.done || 0}),
+          el('td', {class: 'bad', text: s.failed || 0}));
+      })) : el('p', {class: 'status', text: 'No jobs.'}),
     j.jobs.length ? table(['#', 'Kind', 'File', 'State', 'Error'], j.jobs.map((x) => el('tr', {},
       el('td', {text: x.id}), el('td', {text: x.kind}), el('td', {text: x.file_id}),
       el('td', {class: x.state === 'failed' ? 'bad' : x.state === 'done' ? 'ok' : '', text: x.state}),

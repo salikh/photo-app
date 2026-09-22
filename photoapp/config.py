@@ -43,6 +43,28 @@ flags.DEFINE_float(
     "error ('database busy') that the page shows as a message.")
 flags.DEFINE_string("host", "0.0.0.0", "Address to listen on (LAN only).")
 flags.DEFINE_integer("port", 8080, "Port to listen on.")
+flags.DEFINE_boolean(
+    "load_worker_enabled", True,
+    "Run a low-priority background worker (nice/ionice, ticket 066) that fills in missing "
+    "thumbnails automatically whenever the machine looks idle. See ticket 073.")
+flags.DEFINE_integer(
+    "load_check_seconds", 30, "How often the load-adaptive worker samples CPU/memory load.")
+flags.DEFINE_float(
+    "load_start_threshold", 0.5,
+    "1-minute load average at or below which the background worker is allowed to start.")
+flags.DEFINE_float(
+    "load_stop_threshold", 1.5,
+    "1-minute load average above which the background worker is stopped. Higher than "
+    "--load_start_threshold on purpose, to avoid starting/stopping repeatedly right at one "
+    "boundary.")
+flags.DEFINE_float(
+    "mem_start_percent", 20.0,
+    "Percentage of RAM that must be available for the background worker to start.")
+flags.DEFINE_float(
+    "mem_stop_percent", 10.0,
+    "Percentage of RAM available below which the background worker is stopped. These memory "
+    "thresholds are a first guess (ticket 073) -- every sample is logged at vlog(3) so they can "
+    "be tuned from real observation.")
 
 
 @dataclasses.dataclass
@@ -58,6 +80,12 @@ class Settings:
   scan_workers: int = 8
   busy_retry_seconds: float = 60.0
   one_star_is_unrated: bool = False
+  load_worker_enabled: bool = True
+  load_check_seconds: int = 30
+  load_start_threshold: float = 0.5
+  load_stop_threshold: float = 1.5
+  mem_start_percent: float = 20.0
+  mem_stop_percent: float = 10.0
 
   @property
   def db_path(self):
@@ -73,4 +101,9 @@ class Settings:
         xmp_dry_run=f.xmp_dry_run, new_raw_sidecar_style=f.new_raw_sidecar_style,
         job_workers=f.job_workers, nightly_scan_hour=f.nightly_scan_hour,
         scan_workers=f.scan_workers, busy_retry_seconds=f.busy_retry_seconds,
-        one_star_is_unrated=f.one_star_is_unrated)
+        one_star_is_unrated=f.one_star_is_unrated,
+        load_worker_enabled=f.load_worker_enabled,
+        load_check_seconds=f.load_check_seconds,
+        load_start_threshold=f.load_start_threshold,
+        load_stop_threshold=f.load_stop_threshold,
+        mem_start_percent=f.mem_start_percent, mem_stop_percent=f.mem_stop_percent)

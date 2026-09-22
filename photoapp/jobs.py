@@ -65,17 +65,26 @@ class JobQueue:
 
   # -- enqueue / inspect ----------------------------------------------------
 
-  def enqueue(self, kind, file_id):
-    """Queue a job unless the same kind+file is already queued or running."""
+  def add_handler(self, kind, fn):
+    """Register a handler for an additional kind after construction (ticket 076: several kinds
+    can share one low-priority queue/worker, registered as each part of the app sets itself up)."""
+    self._handlers[kind] = fn
+
+  def enqueue(self, kind, file_id=None, target=None):
+    """Queue a job unless the same kind+file_id+target is already queued or running.
+
+    Most jobs are scoped to a file (file_id); a directory-scoped job (ticket 076's scan_dir)
+    passes target instead and leaves file_id None.
+    """
     with self._conn_lock:
       row = self._conn.execute(
-          "SELECT id FROM jobs WHERE kind = ? AND file_id = ? AND "
-          "state IN ('queued', 'running')", (kind, file_id)).fetchone()
+          "SELECT id FROM jobs WHERE kind = ? AND file_id IS ? AND target IS ? AND "
+          "state IN ('queued', 'running')", (kind, file_id, target)).fetchone()
       if row:
         return row["id"]
       cur = self._conn.execute(
-          "INSERT INTO jobs (kind, file_id, state, created_at) "
-          "VALUES (?, ?, 'queued', ?)", (kind, file_id, _now()))
+          "INSERT INTO jobs (kind, file_id, target, state, created_at) "
+          "VALUES (?, ?, ?, 'queued', ?)", (kind, file_id, target, _now()))
       self._conn.commit()
     self._wake.set()
     return cur.lastrowid
@@ -90,9 +99,44 @@ class JobQueue:
       return {r["state"]: r["n"] for r in self._conn.execute(
           "SELECT state, COUNT(*) n FROM jobs GROUP BY state")}
 
+  # Time buckets for progress(); (label, seconds) pairs, ticket 074.
+  _COMPLETED_WINDOWS = (("last_minute", 60), ("last_hour", 3600), ("last_day", 86400))
+
+  def progress(self):
+    """A summary for the Jobs page (ticket 074): total, incomplete, a per-kind breakdown of
+    every state, and how many done/failed jobs finished in the last minute/hour/day. Spans every
+    kind in the table, like counts(), not just this queue's own kinds."""
+    with self._conn_lock:
+      by_state = {r["state"]: r["n"] for r in self._conn.execute(
+          "SELECT state, COUNT(*) n FROM jobs GROUP BY state")}
+      by_kind = {}
+      for r in self._conn.execute("SELECT kind, state, COUNT(*) n FROM jobs GROUP BY kind, state"):
+        by_kind.setdefault(r["kind"], {})[r["state"]] = r["n"]
+      completed = {}
+      for label, seconds in self._COMPLETED_WINDOWS:
+        cutoff = (datetime.datetime.now() - datetime.timedelta(seconds=seconds)).isoformat(
+            timespec="seconds")
+        bucket = {"done": 0, "failed": 0}
+        for r in self._conn.execute(
+            "SELECT state, COUNT(*) n FROM jobs WHERE finished_at >= ? AND "
+            "state IN ('done', 'failed') GROUP BY state", (cutoff,)):
+          bucket[r["state"]] = r["n"]
+        completed[label] = bucket
+    return {
+        "total": sum(by_state.values()),
+        "incomplete": by_state.get("queued", 0) + by_state.get("running", 0),
+        "by_state": by_state,
+        "by_kind": by_kind,
+        "completed": completed,
+    }
+
   # -- workers ----------------------------------------------------------------
 
   def start(self):
+    # Cleared here (not just set in __init__) so a queue that was stop()ed can be
+    # start()ed again -- ticket 073's load-adaptive worker toggles a queue repeatedly
+    # over the life of one process, unlike every other caller, which starts it once.
+    self._stop.clear()
     with self._conn_lock:
       self._conn.execute("UPDATE jobs SET state = 'queued' "
                          "WHERE state = 'running'")

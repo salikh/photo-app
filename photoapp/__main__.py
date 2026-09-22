@@ -8,6 +8,7 @@ from absl import logging
 from photoapp import api
 from photoapp import config
 from photoapp import db
+from photoapp import load_worker
 from photoapp import manual_links
 from photoapp import scan
 
@@ -26,8 +27,24 @@ def main(argv):
   settings = config.Settings.from_flags()
   application = api.create_app(conn, settings)
   application.state.jobs.start()
+  if settings.load_worker_enabled:
+    def enqueue_more():
+      n = application.state.populator.enqueue_missing(application.state.populate_conn)
+      if n:
+        logging.info("load_worker: queued %d file(s) needing a thumbnail", n)
+
+    load_worker.LoadAdaptiveWorker(
+        application.state.background_jobs, check_seconds=settings.load_check_seconds,
+        start_load=settings.load_start_threshold, stop_load=settings.load_stop_threshold,
+        start_mem_percent=settings.mem_start_percent, stop_mem_percent=settings.mem_stop_percent,
+        on_before_start=enqueue_more).start()
   if settings.nightly_scan_hour >= 0:
-    scan.NightlyScan(application.state.scanner, settings.nightly_scan_hour).start()
+    # Queues one job per top-level directory into the same background_jobs queue above (ticket
+    # 076); if --load_worker_enabled is off, nothing drains that queue automatically -- the jobs
+    # just wait (use --nightly_scan_hour=-1 to not enqueue them at all, or fullscan.py/the Rescan
+    # button for an immediate scan regardless of this flag).
+    scan.NightlyScan(application.state.background_jobs, settings.pictures_dir,
+                     settings.nightly_scan_hour).start()
   uvicorn.run(application, host=FLAGS.host, port=FLAGS.port)
 
 

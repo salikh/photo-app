@@ -26,6 +26,7 @@ from photoapp import library
 from photoapp import manual_links
 from photoapp import recovery
 from photoapp import scan as scan_lib
+from photoapp import thumb_populate
 from photoapp import thumbs
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -93,10 +94,10 @@ def create_app(conn, settings):
     return wrapper
   hashes = (fileinfo.load_precomputed_hashes(settings.hashes_db)
             if settings.hashes_db else None)
+  on_scan_done = lambda conn: recovery.recover(conn, settings)
   app.state.scanner = scan_lib.ScanManager(
       settings.db_path, settings.pictures_dir, hashes, settings.thumbs_dir,
-      on_done=lambda conn: recovery.recover(conn, settings),
-      workers=settings.scan_workers)
+      on_done=on_scan_done, workers=settings.scan_workers)
 
   def raw_render(conn, job):
     row = conn.execute("SELECT id, path FROM files WHERE id = ?",
@@ -115,10 +116,40 @@ def create_app(conn, settings):
   app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render},
                                  settings.job_workers)
 
+  # A single low-priority, single-worker queue for everything ticket 073's load-adaptive worker
+  # drains: populate_thumb (thumb_populate.Populator, registered below) and scan_dir (ticket 076's
+  # per-top-level-directory nightly scan jobs), so background work never competes for CPU/disk
+  # with the on-demand queue above or with interactive use.
+  app.state.background_jobs = jobs.JobQueue(settings.db_path, {}, workers=1, low_priority=True)
+  app.state.populator = thumb_populate.Populator(
+      settings.db_path, settings.pictures_dir, settings.thumbs_dir,
+      queue=app.state.background_jobs)
+  # A dedicated connection for enqueue_missing(), called from the load-adaptive worker's own
+  # thread (not a JobQueue worker thread, so it needs its own connection like everything else here).
+  app.state.populate_conn = db_lib.connect(settings.db_path, busy_timeout=60.0)
+
+  def scan_dir_job(conn, job):
+    """ticket 076: scan exactly the one directory job['target'] names, same as one step of
+    scan_all -- '.' (the root) is non-recursive (just the files directly in it), everything else
+    is recursive, matching scan.top_level_steps."""
+    target = job["target"]
+    scan_dir = (settings.pictures_dir if target == "."
+               else os.path.join(settings.pictures_dir, target))
+    progress = scan_lib.Progress()
+    scan_lib.scan(conn, settings.pictures_dir, scan_dir, hashes, progress, settings.thumbs_dir,
+                 on_scan_done, settings.scan_workers, recursive=(target != "."))
+    if progress.error:
+      raise RuntimeError(progress.error)
+    logging.vlog(5, "scan_dir %s: done (%d files seen, %d read)",
+                 target, progress.files_seen, progress.files_processed)
+
+  app.state.background_jobs.add_handler("scan_dir", scan_dir_job)
+
   @app.get("/api/jobs")
   @db_route
   def list_jobs(limit: int = 100):
     return {"counts": app.state.jobs.counts(),
+            "progress": app.state.jobs.progress(),
             "jobs": app.state.jobs.list(min(limit, 500))}
 
   @app.get("/")

@@ -39,6 +39,29 @@ def test_jobs_run_dedupe_and_isolate_failures(settings):
   q.stop()
 
 
+def test_enqueue_by_target_dedupes_independently_of_file_id(settings):
+  db.open_state(settings.state_dir).close()
+  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None})
+  a = q.enqueue("scan_dir", target="2020")
+  assert q.enqueue("scan_dir", target="2020") == a       # same target: deduped
+  b = q.enqueue("scan_dir", target="2021")
+  assert b != a                                          # different target: separate job
+  row = {r["id"]: r for r in q.list()}[a]
+  assert row["file_id"] is None and row["target"] == "2020"
+
+
+def test_add_handler_registers_a_kind_after_construction(settings):
+  db.open_state(settings.state_dir).close()
+  q = jobs.JobQueue(settings.db_path, {})
+  seen = []
+  q.add_handler("late", lambda c, j: seen.append(j["file_id"]))
+  q.enqueue("late", 1)
+  q.start()
+  assert q.wait_idle()
+  q.stop()
+  assert seen == [1]
+
+
 def test_running_jobs_are_requeued_after_restart(settings):
   conn = db.open_state(settings.state_dir)
   conn.execute("INSERT INTO jobs (kind, file_id, state, created_at) "
@@ -49,6 +72,55 @@ def test_running_jobs_are_requeued_after_restart(settings):
   q.start()
   assert ran.wait(5)
   q.stop()
+
+
+def test_queue_can_be_restarted_after_stop(settings):
+  # ticket 073: the load-adaptive worker starts/stops the same queue repeatedly, unlike every
+  # other caller (which starts it once); a stopped queue must be able to start again and process
+  # jobs enqueued after the restart.
+  db.open_state(settings.state_dir).close()
+  seen = []
+  q = jobs.JobQueue(settings.db_path, {"ok": lambda c, j: seen.append(j["file_id"])}, workers=1)
+  q.start()
+  q.enqueue("ok", 1)
+  assert q.wait_idle()
+  q.stop()
+  q.enqueue("ok", 2)
+  q.start()
+  assert q.wait_idle()
+  q.stop()
+  assert seen == [1, 2]
+
+
+def test_progress_buckets_by_finished_at(settings):
+  import datetime
+
+  conn = db.open_state(settings.state_dir)
+
+  def insert(kind, state, seconds_ago):
+    finished = (datetime.datetime.now() - datetime.timedelta(seconds=seconds_ago)).isoformat(
+        timespec="seconds") if seconds_ago is not None else None
+    conn.execute(
+        "INSERT INTO jobs (kind, file_id, state, created_at, finished_at) "
+        "VALUES (?, 1, ?, 'x', ?)", (kind, state, finished))
+
+  insert("a", "done", 30)          # within the last minute (and hour, and day)
+  insert("a", "failed", 30 * 60)   # within the last hour (and day), not the last minute
+  insert("b", "done", 12 * 3600)   # within the last day only
+  insert("b", "done", 3 * 86400)   # outside every window
+  insert("a", "queued", None)
+  insert("b", "running", None)
+  conn.commit()
+
+  q = jobs.JobQueue(settings.db_path, {"a": lambda c, j: None, "b": lambda c, j: None})
+  p = q.progress()
+  assert p["total"] == 6
+  assert p["incomplete"] == 2
+  assert p["by_kind"] == {"a": {"done": 1, "failed": 1, "queued": 1},
+                          "b": {"done": 2, "running": 1}}
+  assert p["completed"]["last_minute"] == {"done": 1, "failed": 0}
+  assert p["completed"]["last_hour"] == {"done": 1, "failed": 1}
+  assert p["completed"]["last_day"] == {"done": 2, "failed": 1}
 
 
 def test_raw_without_preview_is_rendered_in_background(settings, monkeypatch):
@@ -155,7 +227,9 @@ def test_populate_thumb_jobs_appear_on_the_running_apps_jobs_page(settings, monk
   scan.scan(conn, d)
   app = api.create_app(conn, settings)
   client = TestClient(app)
-  assert client.get("/api/jobs").json() == {"counts": {}, "jobs": []}
+  empty = client.get("/api/jobs").json()
+  assert empty["counts"] == {} and empty["jobs"] == []
+  assert empty["progress"]["total"] == 0 and empty["progress"]["incomplete"] == 0
 
   monkeypatch.setattr(thumb_populate, "dcraw_available", lambda: True)
   monkeypatch.setattr(thumb_populate, "extract_embedded_thumb",
@@ -170,5 +244,42 @@ def test_populate_thumb_jobs_appear_on_the_running_apps_jobs_page(settings, monk
     data = client.get("/api/jobs").json()
     assert data["counts"] == {"done": 1}
     assert data["jobs"][0]["kind"] == "populate_thumb"
+    assert data["progress"]["total"] == 1 and data["progress"]["incomplete"] == 0
+    assert data["progress"]["by_kind"] == {"populate_thumb": {"done": 1}}
+    assert data["progress"]["completed"]["last_minute"] == {"done": 1, "failed": 0}
   finally:
     populator.stop()
+
+
+def test_scan_dir_job_scans_exactly_its_own_directory(settings):
+  # ticket 076: a 'scan_dir' job on app.state.background_jobs scans one top-level directory --
+  # '.' non-recursively (root files only), everything else recursively -- and nothing more.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "top.jpg"))
+  make_jpeg(os.path.join(d, "2020", "a.jpg"))
+  make_jpeg(os.path.join(d, "2020", "sub", "b.jpg"))
+  make_jpeg(os.path.join(d, "2021", "c.jpg"))
+  conn = db.open_state(settings.state_dir)
+  app = api.create_app(conn, settings)
+
+  app.state.background_jobs.enqueue("scan_dir", target="2020")
+  app.state.background_jobs.start()
+  try:
+    assert app.state.background_jobs.wait_idle(10)
+  finally:
+    app.state.background_jobs.stop()
+
+  jobs_seen = app.state.background_jobs.list()
+  assert len(jobs_seen) == 1 and jobs_seen[0]["state"] == "done"
+  paths = {r["path"] for r in conn.execute("SELECT path FROM files")}
+  assert paths == {"2020/a.jpg", "2020/sub/b.jpg"}   # only the requested directory, recursively
+
+  # '.' is non-recursive: only files directly in the root, not the top-level dirs' contents.
+  app.state.background_jobs.enqueue("scan_dir", target=".")
+  app.state.background_jobs.start()
+  try:
+    assert app.state.background_jobs.wait_idle(10)
+  finally:
+    app.state.background_jobs.stop()
+  paths = {r["path"] for r in conn.execute("SELECT path FROM files")}
+  assert paths == {"top.jpg", "2020/a.jpg", "2020/sub/b.jpg"}   # 2021/c.jpg still unscanned

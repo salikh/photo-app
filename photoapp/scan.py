@@ -469,11 +469,29 @@ def seconds_until(hour, now):
   return (target - now).total_seconds()
 
 
-class NightlyScan:
-  """Starts a scan every day at a given local hour, in a daemon thread."""
+def enqueue_nightly_scan(queue, pictures_dir):
+  """Queue one 'scan_dir' job per top-level directory (ticket 076), instead of running one big
+  scan synchronously right now. Dedup (JobQueue.enqueue) means a directory whose job from a
+  previous night is still queued/running just keeps that job rather than getting a duplicate.
+  Returns how many jobs are queued (including ones already queued from before)."""
+  n = 0
+  for rel_dir, _recursive in top_level_steps(pictures_dir):
+    queue.enqueue("scan_dir", target=rel_dir)
+    n += 1
+  return n
 
-  def __init__(self, manager, hour, wait=None):
-    self._manager = manager
+
+class NightlyScan:
+  """Every day at a given local hour, queues one background scan job per top-level directory
+  (enqueue_nightly_scan) instead of running one big scan synchronously right then (ticket 076) --
+  queue's own load-adaptive worker (see load_worker.py) drains them over time, low-priority, only
+  while the machine looks idle, so a rescan never forces itself onto a busy machine at 3am and can
+  spill into the following day if it needs to.
+  """
+
+  def __init__(self, queue, pictures_dir, hour, wait=None):
+    self._queue = queue
+    self._pictures_dir = pictures_dir
     self._hour = hour
     self._stop = threading.Event()
     self._wait = wait or self._stop.wait      # injectable for tests
@@ -494,6 +512,6 @@ class NightlyScan:
       self._wait(seconds_until(self._hour, datetime.datetime.now()))
       if self._stop.is_set():
         return
-      if self._manager.start():        # False: a scan is already running
-        self.runs += 1
-        logging.info("nightly scan started")
+      n = enqueue_nightly_scan(self._queue, self._pictures_dir)
+      self.runs += 1
+      logging.info("nightly scan: queued %d directory scan job(s)", n)

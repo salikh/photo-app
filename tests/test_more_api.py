@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from photoapp import api
 from photoapp import db
+from photoapp import jobs
 from photoapp import scan
 from tests.conftest import make_jpeg
 from tests.test_grouping import touch
@@ -101,26 +102,42 @@ def test_seconds_until_next_hour():
   assert scan.seconds_until(3, datetime.datetime(2026, 9, 21, 3, 0, 0)) == 24 * 3600
 
 
-def test_nightly_scan_triggers_and_skips_when_busy():
-  class Manager:
-    def __init__(self): self.started = 0; self.busy = False
-    def start(self):
-      if self.busy: return False
-      self.started += 1
-      return True
-  waits, m = [], Manager()
+def test_enqueue_nightly_scan_queues_one_job_per_top_level_dir(settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "top.jpg"))            # files directly in the root: '.'
+  make_jpeg(os.path.join(d, "2020", "a.jpg"))
+  make_jpeg(os.path.join(d, "2021", "b.jpg"))
+  db.open_state(settings.state_dir).close()
+  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None})
+
+  n = scan.enqueue_nightly_scan(q, d)
+  assert n == 3
+  targets = sorted(j["target"] for j in q.list())
+  assert targets == [".", "2020", "2021"]
+
+  # A second nightly fire while those jobs are still queued must not duplicate them (ticket 076).
+  n2 = scan.enqueue_nightly_scan(q, d)
+  assert n2 == 3
+  assert len(q.list()) == 3
+
+
+def test_nightly_scan_thread_fires_and_stops(settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "2020", "a.jpg"))
+  db.open_state(settings.state_dir).close()
+  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None})
+  waits = []
   fired = threading.Event()
 
   def fake_wait(seconds):
     waits.append(seconds)
-    if len(waits) == 3:
-      n.stop()
     if len(waits) == 2:
-      m.busy = True
+      n.stop()
     fired.set()
 
-  n = scan.NightlyScan(m, hour=3, wait=fake_wait)
+  n = scan.NightlyScan(q, d, hour=3, wait=fake_wait)
   n.start()
   n._thread.join(5)
-  assert m.started == 1 and n.runs == 1 and len(waits) == 3   # 2nd run skipped: busy
+  assert n.runs == 1 and len(waits) == 2   # stop() fires during the 2nd wait, before a 2nd run
   assert all(0 < w <= 24 * 3600 for w in waits)
+  assert sorted(j["target"] for j in q.list()) == [".", "2020"]

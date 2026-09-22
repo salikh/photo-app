@@ -173,12 +173,18 @@ class Populator:
 
   KIND = "populate_thumb"
 
-  def __init__(self, db_path, pictures_dir, thumbs_dir, sizes=thumbs.SIZES):
+  def __init__(self, db_path, pictures_dir, thumbs_dir, sizes=thumbs.SIZES, queue=None):
+    """queue: share an existing low-priority JobQueue (ticket 076: e.g. one also running scan_dir
+    jobs) instead of building a private one -- registers KIND as an extra handler on it."""
     self.pictures_dir = pictures_dir
     self.thumbs_dir = thumbs_dir
     self.sizes = tuple(sizes)
-    self.queue = jobs.JobQueue(db_path, {self.KIND: self._handle}, workers=1,
-                              low_priority=True)
+    if queue is not None:
+      queue.add_handler(self.KIND, self._handle)
+      self.queue = queue
+    else:
+      self.queue = jobs.JobQueue(db_path, {self.KIND: self._handle}, workers=1,
+                                low_priority=True)
 
   def _handle(self, conn, job):
     row = conn.execute("SELECT path FROM files WHERE id = ? AND missing = 0",
