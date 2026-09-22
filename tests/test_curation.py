@@ -239,3 +239,32 @@ def test_result_lists_activity_ids(conn, settings):
   r = curation.set_rating(conn, settings, pid, 3)
   assert r["activity_ids"] == [curation.recent_activity(conn)[0]["id"]]
   assert curation.set_rating(conn, settings, pid, 3)["activity_ids"] == []   # no change
+
+
+def test_db_newer_rating_is_written_on_the_next_edit_even_if_that_edit_is_unrelated(conn, settings):
+  """Answer to question ticket 065: no proactive sidecar sync; the sidecars catch up on the
+  next edit of that Photo, whatever field the edit touches, using the current (possibly
+  db-sourced) rating."""
+  import time as time_
+  pid = setup_pair(conn, settings, rating_dng=2, rating_jpg=2)   # sidecars agree at 2
+  future = time_.time() + 1000
+  conn.execute("UPDATE photos SET rating = 5, rating_updated_at = ?, rating_source = 'import' "
+               "WHERE id = ?", (future, pid))
+  conn.commit()
+  from photoapp import ratings
+  ratings.refresh_photo(conn, pid)                    # as a scan would: db wins, sidecars behind
+  state = curation.photo_state(conn, pid)
+  assert state["rating"] == 5 and state["conflict"]
+  for name in ("y/K1.DNG.xmp", "y/K1.JPG.xmp"):
+    assert xmp.parse(read(settings, name)).rating == 2   # still 2 on disk
+
+  curation.set_fav(conn, settings, pid, True)          # an edit that has nothing to do with rating
+
+  for name in ("y/K1.DNG.xmp", "y/K1.JPG.xmp"):
+    parsed = xmp.parse(read(settings, name))
+    assert parsed.rating == 5 and parsed.fav            # both sidecars caught up to the db-sourced value
+  after = curation.photo_state(conn, pid)
+  assert after["rating"] == 5 and not after["conflict"]  # no longer "sidecars behind"
+  # the fav toggle is the only logged/undo-able change; the rating catch-up is not a new decision
+  log = curation.recent_activity(conn)
+  assert [l["field"] for l in log] == ["fav"]
