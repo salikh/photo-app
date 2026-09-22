@@ -30,6 +30,8 @@ Check items off here when the ticket's status is done.
 - [x] [059](docs/tickets/059.md) Scrollable, tappable thumbnail strip below the main image (whole folder, also on phones)
 - [ ] [060](docs/tickets/060.md) Pinch zoom in/out and pan of the zoomed (original size) photo on tablets (iPad, best also Android)
 
+- [ ] [066](docs/tickets/066.md) Background low-priority population of /zoo/Thumbs with dcraw (queue visible on the Jobs page)
+
 ## Cross-cutting
 
 - [x] [040](docs/tickets/040.md) Test infrastructure and fixtures
