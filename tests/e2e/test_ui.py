@@ -132,6 +132,25 @@ def test_filter_and_sort_are_in_the_url(page, server):
   assert "filter=rejected" in page.url
 
 
+def test_back_after_filter_and_sort_changes_returns_to_the_previous_folder(page, server):
+  # ticket 077: filter/sort changes must not be their own Back-button stop.
+  page.goto(server.url + "/#/")
+  page.get_by_role("link", name="2024").first.click()          # real folder nav: a Back stop
+  page.get_by_role("link", name="trip").first.click()          # real folder nav: a Back stop
+  expect(page.locator(".cell")).to_have_count(6)
+
+  page.get_by_role("button", name="Rejected").click()
+  expect(page.locator(".cell")).to_have_count(1)
+  page.get_by_role("button", name="Unrated").click()
+  page.locator('select[aria-label="sort"]').select_option("name")
+  assert "filter=unrated" in page.url and "sort=name" in page.url
+
+  page.go_back()   # one press: undoes the folder nav into 'trip', not the filter/sort changes
+  expect(page.locator(".folders a")).to_have_count(2)           # back at '2024', showing subfolders
+  assert page.url.endswith("/2024")
+  assert "filter=unrated" not in page.url and "trip" not in page.url
+
+
 def test_selection_and_batch_rating_and_undo(page, server):
   page.goto(server.url + "/#/2024/trip")
   expect(page.locator(".cell")).to_have_count(6)

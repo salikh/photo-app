@@ -35,7 +35,12 @@ function select(options, value, onchange, label) {
 
 // One toggle button per rating mode, plus a menu for the less common filters.
 function filterRow(route) {
-  const go = (filter) => { location.hash = href({...route, filter, photo: null}); };
+  // replaceState (not location.hash =) so switching filters is not its own Back-button stop --
+  // only folder navigation should be (ticket 077).
+  const go = (filter) => {
+    history.replaceState(null, '', href({...route, filter, photo: null}));
+    render();
+  };
   const extra = filters.more();
   const inMore = extra.some(([v]) => v === route.filter);
   return el('div', {class: 'filters', role: 'group', 'aria-label': 'filter'},
@@ -57,7 +62,8 @@ function renderHeader(route) {
     el('div', {class: 'spacer'}),
     browsing ? filterRow(route) : null,
     browsing ? select(SORTS, route.sort,
-      (v) => { location.hash = href({...route, sort: v, photo: null}); }, 'sort') : null,
+      (v) => { history.replaceState(null, '', href({...route, sort: v, photo: null})); render(); },
+      'sort') : null,
     browsing ? el('button', {class: state.selecting ? 'on' : '', text: 'Select', onclick: toggleSelecting}) : null,
     el('button', {text: 'Rescan', title: 'rescan this folder', onclick: () => rescan(route)}),
     scanStatus,
@@ -157,7 +163,8 @@ document.addEventListener('keydown', (e) => {
   if (loupe.isOpen() || isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   const shortcut = e.shiftKey ? filters.shortcutFor(e.code) : null;
   if (shortcut && state.route && state.route.page === 'browse') {
-    location.hash = href({...state.route, filter: shortcut, photo: null});
+    history.replaceState(null, '', href({...state.route, filter: shortcut, photo: null}));
+    render();
     e.preventDefault();
   } else if (e.key === 'u' || e.key === 'U') { loupe.undo(); e.preventDefault(); }
   else if (e.key === 'Escape' && state.selected.size) { grid.clearSelection(); e.preventDefault(); }
