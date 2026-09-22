@@ -1,10 +1,16 @@
 """Small persistent job queue on top of the jobs table.
 
 Jobs survive a restart: anything left 'running' is put back to 'queued' on
-start. Each worker thread has its own database connection.
+start. Each worker thread has its own database connection. Several JobQueue
+instances (different handlers/kinds, different worker counts) can share the
+same jobs table -- each only ever claims jobs of the kinds it has a handler
+for (see _claim), so an on-demand queue and a low-priority background queue
+never steal each other's work.
 """
 
 import datetime
+import os
+import subprocess
 import threading
 
 from absl import logging
@@ -16,13 +22,41 @@ def _now():
   return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-class JobQueue:
-  """handlers: {kind: fn(conn, job_row)}; fn raises to fail the job."""
+def _set_low_priority():
+  """Best-effort: make the *calling thread* low priority for CPU and I/O.
 
-  def __init__(self, db_path, handlers, workers=2):
+  On Linux, setpriority()/ioprio_set() with pid 0 (or nice()) act on the
+  calling thread, not the whole process (threads are separate schedulable
+  tasks), so this only affects this worker's own thread -- the rest of the
+  app (and any other JobQueue's workers) keeps its normal priority. Never
+  raises: a platform or a missing 'ionice' just means no effect.
+  """
+  try:
+    os.nice(19)
+  except OSError:
+    pass
+  try:
+    tid = threading.get_native_id()
+    subprocess.run(["ionice", "-c3", "-p", str(tid)], check=False,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   timeout=5)
+  except (OSError, subprocess.SubprocessError):
+    pass
+
+
+class JobQueue:
+  """handlers: {kind: fn(conn, job_row)}; fn raises to fail the job.
+
+  low_priority=True lowers the CPU/I/O priority of this queue's own worker
+  threads (see _set_low_priority); other queues and the rest of the app are
+  unaffected.
+  """
+
+  def __init__(self, db_path, handlers, workers=2, low_priority=False):
     self._db_path = db_path
     self._handlers = handlers
     self._workers = workers
+    self._low_priority = low_priority
     self._threads = []
     self._wake = threading.Event()
     self._stop = threading.Event()
@@ -78,10 +112,16 @@ class JobQueue:
     self._threads = []
 
   def _claim(self, conn):
+    # Scoped to this queue's own handler kinds, so a second JobQueue sharing
+    # the same jobs table (a different kind, e.g. a low-priority bulk queue
+    # next to the on-demand one) never claims -- and then fails with an
+    # unknown-kind error -- a job it has no handler for.
+    kinds = tuple(self._handlers)
+    placeholders = ",".join("?" * len(kinds))
     conn.execute("BEGIN IMMEDIATE")
     row = conn.execute(
-        "SELECT * FROM jobs WHERE state = 'queued' ORDER BY id LIMIT 1"
-    ).fetchone()
+        f"SELECT * FROM jobs WHERE state = 'queued' AND kind IN "
+        f"({placeholders}) ORDER BY id LIMIT 1", kinds).fetchone()
     if row:
       conn.execute("UPDATE jobs SET state = 'running' WHERE id = ?",
                    (row["id"],))
@@ -89,6 +129,8 @@ class JobQueue:
     return row
 
   def _run(self):
+    if self._low_priority:
+      _set_low_priority()
     conn = db.connect(self._db_path, busy_timeout=60.0)
     try:
       while not self._stop.is_set():

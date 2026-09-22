@@ -43,6 +43,33 @@ message. During those retries other requests keep working (reads are never block
 database lock *before* it touches any sidecar, so a failed edit changes nothing on disk and can simply be repeated.
 The scan and the job workers wait up to a minute inside sqlite itself. A busy database while a big scan runs is normal.
 
+## Populating thumbnails in the background
+
+Thumbnails are normally made the first time a photo is opened. To fill in the gaps ahead of time (see
+`docs/reqs/thumbs-layout.md` for which years are missing them), run:
+
+    python -m photoapp.populate_thumbs
+
+It finds every file still missing a `Thumb`/`Small`/`Medium`/`Huge`, renders them one file at a time (never in
+parallel, so it never competes for CPU or disk), and lowers its own CPU and I/O priority (`os.nice(19)` plus
+`ionice -c3` on its worker thread) so it stays out of the way of normal use, a running scan, or the on-demand
+render queue. It never overwrites a thumbnail that already exists. Run it detached and low-priority from the
+shell too (belt-and-braces, since it already reduces its own priority):
+
+    nice -n19 ionice -c3 python -m photoapp.populate_thumbs &
+
+It writes to the same state database the running app uses, so its progress — queued/running/done/failed counts
+and any per-file error — shows on the app's **Jobs** page immediately, no restart needed. Safe to interrupt
+(Ctrl-C, a reboot) and rerun: already-made thumbnails are left alone and the rest picks up where it stopped.
+
+RAW (`.DNG`) files are rendered with the external **`dcraw`** command (`apt install dcraw` if it is not already
+on `PATH`; a missing sidecar tool like this fails each RAW file's job with a clear message on the Jobs page
+rather than crashing the queue). `Thumb` is the camera's own embedded preview (`dcraw -e -c`); `Small`/`Medium`
+are a half-size demosaic (`dcraw -c -h -w`); `Huge` is a full-size, high-quality demosaic (`dcraw -c -w -q 3`).
+Non-RAW files use Pillow, the same as on-demand generation. This is a different path from the on-demand RAW
+renderer (`raw_render`, ticket 028), which uses `rawpy`/LibRaw instead of `dcraw` — both can run at the same
+time without interfering (`--limit=N` restricts a run to N files, handy for a quick check).
+
 ## Hidden folders
 
 Folders whose name starts with a dot (`.nu`, `.thumbnails`, `.webaxs`, `.picasaoriginals`, `.comments`:
