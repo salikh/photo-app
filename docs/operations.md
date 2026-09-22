@@ -48,6 +48,11 @@ depends on `--load_worker_enabled` (on by default): if that's off, nightly-queue
 unprocessed until it's turned on or they're drained some other way. Progress and any per-directory
 failures show on the Jobs page like any other background job.
 
+The same nightly enqueue also queues a `prune_jobs` job (ticket 075): it deletes `done` jobs older
+than a week and `failed` jobs older than a year (failures are kept longer since one might still be
+worth a human noticing), keeping the Jobs page's history from growing forever. A job that succeeds
+also immediately deletes its own earlier failed attempts, rather than waiting for the next prune.
+
 ## A busy database
 
 The web app, a running scan (`photoapp.fullscan`, the Rescan button, the nightly scan) and the RAW render jobs

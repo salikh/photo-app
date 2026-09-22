@@ -36,7 +36,7 @@ All ten build-order epics are done.
 - [ ] [072](docs/tickets/072.md) "Delete" button on the Rejected view: review screen with Medium thumbnails, big red Delete button removes the source files from /zoo/Pictures (needs design decisions first, see the ticket)
 - [x] [073](docs/tickets/073.md) Load-adaptive background worker: watch CPU/memory load, auto start/stop a low-priority nice/ionice worker on the job queue
 - [x] [074](docs/tickets/074.md) Jobs page progress indicator: total, incomplete, and completed in the last day/hour/minute
-- [ ] [075](docs/tickets/075.md) Delete completed jobs older than 1 week on a full rescan
+- [x] [075](docs/tickets/075.md) Delete completed jobs older than 1 week on a full rescan
 - [x] [076](docs/tickets/076.md) Nightly rescan becomes one queued job per top-level directory, drained by [073](docs/tickets/073.md)'s worker
 - [x] [077](docs/tickets/077.md) Filter/sort changes use replaceState so they are not their own browser-history stop (Back always means "previous folder")
 - [x] [078](docs/tickets/078.md) Document the sqlite database(s) — location, schema, meaning — in docs/design/databases.md

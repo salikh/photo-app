@@ -194,6 +194,16 @@ class JobQueue:
             "UPDATE jobs SET state = ?, error = ?, finished_at = ? "
             "WHERE id = ?", ("failed" if error else "done", error, _now(),
                              job["id"]))
+        if not error:
+          # ticket 075: a successful run makes any earlier failed attempt at the same job (same
+          # kind + file_id/target) stale -- no need to keep it around until the next prune.
+          cur = conn.execute(
+              "DELETE FROM jobs WHERE kind = ? AND file_id IS ? AND target IS ? AND "
+              "state = 'failed' AND id != ?",
+              (job["kind"], job["file_id"], job["target"], job["id"]))
+          if cur.rowcount:
+            logging.vlog(7, "job %d (%s): cleared %d earlier failed attempt(s)",
+                         job["id"], job["kind"], cur.rowcount)
         conn.commit()
     finally:
       conn.close()
@@ -208,3 +218,25 @@ class JobQueue:
         return True
       time.sleep(0.05)
     return False
+
+
+# Retention for prune() (ticket 075): a completed job stays failed longer than a done one, since
+# a failure might still need a human to notice and investigate it.
+DONE_RETENTION_DAYS = 7
+FAILED_RETENTION_DAYS = 365
+
+
+def prune(conn, done_days=DONE_RETENTION_DAYS, failed_days=FAILED_RETENTION_DAYS):
+  """Delete 'done' jobs older than done_days and 'failed' jobs older than failed_days (by
+  finished_at). Never touches 'queued'/'running'. Returns (done_deleted, failed_deleted)."""
+  now = datetime.datetime.now()
+  done_cutoff = (now - datetime.timedelta(days=done_days)).isoformat(timespec="seconds")
+  failed_cutoff = (now - datetime.timedelta(days=failed_days)).isoformat(timespec="seconds")
+  done_n = conn.execute(
+      "DELETE FROM jobs WHERE state = 'done' AND finished_at < ?", (done_cutoff,)).rowcount
+  failed_n = conn.execute(
+      "DELETE FROM jobs WHERE state = 'failed' AND finished_at < ?", (failed_cutoff,)).rowcount
+  conn.commit()
+  logging.vlog(1, "prune: deleted %d done job(s) (>%dd) and %d failed job(s) (>%dd)",
+              done_n, done_days, failed_n, failed_days)
+  return done_n, failed_n

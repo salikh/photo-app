@@ -89,7 +89,10 @@ records which of the several render paths produced it (`existing`, `pillow`, `dc
 file (`file_id`); `target` (added for ticket 076) instead holds a relative directory path for a
 directory-scoped job (`scan_dir`), leaving `file_id` `NULL`. Several independent `JobQueue`
 instances share this one table — see [concurrency-and-jobs.md](concurrency-and-jobs.md) for why
-that's safe and what the `kind`-scoping bug looked like before it was fixed.
+that's safe and what the `kind`-scoping bug looked like before it was fixed. Rows do not
+accumulate forever: `jobs.prune` (ticket 075, riding along with the nightly `scan_dir` batch as
+its own `prune_jobs` job) deletes `done` rows older than a week and `failed` rows older than a
+year, and a job that succeeds immediately deletes its own earlier failed attempts.
 
 **`dir_mtimes`** — `dirpath → mtime`, one row per directory the scanner has processed; a directory
 whose mtime hasn't changed is skipped entirely on the next scan. See

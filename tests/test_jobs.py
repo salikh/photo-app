@@ -1,3 +1,4 @@
+import datetime
 import os
 import threading
 
@@ -60,6 +61,55 @@ def test_add_handler_registers_a_kind_after_construction(settings):
   assert q.wait_idle()
   q.stop()
   assert seen == [1]
+
+
+def test_prune_deletes_old_done_and_older_failed_jobs(settings):
+  conn = db.open_state(settings.state_dir)
+
+  def insert(state, seconds_ago):
+    finished = (datetime.datetime.now() - datetime.timedelta(seconds=seconds_ago)).isoformat(
+        timespec="seconds")
+    conn.execute(
+        "INSERT INTO jobs (kind, file_id, state, created_at, finished_at) "
+        "VALUES ('k', 1, ?, 'x', ?)", (state, finished))
+
+  DAY = 86400
+  insert("done", 6 * DAY)                    # kept: under the 7-day done retention
+  insert("done", 8 * DAY)                     # pruned
+  insert("failed", 8 * DAY)                   # kept: well under the 365-day failed retention
+  insert("failed", 400 * DAY)                 # pruned
+  insert("queued", 999 * DAY)                 # never touched regardless of age
+  conn.commit()
+
+  done_n, failed_n = jobs.prune(conn)
+  assert (done_n, failed_n) == (1, 1)
+  states = sorted(r["state"] for r in conn.execute("SELECT state FROM jobs"))
+  assert states == ["done", "failed", "queued"]
+
+
+def test_a_successful_job_deletes_its_own_earlier_failed_attempts(settings):
+  db.open_state(settings.state_dir).close()
+  attempt = [0]
+
+  def flaky(conn, job):
+    attempt[0] += 1
+    if attempt[0] < 3:
+      raise RuntimeError(f"attempt {attempt[0]} failed")
+
+  q = jobs.JobQueue(settings.db_path, {"flaky": flaky}, workers=1)
+  q.enqueue("flaky", 1)
+  q.start()
+  assert q.wait_idle()
+  q.enqueue("flaky", 1)   # finished jobs may run again (test_jobs_run_dedupe_and_isolate_failures)
+  assert q.wait_idle()
+  q.enqueue("flaky", 1)
+  assert q.wait_idle()
+  q.stop()
+
+  # ticket 075: the successful 3rd run should have deleted its own two earlier failed attempts,
+  # not left them piling up forever.
+  rows = q.list()
+  assert len(rows) == 1 and rows[0]["state"] == "done"
 
 
 def test_running_jobs_are_requeued_after_restart(settings):
@@ -283,3 +333,28 @@ def test_scan_dir_job_scans_exactly_its_own_directory(settings):
     app.state.background_jobs.stop()
   paths = {r["path"] for r in conn.execute("SELECT path FROM files")}
   assert paths == {"top.jpg", "2020/a.jpg", "2020/sub/b.jpg"}   # 2021/c.jpg still unscanned
+
+
+def test_prune_jobs_job_runs_through_the_background_queue(settings):
+  # ticket 075: a 'prune_jobs' job (as enqueue_nightly_scan queues alongside scan_dir jobs) is
+  # handled by the running app, using jobs.prune()'s real retention windows.
+  conn = db.open_state(settings.state_dir)
+
+  def insert_old_done():
+    old = (datetime.datetime.now() - datetime.timedelta(days=30)).isoformat(timespec="seconds")
+    conn.execute(
+        "INSERT INTO jobs (kind, file_id, state, created_at, finished_at) "
+        "VALUES ('raw_render', 1, 'done', 'x', ?)", (old,))
+    conn.commit()
+
+  insert_old_done()
+  app = api.create_app(conn, settings)
+  app.state.background_jobs.enqueue("prune_jobs")
+  app.state.background_jobs.start()
+  try:
+    assert app.state.background_jobs.wait_idle(10)
+  finally:
+    app.state.background_jobs.stop()
+
+  remaining = conn.execute("SELECT kind FROM jobs WHERE kind = 'raw_render'").fetchall()
+  assert remaining == []   # the 30-day-old done job was pruned

@@ -117,9 +117,9 @@ def create_app(conn, settings):
                                  settings.job_workers)
 
   # A single low-priority, single-worker queue for everything ticket 073's load-adaptive worker
-  # drains: populate_thumb (thumb_populate.Populator, registered below) and scan_dir (ticket 076's
-  # per-top-level-directory nightly scan jobs), so background work never competes for CPU/disk
-  # with the on-demand queue above or with interactive use.
+  # drains: populate_thumb (thumb_populate.Populator, registered below), scan_dir (ticket 076's
+  # per-top-level-directory nightly scan jobs) and prune_jobs (ticket 075), so background work
+  # never competes for CPU/disk with the on-demand queue above or with interactive use.
   app.state.background_jobs = jobs.JobQueue(settings.db_path, {}, workers=1, low_priority=True)
   app.state.populator = thumb_populate.Populator(
       settings.db_path, settings.pictures_dir, settings.thumbs_dir,
@@ -144,6 +144,16 @@ def create_app(conn, settings):
                  target, progress.files_seen, progress.files_processed)
 
   app.state.background_jobs.add_handler("scan_dir", scan_dir_job)
+
+  def prune_jobs_job(conn, job):
+    """ticket 075: rides along with the nightly scan (enqueue_nightly_scan) rather than having
+    its own schedule. 'done' jobs older than a week, 'failed' ones older than a year."""
+    done_n, failed_n = jobs.prune(conn)
+    if done_n or failed_n:
+      logging.info("prune_jobs: deleted %d done, %d failed job(s) past the retention window",
+                   done_n, failed_n)
+
+  app.state.background_jobs.add_handler("prune_jobs", prune_jobs_job)
 
   @app.get("/api/jobs")
   @db_route
