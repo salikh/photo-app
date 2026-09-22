@@ -54,6 +54,7 @@ def _run_dcraw(args, timeout=DCRAW_TIMEOUT):
   if not exe:
     raise DcrawError(
         "dcraw is not installed (see docs/operations.md 'Populating thumbnails')")
+  logging.vlog(7, "dcraw %s", " ".join(args))
   try:
     r = subprocess.run([exe, *args], capture_output=True, timeout=timeout)
   except subprocess.TimeoutExpired:
@@ -64,6 +65,7 @@ def _run_dcraw(args, timeout=DCRAW_TIMEOUT):
     raise DcrawError(
         f"dcraw failed (exit {r.returncode}) on {args[-1]}: "
         f"{r.stderr.decode('utf-8', 'replace').strip()[:300]}")
+  logging.vlog(7, "dcraw %s -> %d bytes", args[-1], len(r.stdout))
   return r.stdout
 
 
@@ -95,6 +97,7 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
   """
   missing = [s for s in sizes if not thumbs.lookup(thumbs_dir, s, rel_path)]
   if not missing:
+    logging.vlog(7, "%s: nothing missing, skipping", rel_path)
     return []
   abs_path = os.path.join(pictures_dir, rel_path)
   made = []
@@ -104,12 +107,14 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
     thumbs.save(img, dest, thumbs.LONG_EDGE[size])
     thumbs.record(conn, file_id, size, dest, source)
     made.append(size)
+    logging.vlog(5, "%s: wrote %s (%s)", rel_path, size, source)
 
   if not fileinfo.is_raw(rel_path):
     for size in missing:
       out = thumbs.ensure(conn, pictures_dir, thumbs_dir, file_id, rel_path, size)
       if out:
         made.append(size)
+        logging.vlog(5, "%s: wrote %s (pillow)", rel_path, size)
     conn.commit()
     return made
 
@@ -118,7 +123,7 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
       emit(extract_embedded_thumb(abs_path), "Thumb", "dcraw-embedded")
       missing = [s for s in missing if s != "Thumb"]
     except DcrawError as e:
-      logging.vlog(1, "embedded preview of %s: %s (falling back to a half-size render)",
+      logging.vlog(3, "%s: embedded preview failed (%s), falling back to a half-size render",
                    rel_path, e)
       # left in `missing`: the half-size pass below also covers Thumb.
 
@@ -148,6 +153,17 @@ def find_missing_files(conn, limit=None, sizes=thumbs.SIZES):
   return conn.execute(q, args).fetchall()
 
 
+def _missing_counts_by_size(conn, sizes):
+  """{size: count of live files missing that size} -- for vlog(1) stats only."""
+  return {
+      size: conn.execute(
+          "SELECT COUNT(*) c FROM files f WHERE f.missing = 0 AND NOT EXISTS "
+          "(SELECT 1 FROM thumbs t WHERE t.file_id = f.id AND t.size = ?)",
+          (size,)).fetchone()["c"]
+      for size in sizes
+  }
+
+
 class Populator:
   """Feeds a low-priority, single-worker JobQueue with one job per file that
   still needs a thumbnail. At most one file is ever being processed at a
@@ -173,6 +189,7 @@ class Populator:
                          job["file_id"], row["path"], self.sizes)
     if not made:
       raise RuntimeError("could not render any size for this file")
+    logging.vlog(5, "%s: done (%s)", row["path"], ", ".join(made))
 
   def start(self):
     self.queue.start()
@@ -183,6 +200,9 @@ class Populator:
   def enqueue_missing(self, conn, limit=None):
     """Queue every file that still needs one of self.sizes. Returns how many."""
     rows = find_missing_files(conn, limit, self.sizes)
+    if logging.vlog_is_on(1):
+      logging.vlog(1, "enqueue_missing: %d files to queue, missing per size: %s",
+                   len(rows), _missing_counts_by_size(conn, self.sizes))
     for r in rows:
       self.queue.enqueue(self.KIND, r["id"])
     return len(rows)

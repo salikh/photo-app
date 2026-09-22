@@ -67,11 +67,15 @@ def main(argv):
     while True:
       time.sleep(FLAGS.report_seconds)
       counts = populator.queue.counts()
-      logging.info("populate_thumbs: %s", counts)
+      logging.vlog(3, "populate_thumbs: %s", counts)
       if not counts.get("queued") and not counts.get("running"):
         break
   finally:
     populator.stop()
+  if counts.get("failed"):
+    logging.warning("populate_thumbs: %d file(s) failed (see the Jobs page for details)",
+                     counts["failed"])
+  logging.vlog(1, "populate_thumbs: final counts %s", counts)
   logging.info("done")
 
 

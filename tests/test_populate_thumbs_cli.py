@@ -29,10 +29,11 @@ def test_populate_thumbs_command_fills_gaps_and_reports_progress(tmp_path):
   scan.scan(conn, pics, thumbs_dir=thumbs_dir)
   conn.close()
 
-  r = run([f"--pictures_dir={pics}", f"--state_dir={state}", f"--thumbs_dir={thumbs_dir}"])
+  r = run([f"--pictures_dir={pics}", f"--state_dir={state}", f"--thumbs_dir={thumbs_dir}",
+           "--verbosity=3"])
   assert r.returncode == 0, r.stderr[-3000:]
   assert "queued 2 files needing a thumbnail" in r.stderr
-  assert "populate_thumbs: " in r.stderr
+  assert "populate_thumbs: " in r.stderr   # vlog(3) periodic progress report
   assert "done" in r.stderr
 
   conn = db.open_state(state)
