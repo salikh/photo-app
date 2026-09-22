@@ -46,4 +46,5 @@ the default is what is running today unless a linked ticket says otherwise:
   ([ratings-and-xmp.md](ratings-and-xmp.md#darktable-treats-a-dng-and-its-jpeg-as-two-pictures--the-reject-rule))
   — confirmed (ticket 024).
 - **Sidecars catch up to a newer database rating only on the Photo's next edit**, not proactively — confirmed
-  (ticket 065). A future batch-sync command for Photos that are never edited again is ticket 068, not yet built.
+  (ticket 065). An explicit batch-sync command for Photos that are never edited again is
+  `python -m photoapp.sync_sidecars` (ticket 068).

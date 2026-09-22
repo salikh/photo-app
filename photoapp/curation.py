@@ -255,6 +255,22 @@ def set_rating(conn, settings, photo_id, rating, cause="user"):
   return _apply(conn, settings, photo_id, rating=int(rating), cause=cause)
 
 
+def sync_sidecars(conn, settings, photo_id, cause="sync"):
+  """Rewrite every sidecar of this Photo to match its currently resolved rating/fav/tags,
+  without changing anything in the database (ticket 068).
+
+  For a Photo whose sidecars are out of sync -- with the database ("sidecars behind") or with
+  each other ("sidecars disagree"; photoapp.sync_sidecars finds both via photos.conflict) -- and
+  is not otherwise being edited, so would stay out of sync indefinitely (ticket 065: a sidecar
+  only catches up on the Photo's next edit). Passing the Photo's own current rating makes
+  `changes` empty (nothing to log), but _apply still rewrites every sidecar to the desired state
+  regardless of `changes`, which is exactly the catch-up write this needs -- see _apply's write
+  step, not its early-return guard, which only skips a Photo with no sidecars at all.
+  """
+  photo = _photo(conn, photo_id)
+  return _apply(conn, settings, photo_id, rating=photo["rating"], cause=cause)
+
+
 def set_rating_batch(conn, settings, photo_ids, rating, batch_id=None):
   """Rate many Photos; failures do not stop the rest.
 

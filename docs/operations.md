@@ -100,6 +100,20 @@ Non-RAW files use Pillow, the same as on-demand generation. This is a different 
 renderer (`raw_render`, ticket 028), which uses `rawpy`/LibRaw instead of `dcraw` — both can run at the same
 time without interfering (`--limit=N` restricts a run to N files, handy for a quick check).
 
+## Syncing sidecars that are out of sync with the computed rating
+
+A Photo's sidecars only catch up to its currently resolved rating/fav/tags when that Photo is
+next edited (ticket 065); a Photo that is never edited again can keep an out-of-sync sidecar (or
+two disagreeing sidecars) indefinitely. To fix every such Photo (tracked as `photos.conflict`) in
+one step:
+
+    python -m photoapp.sync_sidecars              # preview: prints what would change, writes nothing
+    python -m photoapp.sync_sidecars --yes         # actually write
+
+`--xmp_dry_run` also works and takes precedence even with `--yes`. `--limit=N` restricts a run to
+N Photos. Nothing is logged to the activity log for a pure sync (nothing actually changed, so
+there is nothing to undo) — only the sidecar bytes and the `conflict` flag change.
+
 ## Hidden folders
 
 Folders whose name starts with a dot (`.nu`, `.thumbnails`, `.webaxs`, `.picasaoriginals`, `.comments`:
