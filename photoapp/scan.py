@@ -104,6 +104,7 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
     mime_type, width, height, exif_date = fileinfo.read_image_metadata(filepath)
     file_hash = fileinfo.get_or_compute_hash(
         filepath, rel_path, st.st_mtime, hashes)
+    logging.vlog(7, "scanned %s (%s, %dx%d)", rel_path, mime_type, width, height)
     return rel_path, {
         "hash": file_hash, "mime_type": mime_type, "width": width,
         "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
@@ -189,6 +190,8 @@ def _sync_sidecars(conn, dirpath, rel_dir, filenames, images, known, progress,
          parsed.rating, int(parsed.fav), json.dumps(list(parsed.tags))))
     changed = True
     progress.sidecars_processed += 1
+    logging.vlog(5, "synced sidecar %s (rating=%s, fav=%s, %d tags)",
+                 path, parsed.rating, parsed.fav, len(parsed.tags))
   for name in known:
     if name not in sidecar_names:
       conn.execute("DELETE FROM xmp_sidecars WHERE path = ?", (prefix + name,))
@@ -220,6 +223,8 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
   usable in the app even if a later subtree is never scanned.
   """
   rel_scan = _rel(pictures_dir, scan_dir)
+  before = (progress.dirs_seen, progress.dirs_skipped, progress.files_seen,
+           progress.files_processed, progress.sidecars_processed)
   seen = set()
   changed_dirs = set()
   known_sidecars = _load_known_sidecars(conn, rel_scan, recursive)
@@ -246,9 +251,11 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
         (rel_dir,)).fetchone()
     if row is not None and row["mtime"] == mtime:
       progress.dirs_skipped += 1
+      logging.vlog(7, "%s: unchanged, skipping (%d files)", rel_dir, len(images))
       sync_sidecars()
       continue
 
+    logging.vlog(3, "scanning %s (%d files)", rel_dir, len(images))
     if _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
                    progress, pool):
       changed_dirs.add(rel_dir)
@@ -259,8 +266,10 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
         (rel_dir, mtime))
     conn.commit()
 
-  _mark_missing(conn, rel_scan, recursive, seen)
+  gone = _mark_missing(conn, rel_scan, recursive, seen)
   conn.commit()
+  if gone:
+    logging.vlog(3, "%s: %d file(s) no longer found, marked missing", rel_scan, gone)
   # Also directories of this subtree left ungrouped by an interrupted scan.
   lo, hi = paths.subtree_range(rel_scan)
   for r in conn.execute(
@@ -278,6 +287,11 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
     thumbs.index_existing(conn, thumbs_dir, changed_dirs)
   if on_done:
     on_done(conn)
+  logging.vlog(1, "%s: %d dirs seen (%d skipped), %d files seen (%d read), "
+               "%d sidecars synced, %d changed dirs",
+               rel_scan, progress.dirs_seen - before[0], progress.dirs_skipped - before[1],
+               progress.files_seen - before[2], progress.files_processed - before[3],
+               progress.sidecars_processed - before[4], len(changed_dirs))
 
 
 def _apply_grouping_rule_version(conn, rel_scan, recursive, whole_library):

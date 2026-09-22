@@ -111,10 +111,13 @@ def render_raw_sizes(pictures_dir, thumbs_dir, file_path):
   """
   img = previews.render(os.path.join(pictures_dir, file_path))
   if img is None:
+    logging.vlog(3, "%s: LibRaw could not decode this RAW", file_path)
     return {}
-  return {size: save(img, thumb_path(thumbs_dir, size, file_path),
+  made = {size: save(img, thumb_path(thumbs_dir, size, file_path),
                      LONG_EDGE[size])
           for size in SIZES if LONG_EDGE[size]}
+  logging.vlog(5, "%s: full-decode rendered %s", file_path, ", ".join(made))
+  return made
 
 
 def _record(conn, file_id, size, path, source):
@@ -136,6 +139,7 @@ def make(pictures_dir, thumbs_dir, file_path, size):
   """
   path = lookup(thumbs_dir, size, file_path)
   if path:
+    logging.vlog(7, "%s: %s already cached", file_path, size)
     return path, "existing"
   dest = thumb_path(thumbs_dir, size, file_path)
   sources = [lookup(thumbs_dir, s, file_path)
@@ -146,8 +150,9 @@ def make(pictures_dir, thumbs_dir, file_path, size):
     try:
       render(source, dest, LONG_EDGE[size])
     except Unsupported as e:
-      logging.vlog(2, "cannot render %s from %s: %s", size, source, e)
+      logging.vlog(3, "cannot render %s from %s: %s", size, source, e)
       continue
+    logging.vlog(5, "%s: rendered %s from %s (pillow)", file_path, size, source)
     return dest, "pillow"
   return None
 
@@ -189,10 +194,14 @@ def index_existing(conn, thumbs_dir, rel_dirs):
       for f in files:
         name = os.path.basename(thumb_relpath(f["path"]))
         if name in names:
-          _record(conn, f["id"], size, os.path.join(directory, name),
-                  "existing")
+          path = os.path.join(directory, name)
+          _record(conn, f["id"], size, path, "existing")
           found += 1
+          logging.vlog(7, "indexed existing %s: %s", size, path)
   conn.commit()
+  if found:
+    logging.vlog(1, "index_existing: %d thumbnail(s) indexed across %d directories",
+                 found, len(set(rel_dirs)))
   return found
 
 

@@ -110,11 +110,11 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
     logging.vlog(5, "%s: wrote %s (%s)", rel_path, size, source)
 
   if not fileinfo.is_raw(rel_path):
+    # thumbs.ensure() -> make() already logs at vlog(5)/vlog(7) per size.
     for size in missing:
       out = thumbs.ensure(conn, pictures_dir, thumbs_dir, file_id, rel_path, size)
       if out:
         made.append(size)
-        logging.vlog(5, "%s: wrote %s (pillow)", rel_path, size)
     conn.commit()
     return made
 

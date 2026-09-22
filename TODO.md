@@ -51,7 +51,7 @@ All ten build-order epics are done.
 - [ ] [068](docs/tickets/068.md) Batch sync of XMP sidecars out of sync with the computed rating (future; answer to 065)
 - [ ] [069](docs/tickets/069.md) Investigate: opening a folder for the first time feels slow (observation from the 063 culling trial)
 - [x] [070](docs/tickets/070.md) vlog(1..7) logging in the populate_thumbs tool (user request 2026-09-22)
-- [ ] [071](docs/tickets/071.md) vlog(1..7) logging in the scan and in-line thumbnail paths (user request 2026-09-22)
+- [x] [071](docs/tickets/071.md) vlog(1..7) logging in the scan and in-line thumbnail paths (user request 2026-09-22)
 
 ## Question tickets (waiting on the user)
 

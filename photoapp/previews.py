@@ -9,6 +9,7 @@ import io
 
 import numpy as np
 import rawpy
+from absl import logging
 from PIL import Image
 
 MIN_PREVIEW_EDGE = 1000   # smaller embedded previews are not used
@@ -40,12 +41,18 @@ def embedded_preview(path):
       elif thumb.format == rawpy.ThumbFormat.BITMAP:
         img = Image.fromarray(np.asarray(thumb.data))
       else:
+        logging.vlog(3, "%s: unsupported embedded thumb format %r, no preview",
+                     path, thumb.format)
         return None
       img = _oriented(img, sizes.flip, sizes.width >= sizes.height)
-  except (rawpy.LibRawError, OSError, ValueError):
+  except (rawpy.LibRawError, OSError, ValueError) as e:
+    logging.vlog(3, "%s: embedded preview extraction failed: %s", path, e)
     return None
   if max(img.size) < MIN_PREVIEW_EDGE:
+    logging.vlog(3, "%s: embedded preview too small (%dx%d), no preview",
+                 path, *img.size)
     return None
+  logging.vlog(7, "%s: extracted embedded preview (%dx%d)", path, *img.size)
   return img
 
 
@@ -54,6 +61,9 @@ def render(path):
   try:
     with rawpy.imread(path) as raw:
       rgb = raw.postprocess(half_size=True, use_camera_wb=True, output_bps=8)
-  except (rawpy.LibRawError, OSError, ValueError):
+  except (rawpy.LibRawError, OSError, ValueError) as e:
+    logging.vlog(3, "%s: LibRaw full render failed: %s", path, e)
     return None
-  return Image.fromarray(rgb)
+  img = Image.fromarray(rgb)
+  logging.vlog(7, "%s: full LibRaw render (%dx%d)", path, *img.size)
+  return img

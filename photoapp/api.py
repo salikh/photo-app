@@ -110,6 +110,7 @@ def create_app(conn, settings):
     for size, path in made.items():
       thumbs.record(conn, row["id"], size, path, "libraw")
     conn.commit()
+    logging.vlog(5, "%s: raw_render done (%s)", row["path"], ", ".join(made))
 
   app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render},
                                  settings.job_workers)
@@ -356,12 +357,14 @@ def create_app(conn, settings):
     if size not in thumbs.SIZES:
       raise HTTPException(404, "unknown size")
     row = await run_in_threadpool(run_db, lambda: file_row(file_id))
+    logging.vlog(7, "image request: %s size=%s (file %d)", row["path"], size, file_id)
     if size == "Huge" and not fileinfo.is_raw(row["path"]):
       # Huge is the full size: an existing one, else the original if the
       # browser can show it. Never re-encode a full-size copy on request.
       path = thumbs.lookup(settings.thumbs_dir, size, row["path"])
       if path is None and row["path"].lower().endswith(WEB_EXTENSIONS):
         path = os.path.join(settings.pictures_dir, row["path"])
+        logging.vlog(7, "%s: Huge served from the original", row["path"])
     else:
       made = await run_in_threadpool(
           render_limited, settings.pictures_dir, settings.thumbs_dir,
@@ -377,10 +380,14 @@ def create_app(conn, settings):
     if path is None and fileinfo.is_raw(row["path"]):
       # No usable embedded preview: demosaic in the background; the client
       # retries the image after a moment.
+      logging.vlog(3, "%s: no cached %s, deferring to raw_render (file %d)",
+                   row["path"], size, file_id)
       app.state.jobs.enqueue("raw_render", file_id)
       raise HTTPException(404, "being rendered; retry shortly",
                           headers={"Retry-After": "2"})
     if path is None:
+      logging.warning("%s: no %s thumbnail available and no RAW fallback (file %d)",
+                      row["path"], size, file_id)
       raise HTTPException(404, "no thumbnail available yet")
     return FileResponse(path, headers=cache)
 
