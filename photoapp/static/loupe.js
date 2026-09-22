@@ -20,6 +20,7 @@ const ui = {};
 let index = -1;
 let zoomed = false;
 let filesOpen = false;
+let brokenFileId = null;   // set when the main image fails to load after every retry (ticket 079)
 
 const current = () => state.photos[index];
 
@@ -127,6 +128,7 @@ function show(i) {
   zoomed = false;
   ui.stage.classList.remove('zoomed');
   resetDrag();
+  brokenFileId = null;
   ui.img.src = imgUrl('Medium', photo.file_id);
   ui.img.alt = photo.name;
   retryOnce(ui.img, photo);
@@ -140,14 +142,35 @@ function show(i) {
   if (filesOpen) openFiles();
 }
 
-// A RAW without a preview is rendered in the background; retry a few times.
+// A RAW without a preview is rendered in the background; retry a few times. If it is still
+// broken after every retry, offer a way to fix it rather than failing silently (ticket 079).
 function retryOnce(img, photo) {
   let n = 0;
   img.onerror = () => {
-    if (current() !== photo || n >= 6) return;
+    if (current() !== photo) return;
+    if (n >= 6) {
+      brokenFileId = photo.file_id;
+      renderHud();
+      return;
+    }
     n++;
     setTimeout(() => { if (current() === photo) img.src = imgUrl('Medium', photo.file_id) + '?r=' + n; }, 1500 * n);
   };
+}
+
+// Debug action (ticket 079): every render path in this app deliberately never overwrites an
+// existing cached thumbnail, so a broken one otherwise never gets a fresh render. Clears the
+// cache server-side and reloads what is on screen; the next request regenerates it normally.
+async function rerenderThumbs() {
+  const photo = current();
+  try {
+    await post(`/api/files/${photo.file_id}/rerender_thumbs`);
+    brokenFileId = null;
+    ui.img.src = imgUrl('Medium', photo.file_id) + '?r=' + Date.now();
+    retryOnce(ui.img, photo);
+    toast('re-rendering thumbnails…');
+  } catch (e) { /* post() already showed a toast for a server error */ }
+  renderHud();
 }
 
 function preload(delta) {
@@ -250,6 +273,11 @@ function renderHud() {
       el('button', {text: 'tag', title: 'tags (T)', onclick: openTagInput}),
       el('button', {text: '↶', title: 'undo (U)', onclick: undo}),
       el('button', {text: 'files', title: 'files / tunings (I)', class: filesOpen ? 'on' : '', onclick: () => filesOpen ? closeFiles() : openFiles()}),
+      brokenFileId === p.file_id
+        ? el('button', {class: 'broken-thumb', title: 'this thumbnail failed to load -- click to re-render it',
+                        text: '⚠ fix thumbnail', onclick: rerenderThumbs})
+        : el('button', {class: 'debug-menu', title: 'debug: re-render this photo’s thumbnails',
+                        text: '⋯', onclick: rerenderThumbs}),
       el('button', {text: '✕', title: 'close (Esc)', onclick: closeToGrid})));
 }
 

@@ -89,6 +89,36 @@ def test_keyboard_culling_writes_sidecars_and_undo(page, server):
   assert api_state["rating"] == 3
 
 
+def test_debug_button_rerenders_thumbnails(page, server):
+  # ticket 079: the tucked-away debug button clears and regenerates the current photo's thumbs.
+  ids = open_loupe(page, server)
+  file_id = api(server, f"/api/photos/{ids[0]}")["representative_file_id"]
+  urllib.request.urlopen(f"{server.url}/img/Thumb/{file_id}")   # make sure something is cached first
+  assert api(server, "/api/thumbs/usage")["usage"]["Thumb"]["files"] >= 1
+
+  btn = page.locator(".hud .buttons button.debug-menu")
+  expect(btn).to_be_visible()
+  assert "re-render" in btn.get_attribute("title")
+  btn.click()
+  expect(page.locator("#toast")).to_contain_text("re-rendering")
+  wait_for(lambda: urllib.request.urlopen(f"{server.url}/img/Thumb/{file_id}").status == 200)
+
+
+def test_broken_thumbnail_shows_a_prominent_fix_button(page, server):
+  # ticket 079: after every retry fails, a prominent fix button replaces the tucked-away one.
+  # Real timers (the retry backoff -- 1500ms * (1+2+3+4+5+6) = 31.5s -- isn't configurable, and a
+  # fake clock can't safely fast-forward through retries that are each scheduled only once the
+  # previous real network response comes back), so this test genuinely takes about half a minute.
+  ids = photo_ids(server)
+  page.route("**/img/Medium/*", lambda route: route.fulfill(status=404, body="nope"))
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  expect(page.locator(".hud .buttons button.debug-menu")).to_be_visible()   # not broken yet
+  expect(page.locator(".hud .buttons button.broken-thumb")).to_be_visible(timeout=40000)
+  expect(page.locator(".hud .buttons button.debug-menu")).to_have_count(0)
+  page.errors.clear()   # the forced 404s are logged by the browser -- that's the point of the test
+
+
 def test_unreject_restores_previous_stars(page, server):
   open_loupe(page, server, 1)                       # IMG_0002 has 4 stars from its sidecar
   page.keyboard.press("x")

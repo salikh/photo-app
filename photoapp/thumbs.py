@@ -120,6 +120,27 @@ def render_raw_sizes(pictures_dir, thumbs_dir, file_path):
   return made
 
 
+def clear(thumbs_dir, conn, file_id, file_path):
+  """Delete every cached thumbnail (file on disk + thumbs row) for this file (ticket 079): the
+  fix for a broken/corrupt cached thumbnail, since every render path in this codebase
+  deliberately never overwrites an existing one. The next request for any size regenerates it
+  from scratch through the normal path (make/ensure, or the RAW job queue) -- clearing is the
+  whole fix; no rendering happens here. Returns the sizes that had something to clear."""
+  cleared = []
+  for size in SIZES:
+    path = thumb_path(thumbs_dir, size, file_path)
+    existed = os.path.exists(path)
+    if existed:
+      os.remove(path)
+    deleted = conn.execute(
+        "DELETE FROM thumbs WHERE file_id = ? AND size = ?", (file_id, size)).rowcount
+    if existed or deleted:
+      cleared.append(size)
+  conn.commit()
+  logging.info("%s: cleared cached thumbnails %s for a forced re-render", file_path, cleared)
+  return cleared
+
+
 def _record(conn, file_id, size, path, source):
   conn.execute(
       "INSERT INTO thumbs (file_id, size, path, bytesize, source) "

@@ -95,6 +95,24 @@ def test_thumbs_usage_endpoint(settings):
   assert u["lacking"]["Thumb"] == 4 and "lacking" not in c.get("/api/thumbs/usage").json()
 
 
+def test_rerender_thumbs_endpoint(settings):
+  # ticket 079: clears the cache so a broken thumbnail gets a fresh render on the next request.
+  c = app_with_pair(settings)
+  file_id = fid(c, "y/a.jpg")
+  c.get(f"/img/Thumb/{file_id}")
+  before = c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"]
+  assert before == 1
+
+  r = c.post(f"/api/files/{file_id}/rerender_thumbs")
+  assert r.status_code == 200 and r.json() == {"file_id": file_id, "cleared": ["Thumb"]}
+  assert c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"] == 0
+
+  assert c.get(f"/img/Thumb/{file_id}").status_code == 200   # regenerates normally
+  assert c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"] == 1
+
+  assert c.post("/api/files/9999/rerender_thumbs").status_code == 404
+
+
 def test_seconds_until_next_hour():
   now = datetime.datetime(2026, 9, 21, 1, 30, 0)
   assert scan.seconds_until(3, now) == 90 * 60

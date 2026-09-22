@@ -40,7 +40,7 @@ All ten build-order epics are done.
 - [x] [076](docs/tickets/076.md) Nightly rescan becomes one queued job per top-level directory, drained by [073](docs/tickets/073.md)'s worker
 - [x] [077](docs/tickets/077.md) Filter/sort changes use replaceState so they are not their own browser-history stop (Back always means "previous folder")
 - [x] [078](docs/tickets/078.md) Document the sqlite database(s) — location, schema, meaning — in docs/design/databases.md
-- [ ] [079](docs/tickets/079.md) Loupe "..."/Debug button to force-rerender a photo's thumbnails (fixes broken ones)
+- [x] [079](docs/tickets/079.md) Loupe "..."/Debug button to force-rerender a photo's thumbnails (fixes broken ones)
 - [ ] [080](docs/tickets/080.md) Prioritize the currently-open folder in the background thumbnail queue (spun out of 069's investigation)
 
 ## Cross-cutting
@@ -82,7 +82,7 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
 **No open question tickets right now.** Every build-order and cross-cutting item above is done. What remains is
-072, 079, 080 (none blocked, none urgent) and whatever the next `/loop` iteration or the user asks for.
+072, 080 (none blocked, none urgent) and whatever the next `/loop` iteration or the user asks for.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
 `http://<this machine>:8080/` on the phone or tablet.

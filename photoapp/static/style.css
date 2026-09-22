@@ -183,6 +183,8 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .hud .tag { padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-dim); font-size: 13px; }
 .hud .buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 .hud .buttons button { min-width: var(--touch); padding: 0 8px; }
+.hud .buttons button.debug-menu { opacity: 0.5; }
+.hud .buttons button.broken-thumb { border-color: var(--reject); color: var(--reject); }
 .hud input.tags { width: 12em; }
 
 /* the strip of thumbnails: every photo of the folder, scrollable (ticket 059) */

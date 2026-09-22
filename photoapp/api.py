@@ -284,6 +284,17 @@ def create_app(conn, settings):
       except ValueError as e:
         raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
 
+  @app.post("/api/files/{file_id}/rerender_thumbs")
+  @db_route
+  def rerender_thumbs(file_id: int):
+    """Ticket 079: clears every cached thumbnail of this file so the next request regenerates
+    it from scratch -- the fix for a broken/corrupt cached thumbnail. Debug-menu action in the
+    loupe, or offered automatically after a thumbnail repeatedly fails to load."""
+    row = file_row(file_id)
+    with app.state.db_lock:
+      cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
+    return {"file_id": file_id, "cleared": cleared}
+
   @app.get("/api/thumbs/usage")
   @db_route
   def thumbs_usage(lacking: bool = False):

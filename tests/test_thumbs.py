@@ -94,6 +94,28 @@ def test_ensure_returns_none_for_raw_without_thumbnail(conn, settings):
                        fid, "a.dng", "Small") is None
 
 
+def test_clear_removes_cached_files_and_rows_so_the_next_request_regenerates(conn, settings):
+  d, t = settings.pictures_dir, settings.thumbs_dir
+  make_jpeg(os.path.join(d, "y", "a.JPG"), size=(3000, 2000))
+  scan.scan(conn, d)
+  fid = conn.execute("SELECT id FROM files").fetchone()[0]
+  thumbs.ensure(conn, d, t, fid, "y/a.JPG", "Thumb")
+  thumbs.ensure(conn, d, t, fid, "y/a.JPG", "Medium")
+  assert conn.execute("SELECT COUNT(*) FROM thumbs WHERE file_id = ?", (fid,)).fetchone()[0] == 2
+  thumb_path_on_disk = thumbs.thumb_path(t, "Thumb", "y/a.JPG")
+  assert os.path.exists(thumb_path_on_disk)
+
+  cleared = thumbs.clear(t, conn, fid, "y/a.JPG")
+  assert sorted(cleared) == ["Medium", "Thumb"]
+  assert not os.path.exists(thumb_path_on_disk)
+  assert conn.execute("SELECT COUNT(*) FROM thumbs WHERE file_id = ?", (fid,)).fetchone()[0] == 0
+
+  # clearing again is a no-op (nothing left to clear), and a fresh ensure() regenerates it
+  assert thumbs.clear(t, conn, fid, "y/a.JPG") == []
+  out = thumbs.ensure(conn, d, t, fid, "y/a.JPG", "Thumb")
+  assert out == thumb_path_on_disk and os.path.exists(out)
+
+
 def test_index_existing_usage_and_lacking(conn, settings):
   d, t = settings.pictures_dir, settings.thumbs_dir
   touch(os.path.join(d, "y", "K1.DNG"))
