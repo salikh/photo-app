@@ -34,12 +34,13 @@ All ten build-order epics are done.
 - [x] [066](docs/tickets/066.md) Background low-priority population of /zoo/Thumbs with dcraw (queue visible on the Jobs page)
 - [x] [067](docs/tickets/067.md) ArrowUp/ArrowDown to step the rating in the viewer
 - [ ] [072](docs/tickets/072.md) "Delete" button on the Rejected view: review screen with Medium thumbnails, big red Delete button removes the source files from /zoo/Pictures (needs design decisions first, see the ticket)
-- [ ] [073](docs/tickets/073.md) Load-adaptive background worker: watch CPU/memory load, auto start/stop a low-priority nice/ionice worker on the job queue
-- [ ] [074](docs/tickets/074.md) Jobs page progress indicator: total, incomplete, and completed in the last day/hour/minute
+- [x] [073](docs/tickets/073.md) Load-adaptive background worker: watch CPU/memory load, auto start/stop a low-priority nice/ionice worker on the job queue
+- [x] [074](docs/tickets/074.md) Jobs page progress indicator: total, incomplete, and completed in the last day/hour/minute
 - [ ] [075](docs/tickets/075.md) Delete completed jobs older than 1 week on a full rescan
 - [ ] [076](docs/tickets/076.md) Nightly rescan becomes one queued job per top-level directory, drained by [073](docs/tickets/073.md)'s worker
 - [ ] [077](docs/tickets/077.md) Filter/sort changes use replaceState so they are not their own browser-history stop (Back always means "previous folder")
 - [ ] [078](docs/tickets/078.md) Document the sqlite database(s) — location, schema, meaning — in docs/design/databases.md
+- [ ] [079](docs/tickets/079.md) Loupe "..."/Debug button to force-rerender a photo's thumbnails (fixes broken ones)
 
 ## Cross-cutting
 
