@@ -22,17 +22,23 @@ anticipated — each such departure is called out explicitly.
   another real race bug found and fixed along the way
 - [databases.md](databases.md) — every sqlite database the app touches: where each lives, its schema table by
   table, and why the state database is separate from the library and split the way it is
+- [trash.md](trash.md) — why deleting a rejected photo is a move into `.trash/`, not a delete, and why
+  `.trash/` must never be scanned (a real bug this avoided, confirmed with a test before the fix)
 
-## Two bugs worth knowing about specifically
+## Bugs worth knowing about specifically
 
-Both were found by testing against realistic conditions (rapid input, two components sharing state), not by
-inspection, and both are the kind of thing that is easy to reintroduce by accident in future changes:
+Found by testing against realistic conditions (rapid input, two components sharing state, an operation
+followed by the thing that would naturally happen next), not by inspection, and each the kind of thing
+that is easy to reintroduce by accident in future changes:
 
 - **A stale server response could overwrite a newer optimistic UI edit** (rapid rating key presses could leave
   the display behind what was actually saved). See [frontend-viewer.md](frontend-viewer.md#the-rating-clobber-race).
 - **Two `JobQueue` instances sharing one `jobs` table could steal and fail each other's jobs** (a queue claimed
   the oldest queued row regardless of `kind`). See
   [concurrency-and-jobs.md](concurrency-and-jobs.md#the-claim-scoping-bug).
+- **A trashed photo's sidecar would silently un-trash it on the next scan** (still says "reject," so it would
+  come back as a new, live, correctly-rejected-but-visible-again Photo) had `.trash/` been scanned like any
+  other hidden folder. See [trash.md](trash.md#trash-must-never-be-scanned-not-just-hidden).
 
 ## Provisional decisions still open
 

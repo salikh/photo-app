@@ -1,6 +1,7 @@
 """Browser tests against a live server and a synthetic library."""
 
 import json
+import os
 import re
 import time
 import urllib.request
@@ -589,6 +590,39 @@ def test_same_rating_stays_and_each_key_press_advances_exactly_one_photo(page, s
   expect(page.locator(".hud .pos")).to_have_text("1/2")
   wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") == 2
            and server.sidecar_rating("2024/trip/IMG_0004.jpg.xmp") == 2)
+
+
+def test_delete_flow_moves_rejected_photos_to_trash(page, server):
+  # ticket 072: Delete only shows on the Rejected filter, review screen shows the rejected set,
+  # confirming moves every file to Pictures/.trash and the photo leaves the rejected view.
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator("a.danger")).to_have_count(0)   # not shown outside the Rejected filter
+  page.goto(server.url + "/#/2024/trip?filter=rejected")
+  expect(page.locator(".cell")).to_have_count(1)                            # only IMG_0003
+
+  page.locator("a.danger").click()
+  expect(page.locator("h2")).to_have_text("Delete rejected photos")
+  expect(page.locator(".review-grid .cell")).to_have_count(1)
+  expect(page.locator(".review-grid img")).to_have_attribute(
+      "src", re.compile(r"^/img/Medium/"))
+  confirm = page.locator(".delete-confirm button.danger")
+  expect(confirm).to_have_text("Move 1 photo(s) to trash")
+
+  confirm.click()
+  expect(page.locator("#toast")).to_contain_text("moved 1 photo(s) to trash")
+  expect(page).to_have_url(re.compile(r"filter=rejected"))
+  expect(page.locator(".cell")).to_have_count(0)                            # gone from the view
+
+  assert not os.path.exists(os.path.join(server.pictures, "2024/trip/IMG_0003.jpg"))
+  assert os.path.isfile(os.path.join(server.pictures, ".trash/2024/trip/IMG_0003.jpg"))
+  assert not os.path.exists(os.path.join(server.pictures, "2024/trip/IMG_0003.jpg.xmp"))
+  assert os.path.isfile(os.path.join(server.pictures, ".trash/2024/trip/IMG_0003.jpg.xmp"))
+
+
+def test_delete_review_screen_with_nothing_rejected(page, server):
+  page.goto(server.url + "/#!delete-review?dir=2024/home")   # nothing rejected there
+  expect(page.locator(".status")).to_contain_text("No rejected photos")
+  expect(page.locator(".review-grid")).to_have_count(0)
 
 
 def test_last_photo_out_closes_the_viewer(page, server):

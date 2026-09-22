@@ -51,6 +51,15 @@ button { cursor: pointer; }
 button:hover:not(:disabled) { background: var(--bg-hover); }
 button:disabled { opacity: 0.4; cursor: default; }
 button.on { border-color: var(--accent); color: var(--accent); }
+/* ticket 072: the Delete-flow button, whether an <a> (toolbar) or a <button> (confirm) */
+.danger {
+  display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; cursor: pointer; min-height: var(--touch); padding: 0 12px;
+  border: 1px solid var(--reject); border-radius: 6px;
+  background: var(--bg-raised); color: var(--reject);
+}
+.danger:hover:not(:disabled) { background: var(--reject); color: var(--bg); text-decoration: none; }
+.danger:disabled { opacity: 0.4; cursor: default; }
 
 /* ---------- layout ---------- */
 
@@ -107,6 +116,13 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .cell.selected { outline: 3px solid var(--accent); }
 .cell.rejected img { opacity: 0.35; }
 .cell.leaving { opacity: 0; transform: scale(0.92); transition: opacity 0.15s, transform 0.15s; pointer-events: none; }
+
+/* ticket 072: the delete-review screen -- bigger cells (Medium renders, not Thumb) so a real
+   look is possible, and the confirm button sits well below the fold on purpose. */
+.review-grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); margin: 16px 0; }
+.delete-confirm { display: flex; justify-content: center; padding: 24px 0 48px; }
+.delete-confirm .danger { font-size: 1.1em; padding: 0 24px; }
+
 .badges {
   position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px;
   padding: 2px 6px; font-size: 12px; color: var(--overlay-text);

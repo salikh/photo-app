@@ -6,7 +6,7 @@
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--pictures_dir` | `/zoo/Pictures` | the library; read-only except XMP sidecars |
+| `--pictures_dir` | `/zoo/Pictures` | the library; read-only except XMP sidecars and the Delete flow (ticket 072), which moves rejected photos' files to `.trash/` |
 | `--thumbs_dir` | `/zoo/Thumbs` | thumbnail cache (sizes are created on demand) |
 | `--state_dir` | `~/.local/share/photos` | database, XMP backups, manual link log |
 | `--hashes_db` | none | `hash_dir.py` database whose hashes are reused by scans |
@@ -120,7 +120,25 @@ Folders whose name starts with a dot (`.nu`, `.thumbnails`, `.webaxs`, `.picasao
 leftovers of old programs) are not listed in the folder view, and their Photos are not counted in the
 folders that contain them. Nothing is deleted, scans still read them, and a hidden folder can be opened
 by its path (for example `#/2001/new-epoch/.nu`). A file whose own name starts with a dot is not
-affected. Restart the app after updating so the server code is current.
+affected. Restart the app after updating so the server code is current. **One exception**: `.trash/`
+(see below) is never scanned at all, not just hidden from the listing — a trashed file's sidecar still
+says what it always said (e.g. reject), so scanning it back in would silently re-create it as a live
+Photo.
+
+## Deleting rejected photos
+
+The **Delete** button (shown only while the Rejected filter is active) opens a review screen scoped to
+the folder it was clicked from: every currently-rejected photo in that folder as a Medium-size render,
+with a confirm button below all of them (scroll to reach it — a deliberate speed bump). Confirming moves
+every file under each shown Photo — the original, its camera JPG, any tuning, and every XMP sidecar — into
+`<pictures_dir>/.trash/`, mirroring the original subdirectory structure (so `2019/trip/IMG_1.DNG` becomes
+`.trash/2019/trip/IMG_1.DNG`). Nothing is deleted outright: this is a move, fully recoverable by hand
+(move the files back and rescan), and the Photo's rating/history is kept (`missing = 1`, the same state a
+file gets when a scan finds it vanished on its own). The server re-checks each Photo is still rated reject
+before moving anything, regardless of what the browser's list said.
+
+`.trash/` itself has no automatic cleanup yet — emptying it (or restoring from it) is a manual `mv`/`rm`
+for now; an automatic purge after a retention window is a separate, not-yet-built ticket (081).
 
 ## What is in the state directory, and what to back up
 

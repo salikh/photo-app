@@ -28,6 +28,7 @@ from photoapp import recovery
 from photoapp import scan as scan_lib
 from photoapp import thumb_populate
 from photoapp import thumbs
+from photoapp import trash
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 WEB_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
@@ -44,6 +45,10 @@ class FavBody(pydantic.BaseModel):
 class BatchRatingBody(pydantic.BaseModel):
   ids: list[int]
   rating: int
+
+
+class TrashBody(pydantic.BaseModel):
+  ids: list[int]
 
 
 class RepresentativeBody(pydantic.BaseModel):
@@ -231,6 +236,20 @@ def create_app(conn, settings):
                                            body.rating, batch_id)
         except curation.CurationError as e:
           raise HTTPException(400, str(e))
+    return run_db(attempt)
+
+  @app.post("/api/photos/trash")
+  def trash_photos_route(body: TrashBody):
+    """Ticket 072: move every still-rejected Photo in body.ids (and every file under it,
+    including sidecars) to <pictures_dir>/.trash/. Re-checks each is still rated reject
+    server-side rather than trusting the client's list; a Photo that isn't is reported in
+    errors, not silently skipped, and does not stop the rest."""
+    if not body.ids or len(body.ids) > 2000:
+      raise HTTPException(400, "give between 1 and 2000 photo ids")
+
+    def attempt():
+      with app.state.db_lock:
+        return trash.trash_photos(app.state.db, settings, body.ids)
     return run_db(attempt)
 
   @app.post("/api/activity/batch/{batch_id}/undo")

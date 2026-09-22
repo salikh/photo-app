@@ -95,6 +95,30 @@ def test_thumbs_usage_endpoint(settings):
   assert u["lacking"]["Thumb"] == 4 and "lacking" not in c.get("/api/thumbs/usage").json()
 
 
+def test_trash_photos_endpoint(settings):
+  c = app_with_pair(settings)
+  d = settings.pictures_dir
+  k1 = pid(c, "y/K1.DNG")
+  a = pid(c, "y/a.jpg")
+  c.post(f"/api/photos/{k1}/rating", json={"rating": -1})   # reject K1 (DNG + JPG)
+
+  r = c.post("/api/photos/trash", json={"ids": [k1, a, 99999]})
+  assert r.status_code == 200
+  body = r.json()
+  assert len(body["trashed"]) == 1 and body["trashed"][0]["photo_id"] == k1
+  moved_from = sorted(m["from"] for m in body["trashed"][0]["moved"])
+  assert moved_from == ["y/K1.DNG", "y/K1.DNG.xmp", "y/K1.JPG", "y/K1.JPG.xmp"]
+  errored = {e["photo_id"] for e in body["errors"]}
+  assert errored == {a, 99999}   # a.jpg was never rejected; 99999 doesn't exist
+
+  assert not os.path.exists(os.path.join(d, "y", "K1.DNG"))
+  assert os.path.isfile(os.path.join(d, ".trash", "y", "K1.DNG"))
+  assert os.path.isfile(os.path.join(d, "y", "a.jpg"))          # untouched
+  assert c.get(f"/api/photos/{k1}").json()["files"][0]["missing"]
+
+  assert c.post("/api/photos/trash", json={"ids": []}).status_code == 400
+
+
 def test_rerender_thumbs_endpoint(settings):
   # ticket 079: clears the cache so a broken thumbnail gets a fresh render on the next request.
   c = app_with_pair(settings)

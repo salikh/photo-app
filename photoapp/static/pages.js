@@ -1,8 +1,9 @@
-// Secondary pages: activity (with undo), needs attention, thumbnail usage, jobs.
+// Secondary pages: activity (with undo), needs attention, thumbnail usage, jobs, delete review.
 
-import {get, post} from './api.js';
+import {get, post, imgUrl} from './api.js';
 import {el, toast, fmtBytes} from './util.js';
 import {href} from './route.js';
+import {state} from './state.js';
 
 function table(headers, rows) {
   return el('div', {class: 'table-wrap'}, el('table', {},
@@ -92,4 +93,42 @@ export async function jobsPage(main) {
       el('td', {text: x.id}), el('td', {text: x.kind}), el('td', {text: x.file_id}),
       el('td', {class: x.state === 'failed' ? 'bad' : x.state === 'done' ? 'ok' : '', text: x.state}),
       el('td', {text: x.error || ''})))) : '');
+}
+
+// ticket 072: review + confirm screen for moving a folder's rejected photos to Pictures/.trash.
+// Scoped to state.route.dir (the folder the Delete button was clicked from), not the whole
+// library, for a smaller blast radius per click.
+export async function deleteReviewPage(main) {
+  const dir = state.route.dir || '.';
+  const shown = dir === '.' ? 'the root' : dir;
+  const back = el('a', {href: href({dir, filter: 'rejected'}), text: '← back to Rejected'});
+  const data = await get(`/api/photos?dir=${encodeURIComponent(dir)}&filter=rejected&limit=1000`);
+  const photos = data.photos;
+  if (!photos.length) {
+    main.replaceChildren(
+      el('h2', {text: 'Delete rejected photos'}),
+      el('p', {class: 'status', text: `No rejected photos in ${shown}.`}), back);
+    return;
+  }
+  const confirmBtn = el('button', {class: 'danger', text: `Move ${photos.length} photo(s) to trash`,
+    onclick: async (event) => {
+      event.target.disabled = true;
+      try {
+        const result = await post('/api/photos/trash', {ids: photos.map((p) => p.id)});
+        toast(`moved ${result.trashed.length} photo(s) to trash` +
+              (result.errors.length ? `, ${result.errors.length} could not be moved` : ''));
+        location.hash = href({dir, filter: 'rejected'});
+      } catch (e) {
+        event.target.disabled = false;   // post() already toasted the error
+      }
+    }});
+  main.replaceChildren(
+    el('h2', {text: 'Delete rejected photos'}),
+    el('p', {class: 'status', text:
+      `${photos.length} rejected photo(s) in ${shown}. Every DNG/JPG/XMP file of each moves to ` +
+      'Pictures/.trash — nothing is permanently deleted yet. Scroll down to confirm.'}),
+    back,
+    el('div', {class: 'grid review-grid'}, photos.map((p) => el('div', {class: 'cell', title: p.name},
+      el('img', {src: imgUrl('Medium', p.file_id), loading: 'lazy', alt: p.name, decoding: 'async'})))),
+    el('div', {class: 'delete-confirm'}, confirmBtn));
 }

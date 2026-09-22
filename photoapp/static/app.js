@@ -2,7 +2,7 @@
 
 import {get, post} from './api.js';
 import {el, toast, isTyping} from './util.js';
-import {parse, href} from './route.js';
+import {parse, href, hrefPage} from './route.js';
 import {state} from './state.js';
 import * as grid from './grid.js';
 import * as loupe from './loupe.js';
@@ -13,7 +13,8 @@ import * as filters from './filters.js';
 const app = document.getElementById('app');
 const SORTS = [['date', 'date'], ['name', 'name']];
 const PAGES = {activity: pages.activityPage, attention: pages.attentionPage,
-               usage: pages.usagePage, jobs: pages.jobsPage};
+               usage: pages.usagePage, jobs: pages.jobsPage,
+               'delete-review': pages.deleteReviewPage};
 
 let header = null;
 let main = null;
@@ -65,6 +66,9 @@ function renderHeader(route) {
       (v) => { history.replaceState(null, '', href({...route, sort: v, photo: null})); render(); },
       'sort') : null,
     browsing ? el('button', {class: state.selecting ? 'on' : '', text: 'Select', onclick: toggleSelecting}) : null,
+    browsing && route.filter === 'rejected'
+      ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir),
+                text: 'Delete', title: 'review and move these rejected photos to trash'}) : null,
     el('button', {text: 'Rescan', title: 'rescan this folder', onclick: () => rescan(route)}),
     scanStatus,
     el('nav', {},

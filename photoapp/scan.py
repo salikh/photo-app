@@ -24,6 +24,7 @@ from photoapp import manual_links
 from photoapp import paths
 from photoapp import ratings
 from photoapp import thumbs
+from photoapp import trash
 from photoapp import xmp
 
 
@@ -230,6 +231,8 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
   known_sidecars = _load_known_sidecars(conn, rel_scan, recursive)
   for dirpath, dirnames, filenames in os.walk(scan_dir):
     dirnames.sort()
+    if dirpath == pictures_dir and trash.TRASH_DIRNAME in dirnames:
+      dirnames.remove(trash.TRASH_DIRNAME)   # never scanned (ticket 072), even by a direct walk
     if not recursive:
       dirnames[:] = []
     rel_dir = _rel(pictures_dir, dirpath)
@@ -333,9 +336,15 @@ def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
 
 def top_level_steps(pictures_dir):
   """The steps of a whole-library scan: the root's own files, then each
-  top-level directory in sorted order. [(rel_dir, recursive)]"""
+  top-level directory in sorted order. [(rel_dir, recursive)]
+
+  Skips trash.TRASH_DIRNAME (ticket 072): unlike other hidden (dot-prefixed) folders, which are
+  scanned but not listed, a trashed file's sidecar still says what it always said (e.g. reject),
+  so scanning it back in would silently re-create it as a brand new, live Photo -- trash is meant
+  to be inert until restored by hand or purged, not part of the library at all.
+  """
   names = sorted(e.name for e in os.scandir(pictures_dir)
-                 if e.is_dir(follow_symlinks=False))
+                 if e.is_dir(follow_symlinks=False) and e.name != trash.TRASH_DIRNAME)
   return [(".", False)] + [(n, True) for n in names]
 
 
