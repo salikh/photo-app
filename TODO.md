@@ -33,6 +33,7 @@ All ten build-order epics are done.
 - [x] [060](docs/tickets/060.md) Pinch zoom in/out and pan of the zoomed (original size) photo on tablets (real iPad: "works good")
 - [x] [066](docs/tickets/066.md) Background low-priority population of /zoo/Thumbs with dcraw (queue visible on the Jobs page)
 - [x] [067](docs/tickets/067.md) ArrowUp/ArrowDown to step the rating in the viewer
+- [ ] [072](docs/tickets/072.md) "Delete" button on the Rejected view: review screen with Medium thumbnails, big red Delete button removes the source files from /zoo/Pictures (needs design decisions first, see the ticket)
 
 ## Cross-cutting
 
