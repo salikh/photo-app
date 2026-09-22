@@ -1346,3 +1346,52 @@ def test_zoom_before_the_picture_has_loaded_waits_for_it(page, server):
   expect(page.locator(".loupe")).to_be_visible()
   page.keyboard.press("z")                                                   # pressed before the image is there
   expect(page.locator(".stage.zoomed")).to_have_count(1, timeout=10000)
+
+
+# --- ArrowUp/ArrowDown step the rating in the viewer (ticket 067) --------------------------------
+
+def test_arrow_up_down_step_the_rating_and_clamp(page, server):
+  open_loupe(page, server)                                     # IMG_0001: unrated
+  page.keyboard.press("ArrowUp")
+  expect(page.locator(".hud .stars")).to_have_text("★☆☆☆☆")
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") == 1)
+  page.keyboard.press("ArrowUp")
+  page.keyboard.press("ArrowUp")
+  page.keyboard.press("ArrowUp")
+  page.keyboard.press("ArrowUp")
+  expect(page.locator(".hud .stars")).to_have_text("★" * 5)
+  page.keyboard.press("ArrowUp")                                # clamped at 5
+  expect(page.locator(".hud .stars")).to_have_text("★" * 5)
+  for _ in range(6):
+    page.keyboard.press("ArrowDown")
+  expect(page.locator(".hud .stars.reject")).to_be_visible()
+  page.keyboard.press("ArrowDown")                               # clamped at reject
+  expect(page.locator(".hud .stars.reject")).to_be_visible()
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0001.jpg.xmp") == -1)
+
+
+def test_arrow_up_from_reject_restores_previous_stars(page, server):
+  open_loupe(page, server, 1)                                    # IMG_0002 has 4 stars from its sidecar
+  page.keyboard.press("x")                                        # reject directly (remembers the 4 stars)
+  expect(page.locator(".hud .stars.reject")).to_be_visible()
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0002.jpg.xmp") == -1)
+  page.keyboard.press("ArrowUp")                                  # one step up from reject: back to 4 stars
+  expect(page.locator(".hud .stars")).to_have_text("★★★★☆")
+  wait_for(lambda: server.sidecar_rating("2024/trip/IMG_0002.jpg.xmp") == 4)
+
+
+def test_arrow_up_down_leave_a_filtered_view_like_other_rating_changes(page, server):
+  page.goto(server.url + "/#/2024/trip?filter=unrated")
+  expect(page.locator(".cell")).to_have_count(4)
+  page.locator(".cell").first.click()
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  page.keyboard.press("ArrowUp")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0004")             # left the filter, advanced
+
+
+def test_arrow_up_down_do_nothing_while_typing_in_the_tag_field(page, server):
+  open_loupe(page, server)
+  page.keyboard.press("t")
+  page.keyboard.press("ArrowUp")                                             # should not rate while typing
+  page.keyboard.press("Escape")
+  expect(page.locator(".hud .stars")).to_have_text("☆" * 5)

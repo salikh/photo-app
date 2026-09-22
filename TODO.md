@@ -32,7 +32,7 @@ Check items off here when the ticket's status is done.
 
 - [ ] [066](docs/tickets/066.md) Background low-priority population of /zoo/Thumbs with dcraw (queue visible on the Jobs page)
 
-- [ ] [067](docs/tickets/067.md) ArrowUp/ArrowDown to step the rating in the viewer
+- [x] [067](docs/tickets/067.md) ArrowUp/ArrowDown to step the rating in the viewer
 ## Cross-cutting
 
 - [x] [040](docs/tickets/040.md) Test infrastructure and fixtures

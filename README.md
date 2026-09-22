@@ -44,7 +44,7 @@ or slow connection. `tools/measure_navigation.py` measures it on large synthetic
 
 ## Keys in the viewer
 
-`←`/`→` navigate, `0`-`5` rate, `X` reject (again: restore), `F` favorite, `T` tags (`-name` removes),
+`←`/`→` navigate, `↑`/`↓` rating +1/-1 (clamped, un-reject restores the previous stars), `0`-`5` rate, `X` reject (again: restore), `F` favorite, `T` tags (`-name` removes),
 `Z` zoom to full size, `G` cycle the shown file of a DNG+JPG pair, `I` files panel, `U` undo, `Esc` back.
 The buttons under the photo are `✖ ☆ 1 2 3 4 5` (reject first), then favorite, tag, undo, files, close.
 On a phone: swipe left/right for the next/previous picture, swipe up/down to raise/lower the rating.

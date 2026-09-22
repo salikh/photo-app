@@ -315,6 +315,22 @@ function reconcile(photo, left) {
   }
 }
 
+// Rapid edits to the same field of the same photo (holding a rating key, a fast double
+// fav-toggle) go out as a strict FIFO of requests (util.enqueue), each carrying an absolute
+// value. A response can arrive after a *newer* optimistic edit has already moved the photo
+// further, and applying it then would silently undo that newer edit. beginEdit() marks the
+// start of an edit and returns a check that is only true if no later edit has started since;
+// the async continuation uses it to skip applying a stale response (the bookkeeping -- the
+// activity log entry, the undo stack push -- still happens, since the write itself is real and
+// undo-able; only overwriting the locally-displayed value is skipped).
+const editSeq = new WeakMap();
+
+function beginEdit(photo) {
+  const seq = (editSeq.get(photo) || 0) + 1;
+  editSeq.set(photo, seq);
+  return () => editSeq.get(photo) === seq;
+}
+
 // ------------------------------------------------------------------ edits
 
 function setRating(value) {
@@ -323,20 +339,19 @@ function setRating(value) {
   const before = {rating: photo.rating, previous_stars: photo.previous_stars};
   if (value === REJECT && photo.rating > 0) photo.previous_stars = photo.rating;
   photo.rating = value;
+  const isLatest = beginEdit(photo);
   const left = leaveIfNoLongerMatching(photo);      // optimistic: it leaves at once
   if (!left.length) refresh(photo);
   showPreview(value); hidePreview();
   return enqueue(async () => {
     try {
       const r = await post(`/api/photos/${photo.id}/rating`, {rating: value});
-      Object.assign(photo, r.photo);
+      if (isLatest()) { Object.assign(photo, r.photo); reconcile(photo, left); }
       if (r.dry_run) toast('dry run: nothing was saved');
-      reconcile(photo, left);
       if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids, left});
     } catch (e) {
-      Object.assign(photo, before);
+      if (isLatest()) { Object.assign(photo, before); reconcile(photo, left); }  // back where it was
       toast(e.message, true);
-      reconcile(photo, left);                        // back where it was
     }
     scheduleCountsRefresh();
   });
@@ -351,19 +366,18 @@ function toggleFav() {
   const photo = current();
   const value = !photo.fav;
   photo.fav = value;
+  const isLatest = beginEdit(photo);
   const left = leaveIfNoLongerMatching(photo);
   if (!left.length) refresh(photo);
   return enqueue(async () => {
     try {
       const r = await post(`/api/photos/${photo.id}/fav`, {fav: value});
-      Object.assign(photo, r.photo);
+      if (isLatest()) { Object.assign(photo, r.photo); reconcile(photo, left); }
       if (r.dry_run) toast('dry run: nothing was saved');
-      reconcile(photo, left);
       if (r.activity_ids.length) state.undoStack.push({ids: r.activity_ids, left});
     } catch (e) {
-      photo.fav = !value;
+      if (isLatest()) { photo.fav = !value; reconcile(photo, left); }
       toast(e.message, true);
-      reconcile(photo, left);
     }
     scheduleCountsRefresh();
   });
@@ -512,6 +526,8 @@ function onKey(e) {
   const key = e.key;
   if (key === 'ArrowRight' || key === ' ') go(1);
   else if (key === 'ArrowLeft' || key === 'Backspace') go(-1);
+  else if (key === 'ArrowUp') rateStep(1);
+  else if (key === 'ArrowDown') rateStep(-1);
   else if (key === 'Home') show(0);
   else if (key === 'End') show(state.photos.length - 1);
   else if (/^[0-5]$/.test(key) || key === 'x' || key === 'X') { const p = current(); setRating(afterKey(p.rating, key, p.previous_stars)); }
