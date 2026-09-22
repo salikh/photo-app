@@ -38,6 +38,7 @@ All ten build-order epics are done.
 - [ ] [074](docs/tickets/074.md) Jobs page progress indicator: total, incomplete, and completed in the last day/hour/minute
 - [ ] [075](docs/tickets/075.md) Delete completed jobs older than 1 week on a full rescan
 - [ ] [076](docs/tickets/076.md) Nightly rescan becomes one queued job per top-level directory, drained by [073](docs/tickets/073.md)'s worker
+- [ ] [077](docs/tickets/077.md) Filter/sort changes use replaceState so they are not their own browser-history stop (Back always means "previous folder")
 
 ## Cross-cutting
 
