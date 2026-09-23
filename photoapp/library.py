@@ -170,7 +170,8 @@ def photo_detail(conn, photo_id):
     return None
   files = [dict(r) for r in conn.execute(
       "SELECT id, path, role, derived_from, link_source, mime_type, width,"
-      " height, bytesize, exif_date, missing, hash FROM files"
+      " height, bytesize, exif_date, aperture, shutter_speed, iso, missing,"
+      " hash FROM files"
       " WHERE photo_id = ? ORDER BY (id = ?) DESC, path",
       (photo_id, p["original_file_id"]))]
   sidecars = [

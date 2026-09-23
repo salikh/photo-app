@@ -480,6 +480,25 @@ export function undo() {
 
 // ------------------------------------------------ files / tunings panel
 
+function formatAperture(a) {
+  if (a == null) return null;
+  const r = Math.round(a * 10) / 10;
+  return 'f/' + (Number.isInteger(r) ? r : r.toFixed(1));
+}
+
+function formatShutterSpeed(s) {
+  if (s == null) return null;
+  return s >= 1 ? (Math.round(s * 10) / 10) + 's' : '1/' + Math.round(1 / s) + 's';
+}
+
+// Ticket 084: aperture/shutter speed/ISO/exif_date, one line, omitting whatever's absent.
+function cameraMetaText(f) {
+  const parts = [formatAperture(f.aperture), formatShutterSpeed(f.shutter_speed),
+                  f.iso != null ? 'ISO ' + Math.round(f.iso) : null, f.exif_date]
+      .filter((p) => p != null);
+  return parts.length ? parts.join('  ·  ') : null;
+}
+
 async function openFiles() {
   filesOpen = true;
   const photo = current();
@@ -495,6 +514,7 @@ async function openFiles() {
     detail.files.map((f) => el('div', {class: 'file' + (f.id === detail.representative_file_id ? ' rep' : '')},
       el('div', {text: f.path.split('/').pop() + '  ·  ' + f.role + (f.link_source === 'manual' ? ' (manual)' : '')}),
       el('div', {class: 'meta', text: `${f.width || '?'}×${f.height || '?'}  ${f.path}` + (f.missing ? '  MISSING' : '')}),
+      cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
       el('div', {class: 'row'},
         f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :
           el('button', {text: 'Show this', onclick: () => setRepresentative(detail, f.id)}),

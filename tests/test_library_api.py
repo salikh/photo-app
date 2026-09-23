@@ -98,6 +98,23 @@ def test_photo_detail(settings):
   assert c.get("/api/photos/99999").status_code == 404
 
 
+def test_photo_detail_includes_camera_metadata(settings):
+  # Ticket 084: aperture/shutter_speed/iso reach the API, None when the fixture (no real EXIF)
+  # has none, and the values 083's extraction would have written when present.
+  c = build(settings)
+  pid = c.get("/api/photos", params={"dir": "2020", "sort": "name"}).json()["photos"][0]["id"]
+  d = c.get(f"/api/photos/{pid}").json()
+  assert d["files"][0]["aperture"] is None
+  assert d["files"][0]["shutter_speed"] is None
+  assert d["files"][0]["iso"] is None
+  fid = d["files"][0]["id"]
+  c.app.state.db.execute(
+      "UPDATE files SET aperture = 8.0, shutter_speed = 0.5, iso = 400 WHERE id = ?", (fid,))
+  c.app.state.db.commit()
+  f = c.get(f"/api/photos/{pid}").json()["files"][0]
+  assert (f["aperture"], f["shutter_speed"], f["iso"]) == (8.0, 0.5, 400)
+
+
 def file_id(c, path):
   return c.app.state.db.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()[0]
 

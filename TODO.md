@@ -45,7 +45,7 @@ All ten build-order epics are done.
 - [x] [081](docs/tickets/081.md) Automatic purge of Pictures/.trash after a retention window (spun out of 072's decisions)
 - [x] [082](docs/tickets/082.md) "Delete this file" button in the loupe's Files panel, with a Medium-thumbnail confirmation screen
 - [x] [083](docs/tickets/083.md) Schema + backfill for camera metadata (aperture, shutter speed, ISO) — blocks 084
-- [ ] [084](docs/tickets/084.md) Show camera metadata in the Files detail view (blocked by 083)
+- [x] [084](docs/tickets/084.md) Show camera metadata in the Files detail view (blocked by 083)
 - [ ] [085](docs/tickets/085.md) Adjustable per-file dcraw settings with sliders and thumbnail regeneration
 
 ## Cross-cutting
@@ -86,9 +86,9 @@ Answered earlier: 053 (a single file's reject never rejects the pair while the o
 newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars), 042
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
-**No open question tickets right now.** Every build-order and cross-cutting item above is done. What remains is
-083–085 (none urgent; 084 is blocked by 083; 083/085 still need design decisions before they're actionable) and
-whatever the next `/loop` iteration or the user asks for.
+**No open question tickets right now.** Every build-order and cross-cutting item above is done except
+[085](docs/tickets/085.md) (adjustable per-file dcraw settings — not urgent, still needs its scope decision
+made) and whatever the next `/loop` iteration or the user asks for.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
 `http://<this machine>:8080/` on the phone or tablet.

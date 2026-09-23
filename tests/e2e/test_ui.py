@@ -243,6 +243,25 @@ def test_files_panel_and_representative_for_pair(page, server, tmp_path):
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
 
 
+def test_files_panel_shows_camera_metadata(page, server):
+  # ticket 084: aperture/shutter speed/ISO/exif_date, written directly since the fixture
+  # files carry no real EXIF (083 extraction is covered separately).
+  ids = photo_ids(server)
+  fid = server.app.state.db.execute(
+      "SELECT id FROM files WHERE photo_id = ?", (ids[0],)).fetchone()[0]
+  server.app.state.db.execute(
+      "UPDATE files SET aperture = 2.8, shutter_speed = 0.004, iso = 400,"
+      " exif_date = '2024:06:01 12:00:00' WHERE id = ?", (fid,))
+  server.app.state.db.commit()
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel .file")).to_contain_text("f/2.8")
+  expect(page.locator(".files-panel .file")).to_contain_text("1/250s")
+  expect(page.locator(".files-panel .file")).to_contain_text("ISO 400")
+  expect(page.locator(".files-panel .file")).to_contain_text("2024:06:01 12:00:00")
+
+
 def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):
   # ticket 082: per-file delete from the Files panel, gated by a modal confirmation.
   import os
