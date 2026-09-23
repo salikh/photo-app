@@ -27,7 +27,7 @@ All ten build-order epics are done.
 - [x] [057](docs/tickets/057.md) Counts on the filter buttons and grid shortcuts
 - [x] [058](docs/tickets/058.md) Move the reject button to the left of the rating buttons (loupe HUD and selection bar)
 
-## Later (requested, not for now)
+## Toward functionally complete system
 
 - [x] [059](docs/tickets/059.md) Scrollable, tappable thumbnail strip below the main image (whole folder, also on phones)
 - [x] [060](docs/tickets/060.md) Pinch zoom in/out and pan of the zoomed (original size) photo on tablets (real iPad: "works good")
@@ -51,6 +51,7 @@ All ten build-order epics are done.
 - [ ] [087](docs/tickets/087.md) Fav and tag-based filter buttons in the folder view (pairs well with 086)
 - [ ] [088](docs/tickets/088.md) Batch actions scoped to the current selection, including delete
 - [ ] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder
+- [ ] [091](docs/tickets/091.md) Help screen (keyboard shortcuts), opened by 'h', '?' or F1 (user request 2026-09-23)
 
 ## Cross-cutting
 
@@ -77,6 +78,11 @@ Convention: a ticket that needs the user's input gets a **question ticket** (`Ty
 context, the question, options if any, and an empty **Answer** section). The question lists what it
 `Blocks:`; the blocked ticket has a `Blocked by:` line. When the user has answered, the question ticket is
 closed and the blocked ticket continues. A ticket is "actionable" when it has no open blocker.
+
+Open now:
+
+- [ ] [090](docs/tickets/090.md) Should 085's adjustable RAW settings affect only the background dcraw
+      cache, or the on-demand rawpy path too? → blocks [085](docs/tickets/085.md)
 
 All of these have been answered and closed:
 
