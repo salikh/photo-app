@@ -176,6 +176,62 @@ def test_rerender_thumbs_endpoint(settings):
   assert c.post("/api/files/9999/rerender_thumbs").status_code == 404
 
 
+def test_raw_settings_endpoint_sets_clears_cache_and_reports_current_settings(settings):
+  # Ticket 085: setting per-file RAW settings clears every cached size, same mechanism as
+  # rerender_thumbs (ticket 079), so the next request regenerates with the new settings applied.
+  c = app_with_pair(settings)
+  file_id = fid(c, "y/a.jpg")
+  c.get(f"/img/Thumb/{file_id}")   # populate a cache entry to prove it gets cleared
+  assert c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"] == 1
+
+  r = c.post(f"/api/files/{file_id}/raw_settings", json={"bright": 1.4, "highlight": 2})
+  assert r.status_code == 200, r.text
+  body = r.json()
+  assert body["file_id"] == file_id and body["cleared"] == ["Thumb"]
+  assert body["settings"] == {"raw_bright": 1.4, "raw_wb_mode": None, "raw_wb_r": None,
+                              "raw_wb_g": None, "raw_wb_b": None, "raw_highlight": 2}
+  assert c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"] == 0
+
+  # posting again (e.g. clearing back to default) replaces wholesale, not a partial patch
+  r2 = c.post(f"/api/files/{file_id}/raw_settings", json={})
+  assert r2.json()["settings"] == {c: None for c in body["settings"]}
+
+
+def test_raw_settings_endpoint_rejects_bad_input_and_unknown_file(settings):
+  c = app_with_pair(settings)
+  file_id = fid(c, "y/a.jpg")
+  assert c.post(f"/api/files/{file_id}/raw_settings", json={"wb_mode": "nope"}).status_code == 400
+  assert c.post(f"/api/files/{file_id}/raw_settings", json={"highlight": 99}).status_code == 400
+  assert c.post("/api/files/99999/raw_settings", json={"bright": 1.0}).status_code == 404
+
+
+def test_tuning_raw_settings_switches_a_raw_file_from_the_embedded_shortcut_to_a_demosaic(
+    settings, monkeypatch):
+  # Ticket 085/090's central behavior: at default settings a RAW file's on-demand render takes
+  # the cheap embedded-preview shortcut; once tuned, every size demosaics instead.
+  from PIL import Image
+  from photoapp import previews
+
+  calls = {"embedded": 0, "demosaic": 0}
+  monkeypatch.setattr(previews, "embedded_preview",
+                      lambda path: (calls.__setitem__("embedded", calls["embedded"] + 1),
+                                    Image.new("RGB", (1600, 1200)))[1])
+  monkeypatch.setattr(previews, "render",
+                      lambda path, settings=None, half_size=False:
+                      (calls.__setitem__("demosaic", calls["demosaic"] + 1),
+                       Image.new("RGB", (1600, 1200)))[1])
+
+  c = app_with_pair(settings)
+  file_id = fid(c, "y/K1.DNG")
+
+  assert c.get(f"/img/Thumb/{file_id}").status_code == 200
+  assert calls == {"embedded": 1, "demosaic": 0}
+
+  c.post(f"/api/files/{file_id}/raw_settings", json={"bright": 1.5})
+  assert c.get(f"/img/Thumb/{file_id}").status_code == 200
+  assert calls == {"embedded": 1, "demosaic": 1}   # this time it demosaiced, not the free shortcut
+
+
 def test_seconds_until_next_hour():
   now = datetime.datetime(2026, 9, 21, 1, 30, 0)
   assert scan.seconds_until(3, now) == 90 * 60

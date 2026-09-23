@@ -115,6 +115,19 @@ def test_photo_detail_includes_camera_metadata(settings):
   assert (f["aperture"], f["shutter_speed"], f["iso"]) == (8.0, 0.5, 400)
 
 
+def test_photo_detail_includes_raw_settings(settings):
+  # Ticket 085: per-file RAW settings reach the API alongside camera metadata, None (default)
+  # until set through /api/files/{id}/raw_settings.
+  c = build(settings)
+  pid = c.get("/api/photos", params={"dir": "2020", "sort": "name"}).json()["photos"][0]["id"]
+  fid = c.get(f"/api/photos/{pid}").json()["files"][0]["id"]
+  f = c.get(f"/api/photos/{pid}").json()["files"][0]
+  assert (f["raw_bright"], f["raw_wb_mode"], f["raw_highlight"]) == (None, None, None)
+  c.post(f"/api/files/{fid}/raw_settings", json={"bright": 1.3, "wb_mode": "auto", "highlight": 1})
+  f = c.get(f"/api/photos/{pid}").json()["files"][0]
+  assert (f["raw_bright"], f["raw_wb_mode"], f["raw_highlight"]) == (1.3, "auto", 1)
+
+
 def file_id(c, path):
   return c.app.state.db.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()[0]
 

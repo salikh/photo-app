@@ -73,6 +73,15 @@ class ExportBody(pydantic.BaseModel):
   target: str
 
 
+class RawSettingsBody(pydantic.BaseModel):
+  bright: float | None = None
+  wb_mode: str | None = None
+  wb_r: float | None = None
+  wb_g: float | None = None
+  wb_b: float | None = None
+  highlight: int | None = None
+
+
 def create_app(conn, settings):
   """Build the app around an open (migrated) database and its settings."""
   app = FastAPI(title="photos")
@@ -400,6 +409,26 @@ def create_app(conn, settings):
     with app.state.db_lock:
       cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
     return {"file_id": file_id, "cleared": cleared}
+
+  @app.post("/api/files/{file_id}/raw_settings")
+  @db_route
+  def set_raw_settings(file_id: int, body: RawSettingsBody):
+    """Ticket 085: replace this file's RAW conversion settings wholesale (every field, including
+    back to default for one left out -- matches how the frontend's sliders always submit the
+    full current set) and clear every cached thumbnail size (ticket 079's rerender_thumbs
+    mechanism) so the next request regenerates with the new settings -- a settings change is
+    conceptually the same operation as "this thumbnail needs a fresh render," just triggered by
+    a slider instead of a broken-image report."""
+    row = file_row(file_id)
+    with app.state.db_lock:
+      try:
+        raw_settings.set(app.state.db, file_id, bright=body.bright, wb_mode=body.wb_mode,
+                         wb_r=body.wb_r, wb_g=body.wb_g, wb_b=body.wb_b, highlight=body.highlight)
+      except raw_settings.SettingsError as e:
+        raise HTTPException(400, str(e))
+      cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
+      current = raw_settings.get(app.state.db, file_id)
+    return {"file_id": file_id, "cleared": cleared, "settings": current}
 
   @app.get("/api/thumbs/usage")
   @db_route
