@@ -6,91 +6,28 @@ jobs.JobQueue, just with its own low-priority, single-worker queue, so it never 
 CPU or disk I/O with normal use of the app, a running scan, or the on-demand render queue
 (api.py's "raw_render", used when a RAW has no usable embedded preview at all).
 
-Default rendering, as asked (ticket 066) -- this deliberately uses the external `dcraw` binary,
-not the rawpy/LibRaw path the on-demand renderer uses (ticket 028); it matches the original
-plan's wording (plan.md 4.5: "dcraw -c -h -w, piped into Pillow") and needs no Python RAW
-library:
-
-  Thumb           `dcraw -e -c FILE`: the camera's own embedded JPEG preview, straight to
-                  stdout. Fast (well under a second) and plenty for a 300px thumbnail.
-  Small / Medium  `dcraw -c -h -w FILE`: half-size demosaic (-h), camera white balance (-w),
-                  PPM to stdout. One decode covers both sizes.
-  Huge            `dcraw -c -w -q 3 FILE`: full-size, high-quality (AHD, -q 3) demosaic, PPM to
-                  stdout -- this *is* Huge's "full size of the source" definition, so no resize.
-
-Non-RAW files (JPEG, PNG, ...) are rendered with Pillow directly (thumbs.render), same as
-on-demand generation; dcraw is only used for RAW files.
+Rendering (ticket 090's resolution to ticket 085): the same thumbs.ensure() the on-demand path
+uses for every file, RAW or not -- this used to shell out to the external `dcraw` binary for RAW
+files specifically (matching the original plan's wording, plan.md 4.5), a second RAW renderer
+alongside the on-demand path's rawpy/LibRaw one (ticket 028). That split was retired once a
+photo's thumbnails needed to look identical regardless of which path rendered them first (ticket
+085's per-file settings): thumbs.ensure() already knows, from a file's settings alone, whether to
+take the fast embedded-preview shortcut or actually demosaic, at every size -- so populate_file()
+no longer needs its own RAW-specific logic at all. See docs/design/thumbnails.md.
 """
 
-import io
-import os
-import shutil
-import subprocess
-
 from absl import logging
-from PIL import Image
 
-from photoapp import fileinfo
 from photoapp import jobs
 from photoapp import paths
 from photoapp import thumbs
 
-DCRAW_TIMEOUT = 180
-
-
-class DcrawError(Exception):
-  """dcraw is missing, timed out, or refused the file."""
-
-
-def dcraw_path():
-  return shutil.which("dcraw")
-
-
-def dcraw_available():
-  return dcraw_path() is not None
-
-
-def _run_dcraw(args, timeout=DCRAW_TIMEOUT):
-  exe = dcraw_path()
-  if not exe:
-    raise DcrawError(
-        "dcraw is not installed (see docs/operations.md 'Populating thumbnails')")
-  logging.vlog(7, "dcraw %s", " ".join(args))
-  try:
-    r = subprocess.run([exe, *args], capture_output=True, timeout=timeout)
-  except subprocess.TimeoutExpired:
-    raise DcrawError(f"dcraw timed out after {timeout}s: {' '.join(args)}")
-  except OSError as e:
-    raise DcrawError(f"could not run dcraw: {e}")
-  if r.returncode != 0 or not r.stdout:
-    raise DcrawError(
-        f"dcraw failed (exit {r.returncode}) on {args[-1]}: "
-        f"{r.stderr.decode('utf-8', 'replace').strip()[:300]}")
-  logging.vlog(7, "dcraw %s -> %d bytes", args[-1], len(r.stdout))
-  return r.stdout
-
-
-def extract_embedded_thumb(source):
-  """The DNG's embedded JPEG preview (`dcraw -e -c`), as an RGB PIL image."""
-  data = _run_dcraw(["-e", "-c", source])
-  return Image.open(io.BytesIO(data)).convert("RGB")
-
-
-def render_dcraw(source, half_size):
-  """Full demosaic of source via dcraw, as an RGB PIL image.
-
-  half_size: -h (fast, about half the linear resolution) for Small/Medium;
-  False: full size, higher quality (-q 3) for Huge.
-  """
-  args = ["-c", "-w"]
-  args += ["-h"] if half_size else ["-q", "3"]
-  data = _run_dcraw(args + [source])
-  return Image.open(io.BytesIO(data)).convert("RGB")
-
 
 def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumbs.SIZES):
-  """Generate every size in `sizes` that rel_path is still missing. Returns the
-  sizes made.
+  """Generate every size in `sizes` that rel_path is still missing, via thumbs.ensure() -- the
+  same renderer and per-file settings (ticket 085) the on-demand path uses, so a photo's
+  thumbnails look the same whether this background populator or a live request made them first.
+  Returns the sizes made.
 
   Never touches a size that already exists (thumbs.lookup), so this is safe
   to run repeatedly and never overwrites anything a person or another job
@@ -100,43 +37,12 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
   if not missing:
     logging.vlog(7, "%s: nothing missing, skipping", rel_path)
     return []
-  abs_path = os.path.join(pictures_dir, rel_path)
   made = []
-
-  def emit(img, size, source):
-    dest = thumbs.thumb_path(thumbs_dir, size, rel_path)
-    thumbs.save(img, dest, thumbs.LONG_EDGE[size])
-    thumbs.record(conn, file_id, size, dest, source)
-    made.append(size)
-    logging.vlog(5, "%s: wrote %s (%s)", rel_path, size, source)
-
-  if not fileinfo.is_raw(rel_path):
-    # thumbs.ensure() -> make() already logs at vlog(5)/vlog(7) per size.
-    for size in missing:
-      out = thumbs.ensure(conn, pictures_dir, thumbs_dir, file_id, rel_path, size)
-      if out:
-        made.append(size)
-    conn.commit()
-    return made
-
-  if "Thumb" in missing:
-    try:
-      emit(extract_embedded_thumb(abs_path), "Thumb", "dcraw-embedded")
-      missing = [s for s in missing if s != "Thumb"]
-    except DcrawError as e:
-      logging.vlog(3, "%s: embedded preview failed (%s), falling back to a half-size render",
-                   rel_path, e)
-      # left in `missing`: the half-size pass below also covers Thumb.
-
-  half_needed = [s for s in ("Thumb", "Small", "Medium") if s in missing]
-  if half_needed:
-    img = render_dcraw(abs_path, half_size=True)
-    for size in half_needed:
-      emit(img, size, "dcraw-half")
-
-  if "Huge" in missing:
-    emit(render_dcraw(abs_path, half_size=False), "Huge", "dcraw-full")
-
+  # thumbs.ensure() -> make() already logs at vlog(5)/vlog(7) per size.
+  for size in missing:
+    out = thumbs.ensure(conn, pictures_dir, thumbs_dir, file_id, rel_path, size)
+    if out:
+      made.append(size)
   conn.commit()
   return made
 

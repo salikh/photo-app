@@ -48,8 +48,12 @@ row (so its rating/history survives a temporarily-unmounted drive or a later-res
 file — see [trash.md](trash.md)). `aperture`/`shutter_speed`/`iso` (ticket 083) are camera
 metadata read from EXIF, alongside the already-existing `exif_date`; any can be `NULL` if the file
 has no EXIF or lacks that tag; all four are shown per-file in the loupe's Files panel (ticket 084).
-`dcraw_brightness`/`dcraw_highlight_mode`/`dcraw_wb_mode` (ticket 085) are per-file overrides for
-the background dcraw renderer, `NULL` meaning "use the default." See [photo-model.md](photo-model.md).
+`raw_bright`/`raw_wb_mode`/`raw_wb_r`/`raw_wb_g`/`raw_wb_b`/`raw_highlight` (ticket 085) are
+per-file RAW conversion overrides applied by the one shared renderer both the on-demand and
+background thumbnail paths use (ticket 090) — `NULL` in all six means "use the default" (also the
+condition [thumbnails.md](thumbnails.md) uses to decide whether the cheap embedded-preview
+shortcut is still available for this file, at any size). `raw_wb_r`/`g`/`b` only matter when
+`raw_wb_mode = 'manual'`. See [photo-model.md](photo-model.md).
 
 **`photos`** — one row per logical picture, the unit ratings/fav/tags actually apply to.
 `original_file_id`/`representative_file_id` point into `files`; `rating`/`fav`/`previous_stars` are

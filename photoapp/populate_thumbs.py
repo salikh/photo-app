@@ -2,8 +2,8 @@
 
   python -m photoapp.populate_thumbs [--limit=N]
 
-Finds every file that still lacks one of the four sizes and renders it (dcraw for RAW files,
-Pillow for everything else -- see photoapp/thumb_populate.py for the exact commands). Only ever
+Finds every file that still lacks one of the four sizes and renders it (thumbs.ensure() -- rawpy/
+LibRaw for RAW files, Pillow for everything else; see photoapp/thumb_populate.py). Only ever
 one file is being rendered at a time, and the worker thread lowers its own CPU/I/O priority
 (os.nice(19) plus best-effort `ionice -c3`), so this never competes with normal use of the app,
 with a running scan, or with the on-demand render queue. Read-only on the library; only writes
@@ -52,10 +52,6 @@ def main(argv):
     raise app.UsageError(
         f"--sizes must be a non-empty subset of {list(thumbs.SIZES)}, got {FLAGS.sizes}")
   settings = config.Settings.from_flags()
-  if not thumb_populate.dcraw_available():
-    logging.warning(
-        "dcraw is not on PATH: RAW files will fail (install it, e.g. "
-        "'apt install dcraw'); non-RAW files are unaffected.")
   conn = db.open_state(settings.state_dir, busy_timeout=60.0)
   populator = thumb_populate.Populator(
       settings.db_path, settings.pictures_dir, settings.thumbs_dir, sizes)

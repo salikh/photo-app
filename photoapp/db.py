@@ -151,15 +151,33 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN iso INTEGER;
     """,
     """
-    -- Per-file dcraw demosaic overrides (ticket 085). NULL means "use the app's normal default"
-    -- for that setting. Only affects thumb_populate.render_dcraw's Small/Medium/Huge output for a
-    -- RAW file -- not Thumb (always the camera's own embedded preview, never demosaiced) and not
-    -- the on-demand path (previews.py, rawpy/LibRaw, a separate renderer -- see the ticket for why
-    -- this was scoped to the dcraw path only). dcraw_wb_mode: 'camera' (dcraw -w, the default) or
-    -- 'auto' (dcraw -a). dcraw_highlight_mode: dcraw -H, 0-9 (0 = clip, dcraw's own default).
+    -- Per-file dcraw demosaic overrides (ticket 085, original scope). Superseded by the next
+    -- migration before anything ever read or wrote these -- 090's resolution replaced the
+    -- dcraw-only design with one shared rawpy/LibRaw renderer used everywhere, so these columns'
+    -- own "only the dcraw path, not on-demand" framing no longer describes the app. Dropped rather
+    -- than repurposed/renamed: migrations are append-only history, and starting the real columns
+    -- clean in the next migration is simpler than working around these names' stale meaning.
     ALTER TABLE files ADD COLUMN dcraw_brightness REAL;
     ALTER TABLE files ADD COLUMN dcraw_highlight_mode INTEGER;
     ALTER TABLE files ADD COLUMN dcraw_wb_mode TEXT;
+    """,
+    """
+    -- Per-file RAW conversion settings (ticket 085, per 090's resolution): apply uniformly to
+    -- both the on-demand and background render paths, now merged onto rawpy/LibRaw. NULL means
+    -- "current hardcoded default" for that setting -- a file is "at default" (docs/design/
+    -- thumbnails.md's embedded-preview-shortcut rule) iff every one of these columns is NULL.
+    -- raw_wb_mode: 'camera' (LibRaw use_camera_wb, the default), 'auto' (use_auto_wb), or 'manual'
+    -- (user_wb from raw_wb_r/g/b, green channel reused for LibRaw's 4th/G2 multiplier).
+    -- raw_highlight: LibRaw highlight_mode, 0-9 (0 = clip, LibRaw's own default).
+    ALTER TABLE files DROP COLUMN dcraw_brightness;
+    ALTER TABLE files DROP COLUMN dcraw_highlight_mode;
+    ALTER TABLE files DROP COLUMN dcraw_wb_mode;
+    ALTER TABLE files ADD COLUMN raw_bright REAL;
+    ALTER TABLE files ADD COLUMN raw_wb_mode TEXT;
+    ALTER TABLE files ADD COLUMN raw_wb_r REAL;
+    ALTER TABLE files ADD COLUMN raw_wb_g REAL;
+    ALTER TABLE files ADD COLUMN raw_wb_b REAL;
+    ALTER TABLE files ADD COLUMN raw_highlight INTEGER;
     """,
 ]
 

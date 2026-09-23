@@ -15,6 +15,7 @@ from PIL import ImageOps
 from photoapp import fileinfo
 from photoapp import paths
 from photoapp import previews
+from photoapp import raw_settings
 
 # Smallest to largest. Huge is the full size of the source.
 SIZES = ("Thumb", "Small", "Medium", "Huge")
@@ -57,13 +58,21 @@ def best_available(thumbs_dir, size, file_path):
   return None
 
 
-def _open(source):
+def _open(source, settings=None):
   """Decode source to an RGB PIL image.
 
-  RAW files use their embedded preview: Pillow would "succeed" on a DNG but
-  only return its tiny IFD0 thumbnail. Raises Unsupported if nothing decodes.
+  RAW files normally use their embedded preview -- fast, no demosaic (Pillow would "succeed" on
+  a DNG but only return its tiny IFD0 thumbnail, which is why this doesn't just use Pillow
+  directly). But that shortcut only applies while settings is at default (ticket 085): once
+  settings has been tuned away from default for this file, every size demosaics instead, so the
+  tuning is actually visible (docs/design/thumbnails.md). Raises Unsupported if nothing decodes.
   """
   if fileinfo.is_raw(source):
+    if settings and not raw_settings.is_default(settings):
+      img = previews.render(source, settings)
+      if img is None:
+        raise Unsupported(f"{source}: LibRaw could not decode with the given settings")
+      return img.convert("RGB")
     preview = previews.embedded_preview(source)
     if preview is None:
       raise Unsupported(f"{source}: no usable embedded preview")
@@ -93,23 +102,27 @@ def save(img, dest, long_edge):
   return dest
 
 
-def render(source, dest, long_edge):
+def render(source, dest, long_edge, settings=None):
   """Write a JPEG of source, at most long_edge on its long side, to dest.
 
-  Never upscales. long_edge None keeps the full size. The write is atomic.
-  Raises Unsupported if source cannot be decoded (a RAW file without a
-  usable embedded preview needs render_raw_sizes()).
+  settings: the source file's raw_settings.get()-shaped dict (ticket 085), or None -- ignored
+  for a non-RAW source. Never upscales. long_edge None keeps the full size. The write is atomic.
+  Raises Unsupported if source cannot be decoded (a RAW file without a usable embedded preview,
+  at default settings, needs render_raw_sizes()).
   """
-  return save(_open(source), dest, long_edge)
+  return save(_open(source, settings), dest, long_edge)
 
 
-def render_raw_sizes(pictures_dir, thumbs_dir, file_path):
+def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None):
   """Demosaic a RAW and write Thumb/Small/Medium. Returns {size: path}.
 
-  Slow (about a second); used by the background job when a RAW has no
-  usable embedded preview. Returns {} if the file cannot be decoded.
+  Slow (about a second); used by the background job when a RAW has no usable embedded preview
+  (regardless of settings -- there is no faster path available for this file at all). Half size:
+  plenty for these three, and this path never populates Huge (a RAW with no usable embedded
+  preview and no tuned settings has no fast way to get a full-size Huge either -- left to the
+  next on-demand request, same as before this ticket). Returns {} if the file cannot be decoded.
   """
-  img = previews.render(os.path.join(pictures_dir, file_path))
+  img = previews.render(os.path.join(pictures_dir, file_path), settings, half_size=True)
   if img is None:
     logging.vlog(3, "%s: LibRaw could not decode this RAW", file_path)
     return {}
@@ -150,13 +163,19 @@ def _record(conn, file_id, size, path, source):
       (file_id, size, path, os.path.getsize(path), source))
 
 
-def make(pictures_dir, thumbs_dir, file_path, size):
+def make(pictures_dir, thumbs_dir, file_path, size, settings=None):
   """Return (path, source) of a thumbnail of exactly this size, making it if
   needed, or None if that is not possible without a RAW converter.
 
   Order: existing file in the tree; downscale from a larger existing size;
   render from the original with Pillow. Touches no database, so it can run
-  outside any lock.
+  outside any lock. settings (ticket 085): file_path's raw_settings.get()-shaped dict, threaded
+  through to render()/_open() -- only matters for a RAW source (fileinfo.is_raw), and only when
+  rendering from the *original*: a "downscale from a larger cached size" source is already a
+  plain JPEG the settings were baked into (or not) when that larger size was itself produced, so
+  it needs no further settings-awareness here. Callers that change a file's settings are
+  responsible for clearing every cached size first (thumbs.clear) so a stale, differently-tuned
+  cache is never downscaled from by mistake.
   """
   path = lookup(thumbs_dir, size, file_path)
   if path:
@@ -169,18 +188,26 @@ def make(pictures_dir, thumbs_dir, file_path, size):
   sources.append(os.path.join(pictures_dir, file_path))
   for source in sources:
     try:
-      render(source, dest, LONG_EDGE[size])
+      render(source, dest, LONG_EDGE[size], settings=settings)
     except Unsupported as e:
       logging.vlog(3, "cannot render %s from %s: %s", size, source, e)
       continue
-    logging.vlog(5, "%s: rendered %s from %s (pillow)", file_path, size, source)
+    logging.vlog(5, "%s: rendered %s from %s", file_path, size, source)
     return dest, "pillow"
   return None
 
 
 def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
-  """make() and record the result in the thumbs table. Returns the path."""
-  made = make(pictures_dir, thumbs_dir, file_path, size)
+  """make() and record the result in the thumbs table. Returns the path.
+
+  Looks up file_id's per-file RAW settings (ticket 085) itself, since it already has conn --
+  every caller through ensure() (ticket 089's export, thumb_populate.py's background populator)
+  gets settings-awareness for free, unlike bare make(), which stays pure/DB-free for callers that
+  already have the settings dict in hand (the on-demand /img/{size} handler, which fetches the
+  file row and settings together in one round trip before calling make() directly).
+  """
+  settings = raw_settings.get(conn, file_id)
+  made = make(pictures_dir, thumbs_dir, file_path, size, settings=settings)
   if made is None:
     return None
   path, source = made

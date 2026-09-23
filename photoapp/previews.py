@@ -1,8 +1,11 @@
-"""RAW support through LibRaw (rawpy), replacing exiftool + dcraw.
+"""RAW support through LibRaw (rawpy) -- the one shared renderer for both the on-demand and
+background thumbnail paths (ticket 090's resolution to ticket 085).
 
-embedded_preview(): the camera's own JPEG preview, usually full size and
-available in milliseconds. render(): a demosaiced half-size render, slower
-(about a second) and used only when there is no usable embedded preview.
+embedded_preview(): the camera's own JPEG preview, usually full size and available in
+milliseconds -- no demosaic, so per-file settings (ticket 085) have no effect on it.
+render(): an actual LibRaw demosaic, applying those settings, slower (about a second at full
+size); used whenever the embedded-preview shortcut isn't available or isn't allowed for this
+file (see docs/design/thumbnails.md).
 """
 
 import io
@@ -56,14 +59,39 @@ def embedded_preview(path):
   return img
 
 
-def render(path):
-  """A half-size demosaiced render (camera white balance), or None."""
+def _postprocess_kwargs(settings):
+  """rawpy.postprocess() kwargs for a raw_settings.get()-shaped dict (any/all values None ->
+  today's hardcoded defaults: camera white balance, everything else LibRaw's own default)."""
+  settings = settings or {}
+  kwargs = {"output_bps": 8}
+  wb_mode = settings.get("raw_wb_mode")
+  if wb_mode == "auto":
+    kwargs["use_auto_wb"] = True
+  elif wb_mode == "manual" and settings.get("raw_wb_r") is not None:
+    r, g, b = settings["raw_wb_r"], settings["raw_wb_g"], settings["raw_wb_b"]
+    kwargs["user_wb"] = [r, g, b, g]   # LibRaw's 4th multiplier is the 2nd green (G2); reuse G
+  else:
+    kwargs["use_camera_wb"] = True   # 'camera', or no mode set at all
+  if settings.get("raw_bright") is not None:
+    kwargs["bright"] = settings["raw_bright"]
+  if settings.get("raw_highlight") is not None:
+    kwargs["highlight_mode"] = settings["raw_highlight"]
+  return kwargs
+
+
+def render(path, settings=None, half_size=False):
+  """A demosaiced render applying settings (a raw_settings.get()-shaped dict, or None for
+  today's hardcoded defaults), or None if LibRaw can't decode this file. half_size: the
+  raw_render job queue's fallback for a RAW with no usable embedded preview at all -- faster,
+  and full resolution isn't needed for Thumb/Small/Medium anyway (Huge still wants full size,
+  see thumbs.py, so callers that might be asked for Huge should not pass half_size)."""
   try:
     with rawpy.imread(path) as raw:
-      rgb = raw.postprocess(half_size=True, use_camera_wb=True, output_bps=8)
+      rgb = raw.postprocess(half_size=half_size, **_postprocess_kwargs(settings))
   except (rawpy.LibRawError, OSError, ValueError) as e:
-    logging.vlog(3, "%s: LibRaw full render failed: %s", path, e)
+    logging.vlog(3, "%s: LibRaw render failed: %s", path, e)
     return None
   img = Image.fromarray(rgb)
-  logging.vlog(7, "%s: full LibRaw render (%dx%d)", path, *img.size)
+  logging.vlog(7, "%s: LibRaw render (%dx%d)%s", path, *img.size,
+              "" if half_size else " (full size)")
   return img

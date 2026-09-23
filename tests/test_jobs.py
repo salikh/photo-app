@@ -211,7 +211,7 @@ def test_raw_without_preview_is_rendered_in_background(settings, monkeypatch):
   scan.scan(conn, d)
   fid = conn.execute("SELECT id FROM files").fetchone()[0]
 
-  def fake_render(pictures_dir, thumbs_dir, file_path):
+  def fake_render(pictures_dir, thumbs_dir, file_path, file_settings=None):
     out = {}
     for size in ("Thumb", "Small", "Medium"):
       dest = thumbs.thumb_path(thumbs_dir, size, file_path)
@@ -312,11 +312,8 @@ def test_populate_thumb_jobs_appear_on_the_running_apps_jobs_page(settings, monk
   assert empty["counts"] == {} and empty["jobs"] == []
   assert empty["progress"]["total"] == 0 and empty["progress"]["incomplete"] == 0
 
-  monkeypatch.setattr(thumb_populate, "dcraw_available", lambda: True)
-  monkeypatch.setattr(thumb_populate, "extract_embedded_thumb",
-                      lambda source: Image.new("RGB", (300, 200)))
-  monkeypatch.setattr(thumb_populate, "render_dcraw",
-                      lambda source, half_size: Image.new("RGB", (2000, 1300)))
+  from photoapp import previews
+  monkeypatch.setattr(previews, "embedded_preview", lambda path: Image.new("RGB", (2000, 1300)))
   populator = thumb_populate.Populator(settings.db_path, d, settings.thumbs_dir)
   populator.enqueue_missing(conn)
   populator.start()

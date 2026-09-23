@@ -27,6 +27,7 @@ from photoapp import library
 from photoapp import manual_links
 from photoapp import recovery
 from photoapp import scan as scan_lib
+from photoapp import raw_settings
 from photoapp import thumb_populate
 from photoapp import thumbs
 from photoapp import trash
@@ -116,8 +117,9 @@ def create_app(conn, settings):
                        (job["file_id"],)).fetchone()
     if row is None:
       raise RuntimeError("file is gone")
+    file_settings = raw_settings.get(conn, row["id"])   # ticket 085: parity with every other path
     made = thumbs.render_raw_sizes(settings.pictures_dir, settings.thumbs_dir,
-                                   row["path"])
+                                   row["path"], file_settings)
     if not made:
       raise RuntimeError("LibRaw could not decode the file")
     for size, path in made.items():
@@ -505,9 +507,9 @@ def create_app(conn, settings):
   # a thumbnail or a RAW preview costs CPU, so only a few run at the same time.
   render_slots = threading.BoundedSemaphore(3)
 
-  def render_limited(*args):
+  def render_limited(*args, **kwargs):
     with render_slots:
-      return thumbs.make(*args)
+      return thumbs.make(*args, **kwargs)
 
   @app.get("/img/full/{file_id}")
   @db_route
@@ -532,9 +534,13 @@ def create_app(conn, settings):
         path = os.path.join(settings.pictures_dir, row["path"])
         logging.vlog(7, "%s: Huge served from the original", row["path"])
     else:
+      def get_settings():
+        with app.state.db_lock:
+          return raw_settings.get(app.state.db, file_id)
+      file_settings = await run_in_threadpool(run_db, get_settings)
       made = await run_in_threadpool(
           render_limited, settings.pictures_dir, settings.thumbs_dir,
-          row["path"], size)
+          row["path"], size, settings=file_settings)
       path = None
       if made:
         path, source = made
