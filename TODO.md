@@ -47,6 +47,10 @@ All ten build-order epics are done.
 - [x] [083](docs/tickets/083.md) Schema + backfill for camera metadata (aperture, shutter speed, ISO) — blocks 084
 - [x] [084](docs/tickets/084.md) Show camera metadata in the Files detail view (blocked by 083)
 - [ ] [085](docs/tickets/085.md) Adjustable per-file dcraw settings with sliders and thumbnail regeneration
+- [ ] [086](docs/tickets/086.md) "This folder" / "this folder + subdirectories" toggle for the grid
+- [ ] [087](docs/tickets/087.md) Fav and tag-based filter buttons in the folder view (pairs well with 086)
+- [ ] [088](docs/tickets/088.md) Batch actions scoped to the current selection, including delete
+- [ ] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder
 
 ## Cross-cutting
 
@@ -87,8 +91,9 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
 **No open question tickets right now.** Every build-order and cross-cutting item above is done except
-[085](docs/tickets/085.md) (adjustable per-file dcraw settings — not urgent, still needs its scope decision
-made) and whatever the next `/loop` iteration or the user asks for.
+[085](docs/tickets/085.md)–[089](docs/tickets/089.md) (dcraw settings, subdir-recursive filtering, fav/tag
+filter buttons, batch selection actions, export — none urgent, each still has open design decisions
+recorded in its own ticket) and whatever the next `/loop` iteration or the user asks for.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
 `http://<this machine>:8080/` on the phone or tablet.
