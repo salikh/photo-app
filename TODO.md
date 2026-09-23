@@ -13,9 +13,13 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
 
 - [ ] [093](docs/tickets/093.md) Render a tuned RAW's thumbnails once at Huge and downscale the
       rest from it, instead of demosaicing separately per size (follow-up to 085/090, not blocking)
+- [ ] [094](docs/tickets/094.md) Plan a new tuning architecture: provisional (not global) thumbnail
+      regen while adjusting RAW settings, a hotkey to compare current vs. new rendering, room for
+      future browser-local rendering, and an explicit Save button that commits + triggers the real
+      backend regen
 
-093 is a fresh follow-up filed mid-085 (2026-09-23/24), not yet scoped, and is the only open
-ticket left. 085-089, 091 and 092 are done — see `STATUS.md`.
+093 and 094 are open follow-ups filed after 085 (2026-09-23/24), neither yet scoped/built. 085-089,
+091 and 092 are done — see `STATUS.md`.
 
 ## Question tickets (waiting on the user)
 
