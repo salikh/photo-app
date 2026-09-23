@@ -1,8 +1,9 @@
 # Deleting rejected photos: a move, not a delete
 
 Code: `photoapp/trash.py`, `photoapp/scan.py` (`top_level_steps`, `_scan_subtree`'s pruning of
-`.trash`), `photoapp/api.py` (`/api/photos/trash`), `photoapp/static/pages.js`
-(`deleteReviewPage`).
+`.trash`), `photoapp/api.py` (`/api/photos/trash`, `/api/files/{file_id}/trash`),
+`photoapp/static/pages.js` (`deleteReviewPage`), `photoapp/static/loupe.js` (the Files panel's
+per-file `Delete` button and its confirmation modal).
 
 ## Why this is the one write that isn't a rating or a cache entry
 
@@ -55,6 +56,26 @@ from disk on its own (ticket 010's hash-recovery groundwork already assumes file
 missing without losing history), so trashing needed no new schema and no new "this Photo is gone"
 concept — the rest of the app (grids, filters, `filter_counts`) already know to exclude
 `missing = 1` files from every view.
+
+## Two entry points, one move primitive (ticket 082)
+
+`trash_photo` (Photo-scoped, reject-gated, reached from the Rejected filter view) and `trash_file`
+(single-file, not rating-gated, reached from the loupe's Files panel) both move whatever they're
+given through the same `move_to_trash`/`_move_file_and_sidecars` primitives — there is deliberately
+only one answer in this codebase to "what does deleting a file mean," not two similar-but-slightly-
+different ones that could drift apart. What differs is scope (every live file of a Photo vs. one
+file) and the gate (rated reject vs. none) — `trash_file` exists specifically because "delete this
+one tuning/export, I don't want to reject the whole Photo" is a real, different intent from "get
+this whole rejected Photo off disk."
+
+`trash_file` does **not** try to repair `photos.representative_file_id` or `original_file_id` if
+the deleted file was either — worth spelling out because the tempting fix doesn't actually work:
+`grouping.fix_representatives` only repairs a representative that *stopped being a member* of its
+Photo (unlinked, or its row deleted outright), not one that is still a member but now
+`missing = 1`. Calling it after a `trash_file` would be a no-op, not a fix. Left to the next scan
+instead, the same precedent `trash_photo` already set — a Photo can briefly look broken (its
+representative missing) until then, a real but bounded and self-healing cost, not a new failure
+mode.
 
 ## What is deliberately left alone
 

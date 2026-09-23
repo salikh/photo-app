@@ -312,6 +312,23 @@ def create_app(conn, settings):
       except ValueError as e:
         raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
 
+  @app.post("/api/files/{file_id}/trash")
+  @db_route
+  def trash_file(file_id: int):
+    """Ticket 082: move this one file (and its sidecars) to .trash/, regardless of the Photo's
+    rating -- deleting an entire rejected Photo is what /api/photos/trash is for. Returns the
+    move result plus the Photo's refreshed detail, so the loupe's Files panel can redraw from
+    one response."""
+    with app.state.db_lock:
+      try:
+        result = trash.trash_file(app.state.db, settings, file_id)
+        photo_id = app.state.db.execute(
+            "SELECT photo_id FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+        result["photo"] = library.photo_detail(app.state.db, photo_id)
+        return result
+      except trash.TrashError as e:
+        raise HTTPException(404 if e.args[0].startswith("no such") else 400, str(e))
+
   @app.post("/api/files/{file_id}/rerender_thumbs")
   @db_route
   def rerender_thumbs(file_id: int):

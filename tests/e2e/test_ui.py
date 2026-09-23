@@ -243,6 +243,52 @@ def test_files_panel_and_representative_for_pair(page, server, tmp_path):
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
 
 
+def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):
+  # ticket 082: per-file delete from the Files panel, gated by a modal confirmation.
+  import os
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel .file")).to_have_count(2)
+
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  dng_row.get_by_role("button", name="Delete").click()
+
+  expect(page.locator(".confirm-modal")).to_be_visible()
+  expect(page.locator(".confirm-card")).to_contain_text("2024/trip/IMG_0001.DNG")
+  expect(page.locator(".confirm-card img")).to_have_attribute("src", re.compile(r"^/img/Medium/"))
+
+  page.locator(".confirm-card").get_by_role("button", name="Move to trash").click()
+  expect(page.locator("#toast")).to_contain_text("moved to trash")
+  expect(page.locator(".confirm-modal")).to_have_count(0)
+  expect(page.locator(".files-panel .file", has_text="IMG_0001.DNG")).to_contain_text("MISSING")
+
+  assert not os.path.exists(os.path.join(server.pictures, "2024/trip/IMG_0001.DNG"))
+  assert os.path.isfile(os.path.join(server.pictures, ".trash/2024/trip/IMG_0001.DNG"))
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
+def test_delete_this_file_modal_cancel_leaves_file_untouched(page, server):
+  import os
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  page.keyboard.press("i")
+  page.locator(".files-panel .file", has_text="IMG_0001.DNG").get_by_role(
+      "button", name="Delete").click()
+  expect(page.locator(".confirm-modal")).to_be_visible()
+
+  page.locator(".confirm-card").get_by_role("button", name="Cancel").click()
+  expect(page.locator(".confirm-modal")).to_have_count(0)
+  assert os.path.isfile(os.path.join(server.pictures, "2024/trip/IMG_0001.DNG"))
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
 # -------------------------------------------------------------------- phone
 
 def test_phone_layout_has_no_horizontal_scroll_and_big_touch_targets(phone, server):

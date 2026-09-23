@@ -86,6 +86,56 @@ def test_trash_photo_refuses_a_photo_that_is_not_rejected(conn, settings):
   assert os.path.isfile(os.path.join(d, "a.jpg"))   # untouched
 
 
+# ---- trash_file (ticket 082: single-file, not rating-gated) ----
+
+def test_trash_file_moves_one_file_and_its_sidecar_leaves_siblings_alone(conn, settings):
+  pid = setup_rejected_pair(conn, settings)   # rejected, but trash_file should not care either way
+  d = settings.pictures_dir
+  dng_id = conn.execute("SELECT id FROM files WHERE path = '2024/trip/K1.DNG'").fetchone()[0]
+
+  result = trash.trash_file(conn, settings, dng_id)
+  assert result["errors"] == []
+  moved_from = sorted(m["from"] for m in result["moved"])
+  assert moved_from == ["2024/trip/K1.DNG", "2024/trip/K1.DNG.xmp"]
+  assert not os.path.exists(os.path.join(d, "2024/trip/K1.DNG"))
+  assert os.path.isfile(os.path.join(d, ".trash/2024/trip/K1.DNG"))
+  # the JPG (and its sidecar) are untouched -- this is file-scoped, not photo-scoped
+  assert os.path.isfile(os.path.join(d, "2024/trip/K1.JPG"))
+  assert os.path.isfile(os.path.join(d, "2024/trip/K1.JPG.xmp"))
+
+  rows = {r["path"]: r["missing"] for r in conn.execute(
+      "SELECT path, missing FROM files WHERE photo_id = ?", (pid,))}
+  assert rows["2024/trip/K1.DNG"] == 1 and rows["2024/trip/K1.JPG"] == 0
+
+
+def test_trash_file_does_not_require_a_rejected_photo(conn, settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "a.jpg"))
+  scan.scan(conn, d)
+  fid = conn.execute("SELECT id FROM files WHERE path = 'a.jpg'").fetchone()[0]
+  result = trash.trash_file(conn, settings, fid)   # not rejected; should still work
+  assert result["errors"] == []
+  assert not os.path.exists(os.path.join(d, "a.jpg"))
+
+
+def test_trash_file_refuses_an_unknown_or_already_missing_file(conn, settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "a.jpg"))
+  scan.scan(conn, d)
+  fid = conn.execute("SELECT id FROM files WHERE path = 'a.jpg'").fetchone()[0]
+  trash.trash_file(conn, settings, fid)   # first time: fine
+  try:
+    trash.trash_file(conn, settings, fid)   # second time: already missing
+    assert False, "should have raised"
+  except trash.TrashError as e:
+    assert "no such live file" in str(e)
+  try:
+    trash.trash_file(conn, settings, 999999)
+    assert False, "should have raised"
+  except trash.TrashError as e:
+    assert "no such live file" in str(e)
+
+
 def test_trash_photos_batch_reports_failures_without_stopping(conn, settings):
   d = settings.pictures_dir
   rejected = setup_rejected_pair(conn, settings, "2024/trip")

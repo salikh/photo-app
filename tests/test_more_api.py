@@ -137,6 +137,27 @@ def test_trash_photos_endpoint(settings):
   assert c.post("/api/photos/trash", json={"ids": []}).status_code == 400
 
 
+def test_trash_file_endpoint(settings):
+  # ticket 082: file-scoped, not rating-gated -- unlike /api/photos/trash above.
+  c = app_with_pair(settings)
+  d = settings.pictures_dir
+  dng = fid(c, "y/K1.DNG")   # y/K1.DNG + y/K1.JPG are an unrated pair (app_with_pair)
+
+  r = c.post(f"/api/files/{dng}/trash")
+  assert r.status_code == 200
+  body = r.json()
+  assert sorted(m["from"] for m in body["moved"]) == ["y/K1.DNG"]
+  assert body["errors"] == []
+  assert body["photo"]["files"][0]["missing"] or body["photo"]["files"][1]["missing"]
+
+  assert not os.path.exists(os.path.join(d, "y", "K1.DNG"))
+  assert os.path.isfile(os.path.join(d, ".trash", "y", "K1.DNG"))
+  assert os.path.isfile(os.path.join(d, "y", "K1.JPG"))   # sibling untouched
+
+  assert c.post(f"/api/files/{dng}/trash").status_code == 404   # already missing
+  assert c.post("/api/files/99999/trash").status_code == 404
+
+
 def test_rerender_thumbs_endpoint(settings):
   # ticket 079: clears the cache so a broken thumbnail gets a fresh render on the next request.
   c = app_with_pair(settings)

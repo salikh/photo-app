@@ -69,6 +69,25 @@ def move_to_trash(pictures_dir, rel_path):
   return os.path.relpath(dest, pictures_dir).replace(os.sep, "/")
 
 
+def _move_file_and_sidecars(conn, settings, file_id, rel_path):
+  """Move one file and its own sidecars into .trash/. Returns (moved, errors) in the same shape
+  trash_photo/trash_file return under those keys. Does not mark anything missing or commit --
+  shared by both callers, which do that at their own granularity (once per file for trash_file,
+  once per Photo's worth of files for trash_photo)."""
+  rels = [rel_path] + [r["path"] for r in conn.execute(
+      "SELECT path FROM xmp_sidecars WHERE file_id = ?", (file_id,))]
+  moved, errors = [], []
+  for rel in rels:
+    try:
+      dest = move_to_trash(settings.pictures_dir, rel)
+    except (OSError, TrashError) as e:
+      errors.append({"path": rel, "error": str(e)})
+      continue
+    if dest:
+      moved.append({"from": rel, "to": dest})
+  return moved, errors
+
+
 def trash_photo(conn, settings, photo_id):
   """Move every live file of one rejected Photo -- and each file's sidecars -- to .trash/, and
   mark those files missing=1. Raises TrashError if the Photo is not (or no longer) rejected.
@@ -83,21 +102,37 @@ def trash_photo(conn, settings, photo_id):
       (photo_id,)).fetchall()
   moved, errors = [], []
   for f in files:
-    rels = [f["path"]] + [r["path"] for r in conn.execute(
-        "SELECT path FROM xmp_sidecars WHERE file_id = ?", (f["id"],))]
-    for rel in rels:
-      try:
-        dest = move_to_trash(settings.pictures_dir, rel)
-      except (OSError, TrashError) as e:
-        errors.append({"path": rel, "error": str(e)})
-        continue
-      if dest:
-        moved.append({"from": rel, "to": dest})
+    m, e = _move_file_and_sidecars(conn, settings, f["id"], f["path"])
+    moved += m
+    errors += e
     conn.execute("UPDATE files SET missing = 1 WHERE id = ?", (f["id"],))
   conn.commit()
   logging.info("trash_photo %d: moved %d file(s) to %s, %d error(s)",
                photo_id, len(moved), trash_dir(settings.pictures_dir), len(errors))
   return {"photo_id": photo_id, "moved": moved, "errors": errors}
+
+
+def trash_file(conn, settings, file_id):
+  """Move one live file (any role) -- and its own sidecars -- to .trash/, and mark it
+  missing=1 (ticket 082). Unlike trash_photo, **not** rating-gated: a single file can be
+  deleted regardless of the Photo's rating -- deleting a whole Photo is what the reject-based
+  flow (trash_photo, reached from the Rejected view) is for. Does not touch grouping or the
+  representative pointer if this file was it, even though that can leave the Photo looking
+  broken until the next scan: fix_representatives only repairs a representative that stopped
+  being a *member* of its Photo (unlinked or deleted from the files table), not one that is
+  still a member but now missing, so it would not actually help here -- left to the next scan,
+  the same precedent trash_photo already set (see docs/design/trash.md). Raises TrashError if
+  the file does not exist or is already missing. Returns {"file_id", "moved", "errors"}."""
+  row = conn.execute("SELECT path FROM files WHERE id = ? AND missing = 0",
+                     (file_id,)).fetchone()
+  if row is None:
+    raise TrashError(f"no such live file: {file_id}")
+  moved, errors = _move_file_and_sidecars(conn, settings, file_id, row["path"])
+  conn.execute("UPDATE files SET missing = 1 WHERE id = ?", (file_id,))
+  conn.commit()
+  logging.info("trash_file %d: moved %d file(s) to %s, %d error(s)",
+               file_id, len(moved), trash_dir(settings.pictures_dir), len(errors))
+  return {"file_id": file_id, "moved": moved, "errors": errors}
 
 
 def trash_photos(conn, settings, photo_ids):

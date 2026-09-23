@@ -115,6 +115,7 @@ export function close() {
   document.body.style.overflow = '';
   document.removeEventListener('keydown', onKey);
   closeFiles();
+  closeDeleteModal();
   ui.zoom.reset();
   zoomed = false;
   ui.stage.classList.remove('zoomed');
@@ -124,6 +125,7 @@ function show(i) {
   const delta = index >= 0 && i !== index ? Math.sign(i - index) : 1;   // direction of travel
   index = i;
   const photo = current();
+  closeDeleteModal();   // it would otherwise still show, referring to the previous photo's file
   ui.zoom.reset();
   zoomed = false;
   ui.stage.classList.remove('zoomed');
@@ -496,7 +498,9 @@ async function openFiles() {
       el('div', {class: 'row'},
         f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :
           el('button', {text: 'Show this', onclick: () => setRepresentative(detail, f.id)}),
-        f.id !== detail.original_file_id ? el('button', {text: 'Unlink', onclick: () => unlink(f)}) : null))),
+        f.id !== detail.original_file_id ? el('button', {text: 'Unlink', onclick: () => unlink(f)}) : null,
+        !f.missing ? el('button', {class: 'danger', text: 'Delete',
+                                   title: 'move this file to trash', onclick: () => confirmDeleteFile(f)}) : null))),
     el('div', {class: 'row'},
       el('button', {text: 'Use default', onclick: () => setRepresentative(detail, null)}),
       el('button', {text: 'Close', onclick: closeFiles})));
@@ -547,9 +551,40 @@ async function unlink(file) {
   } catch (e) { toast(e.message, true); }
 }
 
+// Modal confirmation before moving a single file to trash (ticket 082) -- deliberately its own
+// small modal, not the Files panel or a route: this acts on one file, not a whole review set.
+function confirmDeleteFile(file) {
+  closeDeleteModal();
+  const name = file.path.split('/').pop();
+  ui.deleteModal = el('div', {class: 'confirm-modal', onclick: closeDeleteModal},
+    el('div', {class: 'confirm-card', onclick: (e) => e.stopPropagation()},
+      el('h3', {text: 'Move this file to trash?'}),
+      el('img', {class: 'confirm-img', src: imgUrl('Medium', file.id), alt: name}),
+      el('div', {class: 'meta', text: file.path}),
+      el('div', {class: 'row'},
+        el('button', {text: 'Cancel', onclick: closeDeleteModal}),
+        el('button', {class: 'danger', text: 'Move to trash', onclick: () => deleteFile(file)}))));
+  document.body.append(ui.deleteModal);
+}
+
+function closeDeleteModal() {
+  if (ui.deleteModal) { ui.deleteModal.remove(); ui.deleteModal = null; }
+}
+
+async function deleteFile(file) {
+  try {
+    await post(`/api/files/${file.id}/trash`);
+    closeDeleteModal();
+    toast('moved to trash');
+    state.dirty = true;
+    if (filesOpen) openFiles();
+  } catch (e) { toast(e.message, true); }
+}
+
 // -------------------------------------------------------------- keyboard
 
 function onKey(e) {
+  if (ui.deleteModal) { if (e.key === 'Escape') closeDeleteModal(); return; }
   if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   const key = e.key;
   if (key === 'ArrowRight' || key === ' ') go(1);
