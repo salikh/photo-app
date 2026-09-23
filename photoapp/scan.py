@@ -241,6 +241,7 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
       dirnames.remove(trash.TRASH_DIRNAME)   # never scanned (ticket 072), even by a direct walk
     if not recursive:
       dirnames[:] = []
+    filenames = [n for n in filenames if not fileinfo.is_ignored(n)]   # ticket 101
     rel_dir = _rel(pictures_dir, dirpath)
     images = sorted(n for n in filenames if fileinfo.is_image(n))
     progress.dirs_seen += 1

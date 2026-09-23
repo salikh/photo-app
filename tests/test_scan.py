@@ -60,6 +60,33 @@ def test_changed_file_is_reprocessed_and_keeps_id(conn, settings):
   assert new["hash"] != old["hash"]
 
 
+def test_appledouble_files_are_not_scanned(conn, settings):
+  make_jpeg(os.path.join(settings.pictures_dir, "2020", "a.jpg"))
+  make_jpeg(os.path.join(settings.pictures_dir, "2020", "._a.jpg"))
+  with open(os.path.join(settings.pictures_dir, "2020", "a.jpg.xmp"), "w") as f:
+    f.write("<x/>")
+  with open(os.path.join(settings.pictures_dir, "2020", "._a.jpg.xmp"), "w") as f:
+    f.write("garbage")
+  p = scan.scan(conn, settings.pictures_dir)
+  assert set(files(conn)) == {"2020/a.jpg"}
+  assert p.files_seen == 1
+  assert conn.execute("SELECT COUNT(*) FROM xmp_sidecars").fetchone()[0] == 1
+
+
+def test_appledouble_row_from_before_the_fix_becomes_missing(conn, settings):
+  # Simulate a row scanned in before ticket 101 existed (is_ignored didn't filter it out yet).
+  # The file is still on disk, untouched -- once the filter is in place, the next scan should
+  # self-heal the stale row via the normal vanished-file-marked-missing path (it's no longer in
+  # `seen`, even though it's still physically there), without any dedicated cleanup code.
+  make_jpeg(os.path.join(settings.pictures_dir, "2020", "a.jpg"))
+  make_jpeg(os.path.join(settings.pictures_dir, "2020", "._a.jpg"))
+  conn.execute(
+      "INSERT INTO files (path, mtime, missing) VALUES ('2020/._a.jpg', 0, 0)")
+  conn.commit()
+  scan.scan(conn, settings.pictures_dir)
+  assert files(conn)["2020/._a.jpg"]["missing"] == 1
+
+
 def test_vanished_files_marked_missing_and_reappear(conn, settings):
   build_tree(settings.pictures_dir)
   scan.scan(conn, settings.pictures_dir)

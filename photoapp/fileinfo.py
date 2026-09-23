@@ -70,6 +70,15 @@ def is_image(name):
   return os.path.splitext(name)[1].lower() in IMAGE_EXTENSIONS
 
 
+# Ticket 101: filenames that are never scanned into the database at all, checked before
+# is_image/is_sidecar. Starts with just macOS AppleDouble resource-fork files ("._IMG_1234.JPG",
+# "._K.DNG.xmp"), created automatically whenever macOS writes to a non-native filesystem (e.g. this
+# library mounted over SMB/AFP/NFS) -- not real image/sidecar content, even though the extension
+# matches.
+def is_ignored(name):
+  return name.startswith("._")
+
+
 def _exif_str(value):
   if isinstance(value, bytes):
     value = value.decode("ascii", "ignore")

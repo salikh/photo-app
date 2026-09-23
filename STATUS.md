@@ -53,6 +53,7 @@ All ten build-order epics are done.
 - [x] [088](docs/tickets/088.md) Batch actions scoped to the current selection, including delete (user request 2026-09-23)
 - [x] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder (user request 2026-09-23)
 - [x] [085](docs/tickets/085.md) Adjustable per-file RAW conversion settings with sliders and thumbnail regeneration — merged the on-demand and background RAW renderers onto rawpy/LibRaw (090's resolution); spun off ticket 093 as a follow-up optimization, not blocking
+- [x] [101](docs/tickets/101.md) Ignore files by basename pattern, starting with `._*` (macOS AppleDouble junk never scanned into the database; a stale pre-fix row self-heals to missing=1 via the existing vanished-file path, no dedicated cleanup needed)
 
 Still open: [093](docs/tickets/093.md) — see `TODO.md`.
 
