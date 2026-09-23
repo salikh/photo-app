@@ -19,8 +19,17 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
       backend regen
 - [ ] [095](docs/tickets/095.md) Shift+Click in the grid should select the range from the last
       selected photo to the newly clicked one, not just toggle the one photo
+- [ ] [096](docs/tickets/096.md) Epic: exports live in the library, linked to their originals
+  - [ ] [097](docs/tickets/097.md) (question) Merge exported file into the original's Photo, or
+        keep it separate with a cross-reference?
+  - [ ] [098](docs/tickets/098.md) Export target moves to `/zoo/Pictures/Exported`, with
+        collision-safe destination naming
+  - [ ] [099](docs/tickets/099.md) Import + link every export to its original in real time, going
+        forward (uses the export job's own record, no heuristics)
+  - [ ] [100](docs/tickets/100.md) One-off backfill: link what's already in `/zoo/Pictures/Exported`
+        to its original (still-live job log first, then filename + dhash heuristics)
 
-093-095 are open follow-ups filed after 085 (2026-09-23/24), none yet scoped/built. 085-089, 091 and
+093-096 are open follow-ups filed after 085 (2026-09-23/24), none yet scoped/built. 085-089, 091 and
 092 are done — see `STATUS.md`.
 
 ## Question tickets (waiting on the user)
@@ -31,7 +40,11 @@ context, the question, options if any, and an empty **Answer** section). The que
 closed and the blocked ticket continues (and its pointer moves to `STATUS.md`). A ticket is "actionable"
 when it has no open blocker.
 
-**No open question tickets right now.** 090 was answered 2026-09-23 (see `STATUS.md`) and unblocked 085.
+- [ ] [097](docs/tickets/097.md) Merge an exported file into the original's Photo (reuse
+      `manual_links`' existing role='export'), or keep it as its own browseable Photo with a
+      separate "jump to original" cross-reference? Blocks 098-100 (filed 2026-09-24, epic 096).
+
+090 was answered 2026-09-23 (see `STATUS.md`) and unblocked 085.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
 `http://<this machine>:8080/` on the phone or tablet.
