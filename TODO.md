@@ -44,6 +44,9 @@ All ten build-order epics are done.
 - [ ] [080](docs/tickets/080.md) Prioritize the currently-open folder in the background thumbnail queue (spun out of 069's investigation)
 - [ ] [081](docs/tickets/081.md) Automatic purge of Pictures/.trash after a retention window (spun out of 072's decisions)
 - [ ] [082](docs/tickets/082.md) "Delete this file" button in the loupe's Files panel, with a Medium-thumbnail confirmation screen
+- [ ] [083](docs/tickets/083.md) Schema + backfill for camera metadata (aperture, shutter speed, ISO) — blocks 084
+- [ ] [084](docs/tickets/084.md) Show camera metadata in the Files detail view (blocked by 083)
+- [ ] [085](docs/tickets/085.md) Adjustable per-file dcraw settings with sliders and thumbnail regeneration
 
 ## Cross-cutting
 
@@ -84,7 +87,7 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
 **No open question tickets right now.** Every build-order and cross-cutting item above is done. What remains is
-080, 081, 082 (none blocked, none urgent; 080/081 need design decisions before they're actionable) and
+080–085 (none urgent; 084 is blocked by 083; 080/081/085 need design decisions before they're actionable) and
 whatever the next `/loop` iteration or the user asks for.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
