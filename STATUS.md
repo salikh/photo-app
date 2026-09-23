@@ -54,10 +54,16 @@ All ten build-order epics are done.
 - [x] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder (user request 2026-09-23)
 - [x] [085](docs/tickets/085.md) Adjustable per-file RAW conversion settings with sliders and thumbnail regeneration — merged the on-demand and background RAW renderers onto rawpy/LibRaw (090's resolution); spun off ticket 093 as a follow-up optimization, not blocking
 - [x] [101](docs/tickets/101.md) Ignore files by basename pattern, starting with `._*` (macOS AppleDouble junk never scanned into the database; a stale pre-fix row self-heals to missing=1 via the existing vanished-file path, no dedicated cleanup needed)
+- [x] [095](docs/tickets/095.md) Shift+Click in the grid selects the range from a fixed anchor (last plain/Ctrl-click) to the newly clicked photo, replacing the selection; the ✓ button honors it too
+- [x] [098](docs/tickets/098.md) Export target moves inside the library (`pictures_dir/Exported`), with a collision-safe destination naming scheme (part of epic 096)
+- [x] [099](docs/tickets/099.md) Every export is imported and cross-referenced to its source (`files.exported_from_file_id`) the moment its job finishes, with a "exported from" link in the Files panel (part of epic 096)
+- [x] [100](docs/tickets/100.md) One-off `photoapp/export_backfill.py`: links pre-existing exports to their originals via the still-live job log, then filename + dhash matching for the rest (part of epic 096)
+- [x] [096](docs/tickets/096.md) Epic: exports live in the library, linked to their originals — done (097-100 all landed)
+- [x] [093](docs/tickets/093.md) A settings-tuned RAW's first thumbnail request demosaics once at
+      Huge and every later request for a different size downscales from that cached Huge, instead
+      of a separate full demosaic per size (follow-up to 085/090)
 
-Still open: [093](docs/tickets/093.md) — see `TODO.md`.
-
-Still open: [085](docs/tickets/085.md) — see `TODO.md`.
+Still open: [094](docs/tickets/094.md) — see `TODO.md`.
 
 ## Cross-cutting
 

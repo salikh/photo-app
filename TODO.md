@@ -11,25 +11,12 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 All ten build-order epics, v1 filtering, and every cross-cutting ticket are done (see
 `STATUS.md`). What's left:
 
-- [ ] [093](docs/tickets/093.md) Render a tuned RAW's thumbnails once at Huge and downscale the
-      rest from it, instead of demosaicing separately per size (follow-up to 085/090, not blocking)
 - [ ] [094](docs/tickets/094.md) Plan a new tuning architecture: provisional (not global) thumbnail
       regen while adjusting RAW settings, a hotkey to compare current vs. new rendering, room for
       future browser-local rendering, and an explicit Save button that commits + triggers the real
       backend regen
-- [ ] [095](docs/tickets/095.md) Shift+Click in the grid should select the range from the last
-      selected photo to the newly clicked one, not just toggle the one photo
-- [ ] [096](docs/tickets/096.md) Epic: exports live in the library, linked to their originals
-      (097 answered: own Photo + `exported_from_file_id` cross-reference — see 096's Architecture)
-  - [ ] [098](docs/tickets/098.md) Export target moves to `/zoo/Pictures/Exported`, with
-        collision-safe destination naming
-  - [ ] [099](docs/tickets/099.md) Import + link every export to its original in real time, going
-        forward (uses the export job's own record, no heuristics)
-  - [ ] [100](docs/tickets/100.md) One-off backfill: link what's already in `/zoo/Pictures/Exported`
-        to its original (still-live job log first, then filename + dhash heuristics)
-
-093-096 (098-100) are open follow-ups filed after 085 (2026-09-23/24), not yet built. 101 is done
-(see `STATUS.md`). 085-089, 091 and 092 are done — see `STATUS.md`.
+094 is the one open follow-up filed after 085 (2026-09-23/24), not yet built. 093 and 095-101
+(epic 096 and its children 097-100) are done — see `STATUS.md`. 085-089, 091 and 092 are done too.
 
 ## Question tickets (waiting on the user)
 
