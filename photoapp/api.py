@@ -19,6 +19,7 @@ from absl import logging
 
 from photoapp import curation
 from photoapp import db as db_lib
+from photoapp import export
 from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import jobs
@@ -63,6 +64,12 @@ class LinkBody(pydantic.BaseModel):
 class TagsBody(pydantic.BaseModel):
   add: list[str] = []
   remove: list[str] = []
+
+
+class ExportBody(pydantic.BaseModel):
+  ids: list[int]
+  dir: str
+  target: str
 
 
 def create_app(conn, settings):
@@ -118,8 +125,21 @@ def create_app(conn, settings):
     conn.commit()
     logging.vlog(5, "%s: raw_render done (%s)", row["path"], ", ".join(made))
 
+  def export_job(conn, job):
+    """Ticket 089: job['target'] is the exact destination file path for this one file --
+    already resolved (mirrored under the confirmed target folder) when the export was queued,
+    by start_export below, which is the only enqueuer and the only place that knows the
+    directory the export was started from."""
+    row = conn.execute("SELECT path FROM files WHERE id = ?",
+                       (job["file_id"],)).fetchone()
+    if row is None:
+      raise RuntimeError("file is gone")
+    export.export_file(conn, settings, job["file_id"], row["path"], job["target"])
+    logging.vlog(5, "%s: exported to %s", row["path"], job["target"])
+
   app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render},
                                  settings.job_workers)
+  app.state.jobs.add_handler("export", export_job)
 
   # A single low-priority, single-worker queue for everything ticket 073's load-adaptive worker
   # drains: populate_thumb (thumb_populate.Populator, registered below), scan_dir (ticket 076's
@@ -259,6 +279,45 @@ def create_app(conn, settings):
     def attempt():
       with app.state.db_lock:
         return trash.trash_photos(app.state.db, settings, body.ids)
+    return run_db(attempt)
+
+  @app.get("/api/export/default_path")
+  def export_default_path(dir: str = "."):
+    try:
+      rel_dir = library._norm_dir(dir)
+    except ValueError as e:
+      raise HTTPException(400, str(e))
+    return {"path": export.default_target(settings.pictures_dir, rel_dir)}
+
+  @app.post("/api/export")
+  def start_export(body: ExportBody):
+    """Ticket 089: queue one 'export' job per file (photoapp.jobs), each already carrying its
+    fully resolved, mirrored destination path (export.dest_path) so the job handler needs no
+    extra context beyond file_id + target. A photo id that no longer resolves to a live
+    representative file is reported in 'missing', not silently dropped, matching
+    trash_photos_route's own not-silently-skipped convention."""
+    if not body.ids or len(body.ids) > 5000:
+      raise HTTPException(400, "give between 1 and 5000 photo ids")
+    try:
+      rel_dir = library._norm_dir(body.dir)
+      export.validate_target(settings, body.target)
+    except (ValueError, export.ExportError) as e:
+      raise HTTPException(400, str(e))
+
+    def attempt():
+      with app.state.db_lock:
+        placeholders = ",".join("?" * len(body.ids))
+        rows = app.state.db.execute(
+            f"SELECT p.id AS photo_id, rf.id AS file_id, rf.path FROM photos p "
+            f"JOIN files rf ON rf.id = p.representative_file_id WHERE p.id IN ({placeholders})",
+            body.ids).fetchall()
+      queued = []
+      for r in rows:
+        dest = export.dest_path(body.target, rel_dir, r["path"])
+        job_id = app.state.jobs.enqueue("export", file_id=r["file_id"], target=dest)
+        queued.append({"photo_id": r["photo_id"], "job_id": job_id})
+      missing = sorted(set(body.ids) - {r["photo_id"] for r in rows})
+      return {"queued": queued, "missing": missing}
     return run_db(attempt)
 
   @app.post("/api/activity/batch/{batch_id}/undo")

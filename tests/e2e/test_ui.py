@@ -6,6 +6,7 @@ import re
 import time
 import urllib.request
 
+from PIL import Image
 from playwright.sync_api import expect
 
 
@@ -818,6 +819,57 @@ def test_selection_delete_review_back_link_deletes_nothing(page, server):
   expect(page).to_have_url(re.compile(r"filter=rejected"))
   expect(page.locator(".cell")).to_have_count(1)                      # nothing was moved
   assert os.path.isfile(os.path.join(server.pictures, "2024/trip/IMG_0003.jpg"))
+
+
+# --------------------------------------------------------- export action (ticket 089) ---------
+
+def exported_root(server):
+  return os.path.join(os.path.dirname(server.pictures), "Exported")
+
+
+def test_export_button_prefills_target_and_writes_mirrored_jpegs(page, server):
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  page.get_by_role("button", name="Export", exact=True).click()
+
+  expect(page.locator("h3")).to_have_text("Export 6 photo(s)")
+  target_input = page.locator(".export-target")
+  expect(target_input).to_have_value(os.path.join(exported_root(server), "2024/trip"))
+
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("queued 6 for export")
+
+  assert server.app.state.jobs.wait_idle(10)
+  out = os.path.join(exported_root(server), "2024/trip")
+  assert len(os.listdir(out)) == 6
+  with Image.open(os.path.join(out, "IMG_0001.jpg")) as im:
+    assert im.format == "JPEG"
+
+
+def test_export_button_exports_only_the_selection(page, server):
+  page.goto(server.url + "/#/2024/trip")   # unfiltered: all 6 cells, in name/date order 0001..0006
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").nth(1).click()
+  page.locator(".cell").nth(3).click()                                # IMG_0002, IMG_0004
+  page.get_by_role("button", name="Export", exact=True).click()
+  expect(page.locator("h3")).to_have_text("Export 2 photo(s)")
+
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("queued 2 for export")
+
+  assert server.app.state.jobs.wait_idle(10)
+  out = os.path.join(exported_root(server), "2024/trip")
+  assert sorted(os.listdir(out)) == ["IMG_0002.jpg", "IMG_0004.jpg"]  # only the selection
+
+
+def test_export_refuses_a_target_inside_the_library(page, server):
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Export", exact=True).click()
+  page.locator(".export-target").fill(server.pictures)
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("cannot be inside")
+  expect(page.locator(".confirm-modal")).to_be_visible()               # stays open, nothing queued
+  page.errors.clear()   # the 400 is the expected outcome of this test, not a real page error
 
 
 def test_last_photo_out_closes_the_viewer(page, server):

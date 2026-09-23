@@ -14,10 +14,8 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
 - [ ] [085](docs/tickets/085.md) Adjustable per-file RAW conversion settings with sliders and
       thumbnail regeneration — unblocked by [090](docs/tickets/090.md)'s answer, now also merges the
       on-demand and background RAW renderers into one
-- [ ] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder
-
-085 and 089 are priority "not now" (user request 2026-09-23); both now have their design
-decisions resolved and are ready to implement. 086, 087, 088, 091 and 092 are done — see `STATUS.md`.
+085 is priority "not now" (user request 2026-09-23) and has its design decisions resolved,
+ready to implement. It's the only open ticket left; 086-089, 091 and 092 are done — see `STATUS.md`.
 
 ## Question tickets (waiting on the user)
 

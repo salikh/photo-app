@@ -216,12 +216,24 @@ class JobQueue:
       conn.close()
 
   def wait_idle(self, timeout=10.0):
-    """Block until no job is queued or running (for tests)."""
+    """Block until no job of this queue's own kinds is queued or running (for tests).
+
+    Scoped to self._handlers like _claim(), unlike counts()/progress(), which deliberately span
+    every kind in the shared table for the Jobs page's unified view. Using the unscoped counts()
+    here would mean a queued-but-unclaimed job of a *different*, unstarted queue's kind (e.g. a
+    populate_thumb job a request handler enqueued via ticket 080's enqueue_missing, sitting in
+    app.state.background_jobs, which a test harness may never start) makes this queue's own
+    wait_idle() hang forever even though this queue itself has nothing left to do."""
     import time
     deadline = time.time() + timeout
+    kinds = tuple(self._handlers)
+    placeholders = ",".join("?" * len(kinds))
     while time.time() < deadline:
-      c = self.counts()
-      if not c.get("queued") and not c.get("running"):
+      with self._conn_lock:
+        n = self._conn.execute(
+            f"SELECT COUNT(*) FROM jobs WHERE kind IN ({placeholders}) AND "
+            "state IN ('queued', 'running')", kinds).fetchone()[0]
+      if not n:
         return True
       time.sleep(0.05)
     return False

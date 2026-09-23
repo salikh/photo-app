@@ -264,6 +264,8 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 }
 .confirm-card .meta { margin: 8px 0 0; color: var(--text-dim); font-size: 13px; word-break: break-all; }
 .confirm-card .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.confirm-card .export-label { display: block; margin-top: 12px; font-size: 13px; color: var(--text-dim); }
+.confirm-card .export-target { display: block; width: 100%; margin-top: 4px; font-family: monospace; }
 
 /* ticket 091: keyboard shortcuts help overlay, reusing the confirm-modal/confirm-card shell */
 .help-card { max-width: 520px; max-height: 80vh; overflow: auto; }

@@ -10,6 +10,7 @@ import * as pages from './pages.js';
 import {configure} from './rating.js';
 import * as filters from './filters.js';
 import * as help from './help.js';
+import * as exportAction from './export.js';
 
 const app = document.getElementById('app');
 const SORTS = [['date', 'date'], ['name', 'name']];
@@ -80,6 +81,10 @@ function renderHeader(route) {
       },
     }) : null,
     browsing ? el('button', {class: state.selecting ? 'on' : '', text: 'Select', onclick: toggleSelecting}) : null,
+    // ticket 089: exports the selection if any, else everything currently in view (recursive-aware
+    // via route.dir/route.recursive, same scope grid.loadFolder already used to populate it).
+    browsing ? el('button', {text: 'Export', title: 'export photos to a folder',
+                             onclick: () => exportAction.open()}) : null,
     browsing && route.filter === 'rejected'
       ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir),
                 text: 'Delete', title: 'review and move these rejected photos to trash'}) : null,
