@@ -1543,3 +1543,38 @@ def test_arrow_up_down_do_nothing_while_typing_in_the_tag_field(page, server):
   page.keyboard.press("ArrowUp")                                             # should not rate while typing
   page.keyboard.press("Escape")
   expect(page.locator(".hud .stars")).to_have_text("☆" * 5)
+
+
+# ------------------------------------------------------------- help overlay (ticket 091)
+
+def test_help_overlay_opens_from_browse_view_and_closes_with_escape(page, server):
+  page.goto(server.url + "/#/")
+  expect(page.locator(".help-card")).to_be_hidden()
+  page.keyboard.press("?")
+  expect(page.locator(".help-card")).to_be_visible()
+  expect(page.locator(".help-card")).to_contain_text("Browse")
+  expect(page.locator(".help-card")).to_contain_text("Viewer")
+  page.keyboard.press("Escape")
+  expect(page.locator(".help-card")).to_be_hidden()
+
+
+def test_help_overlay_opens_from_loupe_with_h_or_f1_without_closing_it(page, server):
+  open_loupe(page, server)
+  page.keyboard.press("h")
+  expect(page.locator(".help-card")).to_be_visible()
+  expect(page.locator(".loupe")).to_be_visible()                # still on the same photo
+  page.keyboard.press("Escape")                                 # closes help, not the loupe
+  expect(page.locator(".help-card")).to_be_hidden()
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("F1")
+  expect(page.locator(".help-card")).to_be_visible()
+  page.locator(".help-card button", has_text="Close").click()
+  expect(page.locator(".help-card")).to_be_hidden()
+
+
+def test_help_overlay_does_not_open_while_typing_in_the_tag_field(page, server):
+  open_loupe(page, server)
+  page.keyboard.press("t")
+  page.keyboard.press("h")
+  expect(page.locator(".help-card")).to_be_hidden()
+  page.keyboard.press("Escape")

@@ -249,6 +249,15 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .confirm-card .meta { margin: 8px 0 0; color: var(--text-dim); font-size: 13px; word-break: break-all; }
 .confirm-card .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 
+/* ticket 091: keyboard shortcuts help overlay, reusing the confirm-modal/confirm-card shell */
+.help-card { max-width: 520px; max-height: 80vh; overflow: auto; }
+.help-section h4 { margin: 16px 0 6px; color: var(--text-dim); }
+.help-section:first-of-type h4 { margin-top: 0; }
+.help-row { display: flex; gap: 12px; padding: 3px 0; }
+.help-row .key {
+  flex: 0 0 110px; font-family: monospace; color: var(--accent);
+}
+
 /* ---------- pages ---------- */
 
 table { border-collapse: collapse; width: 100%; }

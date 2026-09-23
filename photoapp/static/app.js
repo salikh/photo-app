@@ -9,6 +9,7 @@ import * as loupe from './loupe.js';
 import * as pages from './pages.js';
 import {configure} from './rating.js';
 import * as filters from './filters.js';
+import * as help from './help.js';
 
 const app = document.getElementById('app');
 const SORTS = [['date', 'date'], ['name', 'name']];
@@ -172,6 +173,25 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
   } else if (e.key === 'u' || e.key === 'U') { loupe.undo(); e.preventDefault(); }
   else if (e.key === 'Escape' && state.selected.size) { grid.clearSelection(); e.preventDefault(); }
+});
+
+// Help overlay (ticket 091): a third, always-on listener -- works from both the browse view and
+// the loupe, so it is not gated on loupe.isOpen() the way the listener above is. Registered after
+// it, so an Escape that closes the help overlay must stopImmediatePropagation to keep the other
+// two document-level keydown listeners (this one's own selection-clearing above, and loupe.js's
+// onKey while the loupe is open) from also reacting to the same keypress.
+document.addEventListener('keydown', (e) => {
+  if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (help.isOpen()) {
+    if (e.key === 'Escape') { help.close(); e.preventDefault(); e.stopImmediatePropagation(); }
+    return;
+  }
+  if (document.querySelector('.confirm-modal')) return;   // another modal (e.g. delete-file) is up
+  if (e.key === 'h' || e.key === 'H' || e.key === '?' || e.key === 'F1') {
+    help.open();
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
 });
 
 // A request that failed where nobody was watching for it (network down, an unexpected error)

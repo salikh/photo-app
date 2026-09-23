@@ -46,8 +46,9 @@ All ten build-order epics are done.
 - [x] [082](docs/tickets/082.md) "Delete this file" button in the loupe's Files panel, with a Medium-thumbnail confirmation screen
 - [x] [083](docs/tickets/083.md) Schema + backfill for camera metadata (aperture, shutter speed, ISO) — blocks 084
 - [x] [084](docs/tickets/084.md) Show camera metadata in the Files detail view (blocked by 083)
+- [x] [091](docs/tickets/091.md) Help screen (keyboard shortcuts), opened by 'h', '?' or F1 (user request 2026-09-23)
 
-Still open: [085](docs/tickets/085.md)-[089](docs/tickets/089.md), [091](docs/tickets/091.md) — see `TODO.md`.
+Still open: [085](docs/tickets/085.md)-[089](docs/tickets/089.md), [092](docs/tickets/092.md) — see `TODO.md`.
 
 ## Cross-cutting
 
