@@ -18,15 +18,17 @@ export function parse() {
     filter: q.get('filter') || 'all',
     sort: q.get('sort') || 'date',
     photo: q.get('photo') ? Number(q.get('photo')) : null,
+    recursive: q.get('recursive') === '1',
   };
 }
 
-export function href({dir = '.', filter = 'all', sort = 'date', photo = null}) {
+export function href({dir = '.', filter = 'all', sort = 'date', photo = null, recursive = false}) {
   const path = dir === '.' ? '/' : '/' + dir.split('/').map(encodeURIComponent).join('/');
   const q = new URLSearchParams();
   if (filter !== 'all') q.set('filter', filter);
   if (sort !== 'date') q.set('sort', sort);
   if (photo) q.set('photo', photo);
+  if (recursive) q.set('recursive', '1');
   const qs = q.toString();
   return '#' + path + (qs ? '?' + qs : '');
 }

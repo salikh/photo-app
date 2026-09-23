@@ -262,7 +262,11 @@ function renderHud() {
   });
   ui.tagInput = el('input', {class: 'tags', placeholder: 'tag, -remove', hidden: true, onkeydown: onTagKey});
   setChildren(ui.hud,
-    el('div', {class: 'name', title: p.path, text: p.name + (p.files > 1 ? `  (+${p.files - 1} files)` : '')}),
+    // recursive (ticket 086): the folder's grid can span several subfolders that share a
+    // filename, so show the full relative path in the visible name, not just on hover.
+    el('div', {class: 'name', title: p.path,
+              text: (state.route && state.route.recursive ? p.path : p.name) +
+                    (p.files > 1 ? `  (+${p.files - 1} files)` : '')}),
     el('span', {class: 'pos', text: `${index + 1}/${Math.max(state.photos.length, state.total - state.removed)}`}),
     el('span', {class: 'stars' + (p.rating === REJECT ? ' reject' : ''), text: label(p.rating)}),
     p.fav ? el('span', {class: 'fav-on', text: '♥'}) : null,

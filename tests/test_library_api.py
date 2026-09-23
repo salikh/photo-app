@@ -200,6 +200,42 @@ def test_folders_starting_with_a_dot_are_not_listed_or_counted(settings):
   assert c.get("/api/dirs", params={"path": "2001/trip/.nu"}).json()["dirs"] == []
 
 
+def test_recursive_flag_includes_the_whole_subtree(settings):
+  # Ticket 086: recursive=1 widens list_photos/filter_counts from "directly in dir" to
+  # "anywhere under dir", matching list_dirs' own subtree counts (test_dirs_lists_children...).
+  c = build(settings)
+  non_recursive = c.get("/api/photos", params={"dir": "2020", "sort": "name"}).json()
+  assert non_recursive["total"] == 3
+
+  recursive = c.get("/api/photos", params={"dir": "2020", "sort": "name", "recursive": "1"}).json()
+  assert recursive["total"] == 5   # + trip/c.jpg, trip/deep/d.jpg -- matches dirs' subtree count
+  assert sorted(p["name"] for p in recursive["photos"]) == ["B.jpg", "K1.JPG", "a.jpg", "c.jpg", "d.jpg"]
+
+  root = c.get("/api/photos", params={"recursive": "1"}).json()
+  assert root["total"] == 7   # top.jpg + all of 2020's subtree (5) + 2021/e.jpg
+
+  counts = c.get("/api/photos/counts", params={"dir": "2020", "recursive": "1"}).json()["counts"]
+  assert counts["all"] == 5   # filter_counts must agree with list_photos' total (ticket 057)
+  assert counts["fav"] == 1   # 2020/a.jpg is still the only fav, subtree-wide
+
+
+def test_recursive_flag_still_excludes_dot_subfolders(settings):
+  # Ticket 054 (no dot folders in the folder view) has to keep holding once recursive can reach
+  # into subfolders that never showed up in a non-recursive listing before.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "s", "0.jpg"))
+  make_jpeg(os.path.join(d, "s", "sub", "1.jpg"))
+  make_jpeg(os.path.join(d, "s", ".hidden", "h.jpg"))
+  make_jpeg(os.path.join(d, "s", "sub", ".alsohidden", "h2.jpg"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  c = TestClient(api.create_app(conn, settings))
+
+  r = c.get("/api/photos", params={"dir": "s", "recursive": "1", "sort": "name"}).json()
+  assert [p["name"] for p in r["photos"]] == ["0.jpg", "1.jpg"]
+  assert c.get("/api/photos/counts", params={"dir": "s", "recursive": "1"}).json()["counts"]["all"] == 2
+
+
 def test_rating_n_filter_means_exactly_n_stars(settings):
   import dataclasses
   d = settings.pictures_dir

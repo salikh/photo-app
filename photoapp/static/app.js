@@ -66,6 +66,15 @@ function renderHeader(route) {
     browsing ? select(SORTS, route.sort,
       (v) => { history.replaceState(null, '', href({...route, sort: v, photo: null})); render(); },
       'sort') : null,
+    browsing ? el('button', {
+      class: route.recursive ? 'on' : '',
+      title: 'toggle whether the grid includes subfolders',
+      text: route.recursive ? 'This folder + subfolders' : 'This folder',
+      onclick: () => {
+        history.replaceState(null, '', href({...route, recursive: !route.recursive, photo: null}));
+        render();
+      },
+    }) : null,
     browsing ? el('button', {class: state.selecting ? 'on' : '', text: 'Select', onclick: toggleSelecting}) : null,
     browsing && route.filter === 'rejected'
       ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir),
@@ -131,7 +140,8 @@ async function render() {
   }
 
   const sameFolder = previous && previous.dir === route.dir && previous.filter === route.filter &&
-                     previous.sort === route.sort && state.route && state.route.page === 'browse';
+                     previous.sort === route.sort && previous.recursive === route.recursive &&
+                     state.route && state.route.page === 'browse';
   if (!sameFolder) {
     loupe.close();
     state.route = route;
@@ -151,7 +161,7 @@ async function render() {
   } else {
     state.route.photo = route.photo;
   }
-  previous = {dir: route.dir, filter: route.filter, sort: route.sort};
+  previous = {dir: route.dir, filter: route.filter, sort: route.sort, recursive: route.recursive};
 
   if (route.photo) {
     // Open at once if the photo is on the first page; otherwise (a direct link deep into a big

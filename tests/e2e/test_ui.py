@@ -549,6 +549,35 @@ def test_filter_is_kept_when_changing_folder_and_shown_in_the_loupe(page, server
   expect(page.locator(".hud .pos")).to_have_text("1/4")                  # navigation stays in the filtered list
 
 
+# ------------------------------------------------ subdirectory-recursive grid (ticket 086)
+
+def test_recursive_toggle_widens_the_grid_to_the_whole_subtree(page, server):
+  page.goto(server.url + "/#/2024")                    # no photos directly in 2024 (only in trip/home)
+  expect(page.locator(".cell")).to_have_count(0)
+  toggle = page.get_by_role("button", name="This folder", exact=True)
+  expect(toggle).to_be_visible()
+
+  toggle.click()
+  expect(page.get_by_role("button", name="This folder + subfolders")).to_be_visible()
+  expect(page.locator(".cell")).to_have_count(9)        # trip's 6 + home's 3
+  assert "recursive=1" in page.url
+
+  page.reload()                                          # state is in the URL
+  expect(page.locator(".cell")).to_have_count(9)
+  page.get_by_role("button", name="This folder + subfolders").click()
+  expect(page.locator(".cell")).to_have_count(0)
+  assert "recursive" not in page.url
+
+
+def test_recursive_grid_shows_the_subfolder_path_on_the_cell_and_in_the_loupe(page, server):
+  page.goto(server.url + "/#/2024?recursive=1")
+  expect(page.locator(".cell")).to_have_count(9)
+  expect(page.locator(".cell").first).to_have_attribute("title", re.compile(r"^2024/"))
+  page.locator(".cell").first.click()
+  expect(page.locator(".loupe")).to_be_visible()
+  expect(page.locator(".hud .name")).to_contain_text("2024/")
+
+
 def test_reject_button_is_left_of_the_rating_buttons_in_loupe_and_selection_bar(page, server):
   open_loupe(page, server)
   titles = page.locator(".hud .buttons button").evaluate_all("els => els.map(e => e.title)")

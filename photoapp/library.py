@@ -53,6 +53,24 @@ def _prefix_range(rel_dir):
   return rel_dir + "/", rel_dir + "0"     # '0' is the character after '/'
 
 
+def _scope_condition(rel_dir, recursive):
+  """SQL condition (on files rf) + params selecting a Photo's representative file
+  directly in rel_dir, or -- when recursive -- anywhere in its subtree.
+
+  The recursive case excludes dot-prefixed subdirectories (ticket 054's "no dot
+  folders in the folder view"), which the non-recursive case never has to think
+  about: a Photo directly in rel_dir isn't under any nested subdirectory, dotted
+  or not. list_photos and filter_counts both call this so their scope can't drift
+  apart (docs/design/databases.md's note: a filter button's count must always
+  equal what clicking it shows).
+  """
+  lo, hi = _prefix_range(rel_dir)
+  if recursive:
+    return ("rf.path >= ? AND rf.path < ? AND substr(rf.path, ?) NOT LIKE '.%/%'"
+             " AND substr(rf.path, ?) NOT LIKE '%/.%/%'"), (lo, hi, len(lo) + 1, len(lo) + 1)
+  return "rf.path >= ? AND rf.path < ? AND instr(substr(rf.path, ?), '/') = 0", (lo, hi, len(lo) + 1)
+
+
 def _norm_dir(rel_dir):
   rel_dir = (rel_dir or ".").strip("/")
   if any(part in ("..",) for part in rel_dir.split("/")):
@@ -103,18 +121,17 @@ def _photo_json(r, tags):
 
 
 def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
-                limit=200, one_star_is_unrated=False):
-  """A page of Photos whose representative file is directly in rel_dir."""
+                limit=200, one_star_is_unrated=False, recursive=False):
+  """A page of Photos whose representative file is directly in rel_dir, or
+  (recursive) anywhere in its subtree."""
   rel_dir = _norm_dir(rel_dir)
   if sort not in SORTS:
     raise ValueError(f"sort must be one of {SORTS}")
   filter_sql = filter_condition(filter, one_star_is_unrated)
   limit = max(1, min(int(limit), 1000))
   offset = max(0, int(offset))
-  lo, hi = _prefix_range(rel_dir)
-  where = ("rf.path >= ? AND rf.path < ? AND instr(substr(rf.path, ?), '/') = 0"
-           " AND rf.missing = 0 AND " + filter_sql)
-  args = (lo, hi, len(lo) + 1)
+  scope_sql, args = _scope_condition(rel_dir, recursive)
+  where = scope_sql + " AND rf.missing = 0 AND " + filter_sql
   order = ("COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path"
            if sort == "date" else "rf.path COLLATE NOCASE")
   total = conn.execute(
@@ -143,22 +160,22 @@ COUNT_FILTERS = ("all", "unrated", "rejected", "rating:1", "rating:2", "rating:3
                  "rating:5", "picked", "rated", "fav", "conflict")
 
 
-def filter_counts(conn, rel_dir=".", one_star_is_unrated=False):
+def filter_counts(conn, rel_dir=".", one_star_is_unrated=False, recursive=False):
   """How many Photos each filter shows in rel_dir (the ones the grid lists there).
 
-  One query; the conditions are the ones list_photos uses, so a button's count always equals
-  what clicking it shows. With one_star_is_unrated there is no 'rating:1'.
+  One query; the conditions and the recursive/non-recursive scope are the ones list_photos
+  uses (via _scope_condition), so a button's count always equals what clicking it shows.
+  With one_star_is_unrated there is no 'rating:1'.
   """
   rel_dir = _norm_dir(rel_dir)
-  lo, hi = _prefix_range(rel_dir)
+  scope_sql, scope_args = _scope_condition(rel_dir, recursive)
   names = [n for n in COUNT_FILTERS if not (one_star_is_unrated and n == "rating:1")]
   sums = ", ".join(
       f"COALESCE(SUM(CASE WHEN {filter_condition(n, one_star_is_unrated)} THEN 1 ELSE 0 END), 0)"
       for n in names)
   row = conn.execute(
       f"SELECT {sums} FROM photos p JOIN files rf ON rf.id = p.representative_file_id "
-      "WHERE rf.path >= ? AND rf.path < ? AND instr(substr(rf.path, ?), '/') = 0 "
-      "AND rf.missing = 0", (lo, hi, len(lo) + 1)).fetchone()
+      "WHERE " + scope_sql + " AND rf.missing = 0", scope_args).fetchone()
   return {"dir": rel_dir, "counts": dict(zip(names, row))}
 
 

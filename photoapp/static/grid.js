@@ -12,10 +12,11 @@ const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
 export async function loadFolder(route) {
   state.route = route;
   state.selected.clear();
+  const rec = route.recursive ? '&recursive=1' : '';
   const [dirs, first, counts] = await Promise.all([
     get('/api/dirs?path=' + encodeURIComponent(route.dir)),
-    get(`/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}&filter=${route.filter}&limit=${PAGE}`),
-    get('/api/photos/counts?dir=' + encodeURIComponent(route.dir)),
+    get(`/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}&filter=${route.filter}&limit=${PAGE}${rec}`),
+    get('/api/photos/counts?dir=' + encodeURIComponent(route.dir) + rec),
   ]);
   state.dirs = dirs;
   state.counts = counts.counts;
@@ -38,7 +39,8 @@ export function loadRest(route, onPage = () => {}) {
       const epoch = state.epoch;
       const page = await enqueue(() => get(
           `/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}` +
-          `&filter=${route.filter}&offset=${state.loaded - state.removed}&limit=${PAGE}`));
+          `&filter=${route.filter}&offset=${state.loaded - state.removed}&limit=${PAGE}` +
+          (route.recursive ? '&recursive=1' : '')));
       if (state.route !== route) break;
       if (epoch !== state.epoch) continue;
       if (!page.photos.length) break;
@@ -79,7 +81,9 @@ export function makeCell(photo) {
   }});
   return el('a', {
     class: 'cell' + (photo.rating === REJECT ? ' rejected' : '') + (state.selected.has(photo.id) ? ' selected' : ''),
-    href: href({...state.route, photo: photo.id}), dataset: {id: photo.id}, title: photo.name,
+    href: href({...state.route, photo: photo.id}), dataset: {id: photo.id},
+    // recursive (ticket 086): several subfolders can share a filename, so disambiguate on hover.
+    title: state.route && state.route.recursive ? photo.path : photo.name,
     onclick: (e) => {
       if (state.selecting || e.shiftKey || e.ctrlKey || e.metaKey) { e.preventDefault(); toggle(photo.id); }
     },

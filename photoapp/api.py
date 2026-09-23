@@ -404,19 +404,19 @@ def create_app(conn, settings):
   @app.get("/api/photos")
   @db_route
   def photos(dir: str = ".", sort: str = "date", filter: str = "all",
-             offset: int = 0, limit: int = 200):
+             offset: int = 0, limit: int = 200, recursive: bool = False):
     if offset == 0 and settings.load_worker_enabled:
       # ticket 080: someone is looking at this folder right now -- bump its still-missing
       # thumbnails ahead of the background worker's standing backlog (cheap: only the first
       # page load of a folder view triggers this, not every scroll/page-through).
       read(app.state.populator.enqueue_missing, rel_dir=dir)
     return read(library.list_photos, dir, sort, filter, offset, limit,
-                settings.one_star_is_unrated)
+                settings.one_star_is_unrated, recursive)
 
   @app.get("/api/photos/counts")
   @db_route
-  def photo_counts(dir: str = "."):
-    return read(library.filter_counts, dir, settings.one_star_is_unrated)
+  def photo_counts(dir: str = ".", recursive: bool = False):
+    return read(library.filter_counts, dir, settings.one_star_is_unrated, recursive)
 
   @app.get("/api/photos/{photo_id}")
   @db_route
