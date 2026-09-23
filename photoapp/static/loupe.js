@@ -584,6 +584,11 @@ async function openFiles() {
     detail.files.map((f) => el('div', {class: 'file' + (f.id === detail.representative_file_id ? ' rep' : '')},
       el('div', {text: f.path.split('/').pop() + '  ·  ' + f.role + (f.link_source === 'manual' ? ' (manual)' : '')}),
       el('div', {class: 'meta', text: `${f.width || '?'}×${f.height || '?'}  ${f.path}` + (f.missing ? '  MISSING' : '')}),
+      // Ticket 099: a file exported (096/097) from another photo links back to it -- own Photo,
+      // just cross-referenced, not merged into the source's file list.
+      f.exported_from ? el('div', {class: 'meta'},
+        'exported from: ', el('a', {href: href({dir: f.exported_from.dir, photo: f.exported_from.photo_id}),
+                                    text: f.exported_from.dir + ' (photo ' + f.exported_from.photo_id + ')'})) : null,
       cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
       f.is_raw && !f.missing ? rawSettingsControls(f) : null,
       el('div', {class: 'row'},

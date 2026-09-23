@@ -179,6 +179,13 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN raw_wb_b REAL;
     ALTER TABLE files ADD COLUMN raw_highlight INTEGER;
     """,
+    """
+    -- Ticket 096/097 (Option B): an exported file keeps its own Photo, browseable wherever it
+    -- physically lives, cross-referenced to the file it was exported from by this one nullable
+    -- column -- not by merging into the original's Photo the way manual_links' role='export'
+    -- (reserved, never used) would have. NULL for every file that isn't itself an export.
+    ALTER TABLE files ADD COLUMN exported_from_file_id INTEGER REFERENCES files(id);
+    """,
 ]
 
 

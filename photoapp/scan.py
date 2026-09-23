@@ -64,6 +64,23 @@ def _upsert_file(conn, rel_path, record):
        record["iso"]))
 
 
+def import_single_file(conn, pictures_dir, rel_path, hashes=None):
+  """Read and upsert one already-on-disk file into `files` outside of a directory walk (ticket
+  099: a just-written export, known by path rather than discovered by os.walk) -- the same
+  metadata extraction _scan_files does per file, without its directory-level batching. Returns
+  the file's id. Does not group it into a Photo; call grouping.regroup afterwards for that."""
+  full = os.path.join(pictures_dir, rel_path)
+  st = os.stat(full)
+  mime_type, width, height, exif_date, aperture, shutter_speed, iso = (
+      fileinfo.read_image_metadata(full))
+  file_hash = fileinfo.get_or_compute_hash(full, rel_path, st.st_mtime, hashes)
+  _upsert_file(conn, rel_path, {
+      "hash": file_hash, "mime_type": mime_type, "width": width, "height": height,
+      "bytesize": st.st_size, "mtime": st.st_mtime, "exif_date": exif_date,
+      "aperture": aperture, "shutter_speed": shutter_speed, "iso": iso})
+  return conn.execute("SELECT id FROM files WHERE path = ?", (rel_path,)).fetchone()["id"]
+
+
 def _lookup_files(conn, rel_dir, names, columns="id, path, mtime, bytesize, missing"):
   """{path: row} for the given file names in rel_dir, by exact path.
 

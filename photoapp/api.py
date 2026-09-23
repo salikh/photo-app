@@ -138,14 +138,17 @@ def create_app(conn, settings):
 
   def export_job(conn, job):
     """Ticket 089: job['target'] is the exact destination file path for this one file --
-    already resolved (mirrored under the confirmed target folder) when the export was queued,
-    by start_export below, which is the only enqueuer and the only place that knows the
-    directory the export was started from."""
+    already resolved (mirrored under the confirmed target folder, disambiguated) when the export
+    was queued, by start_export below, which is the only enqueuer and the only place that knows
+    the directory the export was started from. Ticket 099: once the file is actually written,
+    import it into the database and link it to its source right away -- a no-op (returns None)
+    when the target is outside pictures_dir, same as before this ticket."""
     row = conn.execute("SELECT path FROM files WHERE id = ?",
                        (job["file_id"],)).fetchone()
     if row is None:
       raise RuntimeError("file is gone")
     export.export_file(conn, settings, job["file_id"], row["path"], job["target"])
+    export.link_exported_file(conn, settings, job["file_id"], job["target"])
     logging.vlog(5, "%s: exported to %s", row["path"], job["target"])
 
   app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render},
@@ -303,10 +306,11 @@ def create_app(conn, settings):
   @app.post("/api/export")
   def start_export(body: ExportBody):
     """Ticket 089: queue one 'export' job per file (photoapp.jobs), each already carrying its
-    fully resolved, mirrored destination path (export.dest_path) so the job handler needs no
-    extra context beyond file_id + target. A photo id that no longer resolves to a live
-    representative file is reported in 'missing', not silently dropped, matching
-    trash_photos_route's own not-silently-skipped convention."""
+    fully resolved, mirrored destination path (export.dest_path, disambiguated by
+    export.resolve_dest_path -- ticket 098) so the job handler needs no extra context beyond
+    file_id + target. A photo id that no longer resolves to a live representative file is
+    reported in 'missing', not silently dropped, matching trash_photos_route's own
+    not-silently-skipped convention."""
     if not body.ids or len(body.ids) > 5000:
       raise HTTPException(400, "give between 1 and 5000 photo ids")
     try:
@@ -322,11 +326,15 @@ def create_app(conn, settings):
             f"SELECT p.id AS photo_id, rf.id AS file_id, rf.path FROM photos p "
             f"JOIN files rf ON rf.id = p.representative_file_id WHERE p.id IN ({placeholders})",
             body.ids).fetchall()
-      queued = []
-      for r in rows:
-        dest = export.dest_path(body.target, rel_dir, r["path"])
-        job_id = app.state.jobs.enqueue("export", file_id=r["file_id"], target=dest)
-        queued.append({"photo_id": r["photo_id"], "job_id": job_id})
+        queued = []
+        taken = set()
+        for r in rows:
+          candidate = export.dest_path(body.target, rel_dir, r["path"])
+          dest = export.resolve_dest_path(app.state.db, settings.pictures_dir, candidate,
+                                          r["file_id"], taken)
+          taken.add(dest)
+          job_id = app.state.jobs.enqueue("export", file_id=r["file_id"], target=dest)
+          queued.append({"photo_id": r["photo_id"], "job_id": job_id})
       missing = sorted(set(body.ids) - {r["photo_id"] for r in rows})
       return {"queued": queued, "missing": missing}
     return run_db(attempt)
