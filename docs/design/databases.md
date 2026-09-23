@@ -44,8 +44,12 @@ relative to `pictures_dir` with `/` separators and is the primary key applicatio
 `hash` is a content hash used for rename/move recovery; `photo_id` links it to the Photo it belongs
 to; `role` (`original`/`camera`/`tuning`/`export`) and `derived_from` describe its place within
 that Photo's group; `missing` marks a file the scanner no longer finds on disk without deleting its
-row (so its rating/history survives a temporarily-unmounted NAS or a later-restored file). See
-[photo-model.md](photo-model.md).
+row (so its rating/history survives a temporarily-unmounted drive or a later-restored/un-trashed
+file — see [trash.md](trash.md)). `aperture`/`shutter_speed`/`iso` (ticket 083) are camera
+metadata read from EXIF, alongside the already-existing `exif_date`; any can be `NULL` if the file
+has no EXIF or lacks that tag. `dcraw_brightness`/`dcraw_highlight_mode`/`dcraw_wb_mode` (ticket
+085) are per-file overrides for the background dcraw renderer, `NULL` meaning "use the default."
+See [photo-model.md](photo-model.md).
 
 **`photos`** — one row per logical picture, the unit ratings/fav/tags actually apply to.
 `original_file_id`/`representative_file_id` point into `files`; `rating`/`fav`/`previous_stars` are

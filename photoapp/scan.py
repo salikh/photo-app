@@ -50,14 +50,18 @@ def _rel(pictures_dir, path):
 def _upsert_file(conn, rel_path, record):
   conn.execute(
       "INSERT INTO files (path, hash, mime_type, width, height, bytesize,"
-      " mtime, exif_date, missing) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0) "
+      " mtime, exif_date, aperture, shutter_speed, iso, missing) VALUES"
+      " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
       "ON CONFLICT(path) DO UPDATE SET hash = excluded.hash,"
       " mime_type = excluded.mime_type, width = excluded.width,"
       " height = excluded.height, bytesize = excluded.bytesize,"
-      " mtime = excluded.mtime, exif_date = excluded.exif_date, missing = 0",
+      " mtime = excluded.mtime, exif_date = excluded.exif_date,"
+      " aperture = excluded.aperture, shutter_speed = excluded.shutter_speed,"
+      " iso = excluded.iso, missing = 0",
       (rel_path, record["hash"], record["mime_type"], record["width"],
        record["height"], record["bytesize"], record["mtime"],
-       record["exif_date"]))
+       record["exif_date"], record["aperture"], record["shutter_speed"],
+       record["iso"]))
 
 
 def _lookup_files(conn, rel_dir, names, columns="id, path, mtime, bytesize, missing"):
@@ -102,14 +106,16 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
     if (old is not None and old["mtime"] == st.st_mtime
         and old["bytesize"] == st.st_size and not old["missing"]):
       return None
-    mime_type, width, height, exif_date = fileinfo.read_image_metadata(filepath)
+    mime_type, width, height, exif_date, aperture, shutter_speed, iso = (
+        fileinfo.read_image_metadata(filepath))
     file_hash = fileinfo.get_or_compute_hash(
         filepath, rel_path, st.st_mtime, hashes)
     logging.vlog(7, "scanned %s (%s, %dx%d)", rel_path, mime_type, width, height)
     return rel_path, {
         "hash": file_hash, "mime_type": mime_type, "width": width,
         "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
-        "exif_date": exif_date}
+        "exif_date": exif_date, "aperture": aperture,
+        "shutter_speed": shutter_speed, "iso": iso}
 
   for result in pool.map(work, filenames):
     if result is None:

@@ -42,6 +42,13 @@ _EXIF_DATE_TAGS = (
 )
 _EXIF_OFFSET_RE = re.compile(r"^([+-])(\d{2}):?(\d{2})$")
 
+# Camera metadata (ticket 083): all three live in the Exif sub-IFD, same as the date tags above.
+# FNumber (aperture, f-number); ExposureTime (shutter speed, seconds); ISOSpeedRatings (ISO --
+# also the tag PhotographicSensitivity uses under its EXIF 2.3+ name; same numeric tag either way).
+_EXIF_FNUMBER = 0x829D
+_EXIF_EXPOSURE_TIME = 0x829A
+_EXIF_ISO = 0x8827
+
 
 def hash_file(path):
   """Same sha224-over-chunks hash as hash_dir.py's hash_file."""
@@ -113,6 +120,40 @@ def read_exif_date(img):
   return None
 
 
+def _exif_rational_to_float(value):
+  """A rational EXIF value to float: normally an IFDRational (has __float__), but a value
+  written by Pillow itself (img.getexif() round-tripped through save(exif=...), as in this
+  module's own tests) can come back as a plain (numerator, denominator) tuple instead -- float()
+  does not accept that directly, so it needs its own conversion."""
+  if isinstance(value, tuple) and len(value) == 2:
+    num, den = value
+    return float(num) / float(den) if den else None
+  return float(value)
+
+
+def read_camera_metadata(img):
+  """Return (aperture, shutter_speed, iso) of an open PIL image: f-number (float, e.g. 2.8),
+  exposure time in seconds (float, e.g. 0.004 for 1/250s -- formatting that back into "1/250" is
+  a display concern, not this function's), and ISO (int). Any of the three is None if that tag
+  is absent; all three are None if there is no EXIF at all. Same sub-IFD lookup as
+  read_exif_date, and works for RAW files for the same reason (Pillow parses the EXIF/IFD0
+  header even when it cannot decode the image data itself)."""
+  try:
+    exif = img.getexif()
+    if not exif:
+      return None, None, None
+    sub_ifd = exif.get_ifd(_EXIF_IFD_POINTER)
+  except Exception as e:
+    logging.vlog(3, "Could not read EXIF: %s", e)
+    return None, None, None
+  aperture = sub_ifd.get(_EXIF_FNUMBER)
+  shutter_speed = sub_ifd.get(_EXIF_EXPOSURE_TIME)
+  iso = sub_ifd.get(_EXIF_ISO)
+  return (_exif_rational_to_float(aperture) if aperture is not None else None,
+         _exif_rational_to_float(shutter_speed) if shutter_speed is not None else None,
+         int(iso) if iso is not None else None)
+
+
 def read_exif_date_from_path(filepath):
   try:
     with Image.open(filepath) as img:
@@ -147,20 +188,22 @@ def read_raw_size(filepath):
 
 
 def read_image_metadata(filepath):
-  """Return (mime_type, width, height, exif_date) for filepath.
+  """Return (mime_type, width, height, exif_date, aperture, shutter_speed, iso) for filepath.
 
-  width/height/exif_date are None, and mime_type falls back to a
-  best-effort guess from the extension, when the file cannot be decoded
-  (e.g. RAW formats LibRaw does not know). exif_date is also None if the
-  image has no EXIF date. RAW files get their real dimensions from LibRaw
-  (see read_raw_size), not Pillow's IFD0 thumbnail.
+  width/height/exif_date/aperture/shutter_speed/iso are None, and mime_type falls back to a
+  best-effort guess from the extension, when the file cannot be decoded (e.g. RAW formats LibRaw
+  does not know). Any EXIF field is also None if the image has no EXIF, or lacks that specific
+  tag. RAW files get their real dimensions from LibRaw (see read_raw_size), not Pillow's IFD0
+  thumbnail -- but camera metadata still comes from Pillow's EXIF parse (ticket 083; same reason
+  exif_date already works for RAW: the EXIF header parses even when the image data does not).
   """
-  mime_type = width = height = exif_date = None
+  mime_type = width = height = exif_date = aperture = shutter_speed = iso = None
   try:
     with Image.open(filepath) as img:
       width, height = img.size
       mime_type = Image.MIME.get(img.format)
       exif_date = read_exif_date(img)
+      aperture, shutter_speed, iso = read_camera_metadata(img)
   except Exception as e:
     logging.warning("Could not decode image %s: %s", filepath, e)
     mime_type, _ = mimetypes.guess_type(filepath)
@@ -168,7 +211,7 @@ def read_image_metadata(filepath):
     raw_size = read_raw_size(filepath)
     if raw_size is not None:
       width, height, mime_type = raw_size
-  return mime_type, width, height, exif_date
+  return mime_type, width, height, exif_date, aperture, shutter_speed, iso
 
 
 def load_precomputed_hashes(db_path):

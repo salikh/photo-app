@@ -141,6 +141,26 @@ MIGRATIONS = [
     -- NULL for those. Every existing job kind leaves target NULL.
     ALTER TABLE jobs ADD COLUMN target TEXT;
     """,
+    """
+    -- Camera metadata (ticket 083), from EXIF: aperture is the f-number (e.g. 2.8), shutter_speed
+    -- is exposure time in seconds (e.g. 0.004 for 1/250s -- "1/250" formatting is a display
+    -- concern), iso is the ISO speed. NULL when the file has no EXIF, or lacks that tag. Existing
+    -- rows are backfilled by photoapp/backfill_exif.py, not by a forced rescan (see the ticket).
+    ALTER TABLE files ADD COLUMN aperture REAL;
+    ALTER TABLE files ADD COLUMN shutter_speed REAL;
+    ALTER TABLE files ADD COLUMN iso INTEGER;
+    """,
+    """
+    -- Per-file dcraw demosaic overrides (ticket 085). NULL means "use the app's normal default"
+    -- for that setting. Only affects thumb_populate.render_dcraw's Small/Medium/Huge output for a
+    -- RAW file -- not Thumb (always the camera's own embedded preview, never demosaiced) and not
+    -- the on-demand path (previews.py, rawpy/LibRaw, a separate renderer -- see the ticket for why
+    -- this was scoped to the dcraw path only). dcraw_wb_mode: 'camera' (dcraw -w, the default) or
+    -- 'auto' (dcraw -a). dcraw_highlight_mode: dcraw -H, 0-9 (0 = clip, dcraw's own default).
+    ALTER TABLE files ADD COLUMN dcraw_brightness REAL;
+    ALTER TABLE files ADD COLUMN dcraw_highlight_mode INTEGER;
+    ALTER TABLE files ADD COLUMN dcraw_wb_mode TEXT;
+    """,
 ]
 
 

@@ -120,6 +120,19 @@ one step:
 N Photos. Nothing is logged to the activity log for a pure sync (nothing actually changed, so
 there is nothing to undo) — only the sidecar bytes and the `conflict` flag change.
 
+## Backfilling camera metadata (aperture, shutter speed, ISO)
+
+As of ticket 083, every scan reads a file's EXIF for aperture, shutter speed and ISO alongside the
+date it already read. A file scanned *before* that ticket won't have them until it changes and gets
+rescanned — to fill them in for the whole library without waiting for that or forcing a full
+rescan (scanning is I/O-latency bound and slow, see "Scanning the library" above), run:
+
+    python -m photoapp.backfill_exif
+
+Read-only on the library: opens each file just far enough to read its EXIF header, no hashing, no
+grouping, no thumbnail work. Only touches files with none of the three fields already set, so it's
+safe and cheap to rerun (`--backfill_limit=N` restricts a run to N files for a quick check).
+
 ## Hidden folders
 
 Folders whose name starts with a dot (`.nu`, `.thumbnails`, `.webaxs`, `.picasaoriginals`, `.comments`:

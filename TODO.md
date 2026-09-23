@@ -44,7 +44,7 @@ All ten build-order epics are done.
 - [x] [080](docs/tickets/080.md) Prioritize the currently-open folder in the background thumbnail queue (spun out of 069's investigation)
 - [x] [081](docs/tickets/081.md) Automatic purge of Pictures/.trash after a retention window (spun out of 072's decisions)
 - [x] [082](docs/tickets/082.md) "Delete this file" button in the loupe's Files panel, with a Medium-thumbnail confirmation screen
-- [ ] [083](docs/tickets/083.md) Schema + backfill for camera metadata (aperture, shutter speed, ISO) — blocks 084
+- [x] [083](docs/tickets/083.md) Schema + backfill for camera metadata (aperture, shutter speed, ISO) — blocks 084
 - [ ] [084](docs/tickets/084.md) Show camera metadata in the Files detail view (blocked by 083)
 - [ ] [085](docs/tickets/085.md) Adjustable per-file dcraw settings with sliders and thumbnail regeneration
 
