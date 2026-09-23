@@ -172,6 +172,19 @@ def test_find_missing_files(conn, settings):
   assert len(thumb_populate.find_missing_files(conn, limit=1)) == 1
 
 
+def test_find_missing_files_scoped_to_a_directory(conn, settings):
+  # ticket 080: rel_dir restricts to files directly in that directory (not subdirectories),
+  # matching what a folder's grid actually shows.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "y", "a.jpg"))
+  make_jpeg(os.path.join(d, "y", "sub", "b.jpg"))
+  make_jpeg(os.path.join(d, "z", "c.jpg"))
+  scan.scan(conn, d)
+  paths = {r["path"] for r in thumb_populate.find_missing_files(conn, rel_dir="y")}
+  assert paths == {"y/a.jpg"}   # not y/sub/b.jpg, not z/c.jpg
+  assert {r["path"] for r in thumb_populate.find_missing_files(conn, rel_dir=".")} == set()
+
+
 # --- Populator: end to end with a real running queue, dcraw stubbed --------------------------------
 
 def test_populator_processes_queued_files_one_at_a_time(settings, stub_dcraw):
@@ -191,6 +204,21 @@ def test_populator_processes_queued_files_one_at_a_time(settings, stub_dcraw):
   assert states.count("done") == 3
   u = thumbs.usage(conn)
   assert all(u[s]["files"] == 3 for s in thumbs.SIZES)
+
+
+def test_populator_enqueue_missing_scoped_to_a_directory(settings, stub_dcraw):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "y", "a.DNG"))
+  touch(os.path.join(d, "z", "b.DNG"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  pop = thumb_populate.Populator(settings.db_path, d, settings.thumbs_dir)
+  assert pop.enqueue_missing(conn, rel_dir="y") == 1
+  jobs_seen = pop.queue.list()
+  assert len(jobs_seen) == 1
+  pathed = conn.execute("SELECT path FROM files WHERE id = ?",
+                        (jobs_seen[0]["file_id"],)).fetchone()["path"]
+  assert pathed == "y/a.DNG"
 
 
 def test_populator_reports_a_failing_file_and_continues(settings, monkeypatch):

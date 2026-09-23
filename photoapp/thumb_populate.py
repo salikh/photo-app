@@ -32,6 +32,7 @@ from PIL import Image
 
 from photoapp import fileinfo
 from photoapp import jobs
+from photoapp import paths
 from photoapp import thumbs
 
 DCRAW_TIMEOUT = 180
@@ -140,13 +141,23 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
   return made
 
 
-def find_missing_files(conn, limit=None, sizes=thumbs.SIZES):
-  """[(id, path)] of live files that lack at least one of `sizes`."""
+def find_missing_files(conn, limit=None, sizes=thumbs.SIZES, rel_dir=None):
+  """[(id, path)] of live files that lack at least one of `sizes`.
+
+  rel_dir (ticket 080): only files directly in that directory (not its subdirectories, matching
+  what a folder's grid actually shows) -- used to bump a just-opened folder's missing thumbnails
+  ahead of the standing backlog.
+  """
   clauses = " OR ".join(
       "NOT EXISTS (SELECT 1 FROM thumbs t WHERE t.file_id = f.id AND t.size = ?)"
       for _ in sizes)
-  q = f"SELECT f.id, f.path FROM files f WHERE f.missing = 0 AND ({clauses}) ORDER BY f.path"
+  q = f"SELECT f.id, f.path FROM files f WHERE f.missing = 0 AND ({clauses})"
   args = list(sizes)
+  if rel_dir is not None:
+    lo, hi = paths.subtree_range(rel_dir)
+    q += f" AND f.path >= ? AND f.path < ? AND {paths.direct_children_sql('f.path')}"
+    args += [lo, hi, len(lo) + 1]
+  q += " ORDER BY f.path"
   if limit is not None:
     q += " LIMIT ?"
     args.append(limit)
@@ -203,12 +214,17 @@ class Populator:
   def stop(self):
     self.queue.stop()
 
-  def enqueue_missing(self, conn, limit=None):
-    """Queue every file that still needs one of self.sizes. Returns how many."""
-    rows = find_missing_files(conn, limit, self.sizes)
-    if logging.vlog_is_on(1):
+  def enqueue_missing(self, conn, limit=None, rel_dir=None):
+    """Queue every file that still needs one of self.sizes, or (ticket 080) only those directly
+    in rel_dir, to bump a just-opened folder's missing thumbnails ahead of the standing backlog
+    (see jobs.JobQueue's newest_first). Returns how many were found."""
+    rows = find_missing_files(conn, limit, self.sizes, rel_dir)
+    if rel_dir is None and logging.vlog_is_on(1):
       logging.vlog(1, "enqueue_missing: %d files to queue, missing per size: %s",
                    len(rows), _missing_counts_by_size(conn, self.sizes))
+    elif rows:
+      logging.vlog(3, "enqueue_missing(%s): %d file(s) bumped to the front of the queue",
+                   rel_dir, len(rows))
     for r in rows:
       self.queue.enqueue(self.KIND, r["id"])
     return len(rows)

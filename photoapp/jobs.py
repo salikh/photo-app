@@ -52,11 +52,17 @@ class JobQueue:
   unaffected.
   """
 
-  def __init__(self, db_path, handlers, workers=2, low_priority=False):
+  def __init__(self, db_path, handlers, workers=2, low_priority=False, newest_first=False):
+    """newest_first (ticket 080): claim the most recently enqueued job first (instead of the
+    usual FIFO oldest-first) -- a cheap approximation of "prioritize what's newly relevant" for a
+    queue whose backlog can otherwise take a long time to reach a given job. Enqueueing something
+    already queued still dedupes to its existing (older) row, so this only actually reorders
+    genuinely new jobs ahead of the standing backlog, not jobs already waiting."""
     self._db_path = db_path
     self._handlers = handlers
     self._workers = workers
     self._low_priority = low_priority
+    self._newest_first = newest_first
     self._threads = []
     self._wake = threading.Event()
     self._stop = threading.Event()
@@ -162,10 +168,11 @@ class JobQueue:
     # unknown-kind error -- a job it has no handler for.
     kinds = tuple(self._handlers)
     placeholders = ",".join("?" * len(kinds))
+    order = "id DESC" if self._newest_first else "id"
     conn.execute("BEGIN IMMEDIATE")
     row = conn.execute(
         f"SELECT * FROM jobs WHERE state = 'queued' AND kind IN "
-        f"({placeholders}) ORDER BY id LIMIT 1", kinds).fetchone()
+        f"({placeholders}) ORDER BY {order} LIMIT 1", kinds).fetchone()
     if row:
       conn.execute("UPDATE jobs SET state = 'running' WHERE id = ?",
                    (row["id"],))

@@ -63,6 +63,37 @@ def test_add_handler_registers_a_kind_after_construction(settings):
   assert seen == [1]
 
 
+def test_newest_first_claims_the_most_recently_enqueued_job(settings):
+  # ticket 080: a "bumped" job (freshly enqueued, not already queued) should be worked before
+  # the standing backlog, approximated by claiming highest-id-first instead of FIFO. All three
+  # jobs are enqueued (committed) before start(), so there is no ordering race to guard against.
+  db.open_state(settings.state_dir).close()
+  seen = []
+  q = jobs.JobQueue(settings.db_path, {"ok": lambda c, j: seen.append(j["file_id"])},
+                    workers=1, newest_first=True)
+  q.enqueue("ok", 1)
+  q.enqueue("ok", 2)
+  q.enqueue("ok", 3)
+  q.start()
+  assert q.wait_idle()
+  q.stop()
+  assert seen == [3, 2, 1]   # newest (highest id) first, not FIFO
+
+
+def test_default_claim_order_is_still_fifo(settings):
+  db.open_state(settings.state_dir).close()
+  seen = []
+  q = jobs.JobQueue(settings.db_path, {"ok": lambda c, j: seen.append(j["file_id"])},
+                    workers=1)   # newest_first defaults False
+  q.enqueue("ok", 1)
+  q.enqueue("ok", 2)
+  q.enqueue("ok", 3)
+  q.start()
+  assert q.wait_idle()
+  q.stop()
+  assert seen == [1, 2, 3]
+
+
 def test_prune_deletes_old_done_and_older_failed_jobs(settings):
   conn = db.open_state(settings.state_dir)
 

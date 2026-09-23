@@ -100,6 +100,12 @@ Non-RAW files use Pillow, the same as on-demand generation. This is a different 
 renderer (`raw_render`, ticket 028), which uses `rawpy`/LibRaw instead of `dcraw` — both can run at the same
 time without interfering (`--limit=N` restricts a run to N files, handy for a quick check).
 
+As of ticket 080, opening a folder in the app (the first page of `/api/photos`) bumps that folder's still-missing
+thumbnails ahead of the queue's standing backlog: the automatic worker claims its newest-enqueued job first, and
+a file already queued from the big background sweep keeps its place (this is a cheap approximation, not a real
+priority system — see the ticket for what it does and does not cover), so a folder that was never popular enough
+for the background walk to reach yet still fills in reasonably quickly once someone actually opens it.
+
 ## Syncing sidecars that are out of sync with the computed rating
 
 A Photo's sidecars only catch up to its currently resolved rating/fav/tags when that Photo is

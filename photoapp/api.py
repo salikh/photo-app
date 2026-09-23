@@ -125,7 +125,10 @@ def create_app(conn, settings):
   # drains: populate_thumb (thumb_populate.Populator, registered below), scan_dir (ticket 076's
   # per-top-level-directory nightly scan jobs) and prune_jobs (ticket 075), so background work
   # never competes for CPU/disk with the on-demand queue above or with interactive use.
-  app.state.background_jobs = jobs.JobQueue(settings.db_path, {}, workers=1, low_priority=True)
+  # newest_first (ticket 080): a folder's missing thumbnails, bumped by the /api/photos route
+  # below, jump ahead of the standing backlog instead of waiting behind it in enqueue order.
+  app.state.background_jobs = jobs.JobQueue(settings.db_path, {}, workers=1, low_priority=True,
+                                            newest_first=True)
   app.state.populator = thumb_populate.Populator(
       settings.db_path, settings.pictures_dir, settings.thumbs_dir,
       queue=app.state.background_jobs)
@@ -379,6 +382,11 @@ def create_app(conn, settings):
   @db_route
   def photos(dir: str = ".", sort: str = "date", filter: str = "all",
              offset: int = 0, limit: int = 200):
+    if offset == 0 and settings.load_worker_enabled:
+      # ticket 080: someone is looking at this folder right now -- bump its still-missing
+      # thumbnails ahead of the background worker's standing backlog (cheap: only the first
+      # page load of a folder view triggers this, not every scroll/page-through).
+      read(app.state.populator.enqueue_missing, rel_dir=dir)
     return read(library.list_photos, dir, sort, filter, offset, limit,
                 settings.one_star_is_unrated)
 

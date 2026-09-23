@@ -41,7 +41,7 @@ All ten build-order epics are done.
 - [x] [077](docs/tickets/077.md) Filter/sort changes use replaceState so they are not their own browser-history stop (Back always means "previous folder")
 - [x] [078](docs/tickets/078.md) Document the sqlite database(s) — location, schema, meaning — in docs/design/databases.md
 - [x] [079](docs/tickets/079.md) Loupe "..."/Debug button to force-rerender a photo's thumbnails (fixes broken ones)
-- [ ] [080](docs/tickets/080.md) Prioritize the currently-open folder in the background thumbnail queue (spun out of 069's investigation)
+- [x] [080](docs/tickets/080.md) Prioritize the currently-open folder in the background thumbnail queue (spun out of 069's investigation)
 - [ ] [081](docs/tickets/081.md) Automatic purge of Pictures/.trash after a retention window (spun out of 072's decisions)
 - [ ] [082](docs/tickets/082.md) "Delete this file" button in the loupe's Files panel, with a Medium-thumbnail confirmation screen
 - [ ] [083](docs/tickets/083.md) Schema + backfill for camera metadata (aperture, shutter speed, ISO) — blocks 084

@@ -95,6 +95,24 @@ def test_thumbs_usage_endpoint(settings):
   assert u["lacking"]["Thumb"] == 4 and "lacking" not in c.get("/api/thumbs/usage").json()
 
 
+def test_photos_route_bumps_missing_thumbnails_for_the_opened_folder(settings):
+  # ticket 080: opening a folder's first page enqueues its missing thumbnails on
+  # app.state.background_jobs, so the load-adaptive worker would work them ahead of any backlog.
+  c = app_with_pair(settings)
+  assert c.app.state.background_jobs.list() == []
+
+  r = c.get("/api/photos", params={"dir": "y"})
+  assert r.status_code == 200
+  jobs_seen = c.app.state.background_jobs.list()
+  assert len(jobs_seen) > 0
+  assert {j["kind"] for j in jobs_seen} == {"populate_thumb"}
+
+  # a later page of the same folder (offset > 0) does not enqueue again
+  before = len(c.app.state.background_jobs.list())
+  c.get("/api/photos", params={"dir": "y", "offset": 200})
+  assert len(c.app.state.background_jobs.list()) == before
+
+
 def test_trash_photos_endpoint(settings):
   c = app_with_pair(settings)
   d = settings.pictures_dir
