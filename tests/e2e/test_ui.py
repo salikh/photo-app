@@ -263,6 +263,44 @@ def test_files_panel_shows_camera_metadata(page, server):
   expect(page.locator(".files-panel .file")).to_contain_text("2024:06:01 12:00:00")
 
 
+def test_raw_settings_controls_only_show_for_raw_files_and_apply(page, server):
+  # ticket 085: sliders/controls only appear for a RAW file (not the JPEG sibling), toggling
+  # white balance mode posts to the server and the choice survives reopening the panel.
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")   # loupe finished loading
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel .file")).to_have_count(2)
+
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  jpg_row = page.locator(".files-panel .file", has_text="IMG_0001.jpg")
+  expect(dng_row.locator(".raw-settings")).to_be_visible()
+  expect(jpg_row.locator(".raw-settings")).to_have_count(0)
+
+  dng_row.get_by_role("button", name="manual", exact=True).click()
+  expect(page.locator("#toast")).to_contain_text("applied")
+  expect(page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+        .locator(".wb-multiplier")).to_have_count(3)          # R/G/B inputs appeared
+
+  page.keyboard.press("i")   # close
+  page.keyboard.press("i")   # reopen: the mode choice survived on the server
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  expect(dng_row.get_by_role("button", name="manual", exact=True)).to_have_class(ON)
+  expect(dng_row.get_by_role("button", name="Reset to default")).to_be_visible()
+
+  dng_row.get_by_role("button", name="Reset to default").click()
+  expect(page.locator("#toast")).to_contain_text("applied")
+  page.keyboard.press("i")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  expect(dng_row.get_by_role("button", name="camera", exact=True)).to_have_class(ON)
+  expect(dng_row.get_by_role("button", name="Reset to default")).to_have_count(0)
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
 def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):
   # ticket 082: per-file delete from the Files panel, gated by a modal confirmation.
   import os

@@ -5,6 +5,7 @@ Photo detail. Paths are relative to the pictures dir with '/' separators.
 import json
 import re
 
+from photoapp import fileinfo
 from photoapp import raw_settings
 
 FILTERS = ("all", "unrated", "rejected", "picked", "rated", "fav", "conflict")
@@ -221,6 +222,8 @@ def photo_detail(conn, photo_id):
       f" hash, {', '.join(raw_settings.COLUMNS)} FROM files"
       " WHERE photo_id = ? ORDER BY (id = ?) DESC, path",
       (photo_id, p["original_file_id"]))]
+  for f in files:
+    f["is_raw"] = fileinfo.is_raw(f["path"])   # ticket 085: only a RAW file gets settings sliders
   sidecars = [
       {"path": r["path"], "rating": r["rating"], "fav": bool(r["has_fav"]),
        "tags": json.loads(r["tags"] or "[]"), "mtime": r["mtime"]}

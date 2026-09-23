@@ -235,6 +235,13 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .files-panel .meta { color: var(--text-dim); font-size: 13px; word-break: break-all; }
 .files-panel .row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 
+/* ticket 085: per-file RAW conversion settings */
+.raw-settings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.raw-settings .row { align-items: center; }
+.raw-settings label { flex: 0 0 130px; font-size: 13px; color: var(--text-dim); }
+.raw-settings input[type="range"] { flex: 1 1 auto; min-width: 80px; }
+.raw-settings .wb-multiplier { width: 4.5em; }
+
 /* ticket 092: filter switcher opened from the loupe HUD's filter tag */
 .filter-picker {
   position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: 12px;

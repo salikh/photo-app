@@ -510,6 +510,65 @@ function cameraMetaText(f) {
   return parts.length ? parts.join('  ·  ') : null;
 }
 
+// ------------------------------------------- per-file RAW conversion settings (ticket 085) -----
+//
+// A control posts its own field plus every other field's *current* value (raw_settings.set
+// replaces the whole row, not a partial patch -- matches the server side). Each successful post
+// re-fetches the Files panel (openFiles), so the next control interaction always starts from
+// fresh values; no client-side staleness to track across changes.
+
+const WB_MODES = ['camera', 'auto', 'manual'];
+const DEFAULT_WB = {r: 2.0, g: 1.0, b: 1.5};
+
+async function applyRawSettings(f, values) {
+  try {
+    await post(`/api/files/${f.id}/raw_settings`, values);
+    toast('applied; thumbnails will regenerate on next view');
+    if (current().file_id === f.id) {
+      ui.img.src = imgUrl('Medium', f.id) + '?r=' + Date.now();
+      retryOnce(ui.img, current());
+    }
+    if (filesOpen) openFiles();
+  } catch (e) { /* post() already showed a toast for a server error */ }
+}
+
+function rawSettingsControls(f) {
+  const patch = (changed) => applyRawSettings(f, {
+    bright: f.raw_bright, wb_mode: f.raw_wb_mode, wb_r: f.raw_wb_r, wb_g: f.raw_wb_g,
+    wb_b: f.raw_wb_b, highlight: f.raw_highlight, ...changed,
+  });
+  const wbMode = f.raw_wb_mode || 'camera';
+  const bright = f.raw_bright ?? 1.0;
+  const highlight = f.raw_highlight ?? 0;
+  const isDefault = f.raw_bright == null && f.raw_wb_mode == null && f.raw_highlight == null;
+  return el('div', {class: 'raw-settings'},
+    el('div', {class: 'row'},
+      el('label', {text: 'Brightness'}),
+      el('input', {type: 'range', min: '0.25', max: '3', step: '0.05', value: bright,
+                   'aria-label': 'brightness', onchange: (e) => patch({bright: Number(e.target.value)})}),
+      el('span', {class: 'meta', text: bright.toFixed(2)})),
+    el('div', {class: 'row'},
+      el('label', {text: 'Highlight recovery'}),
+      el('input', {type: 'range', min: '0', max: '9', step: '1', value: highlight,
+                   'aria-label': 'highlight recovery', onchange: (e) => patch({highlight: Number(e.target.value)})}),
+      el('span', {class: 'meta', text: String(highlight)})),
+    el('div', {class: 'row'},
+      el('label', {text: 'White balance'}),
+      WB_MODES.map((m) => el('button', {
+        class: wbMode === m ? 'on' : '', text: m,
+        onclick: () => patch(m === 'manual'
+          ? {wb_mode: m, wb_r: f.raw_wb_r ?? DEFAULT_WB.r, wb_g: f.raw_wb_g ?? DEFAULT_WB.g,
+             wb_b: f.raw_wb_b ?? DEFAULT_WB.b}
+          : {wb_mode: m, wb_r: null, wb_g: null, wb_b: null}),
+      }))),
+    wbMode === 'manual' ? el('div', {class: 'row'},
+      ['r', 'g', 'b'].map((c) => el('input', {
+        type: 'number', step: '0.1', min: '0.1', class: 'wb-multiplier',
+        value: f[`raw_wb_${c}`] ?? DEFAULT_WB[c], 'aria-label': `white balance ${c}`,
+        onchange: (e) => patch({[`wb_${c}`]: Number(e.target.value)})}))) : null,
+    isDefault ? null : el('button', {text: 'Reset to default', onclick: () => applyRawSettings(f, {})}));
+}
+
 async function openFiles() {
   filesOpen = true;
   const photo = current();
@@ -526,6 +585,7 @@ async function openFiles() {
       el('div', {text: f.path.split('/').pop() + '  ·  ' + f.role + (f.link_source === 'manual' ? ' (manual)' : '')}),
       el('div', {class: 'meta', text: `${f.width || '?'}×${f.height || '?'}  ${f.path}` + (f.missing ? '  MISSING' : '')}),
       cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
+      f.is_raw && !f.missing ? rawSettingsControls(f) : null,
       el('div', {class: 'row'},
         f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :
           el('button', {text: 'Show this', onclick: () => setRepresentative(detail, f.id)}),
