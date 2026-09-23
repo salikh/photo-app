@@ -12,7 +12,8 @@ cache. Originals are never moved or deleted.
 - Requirements and plan: [docs/reqs/](docs/reqs/), [docs/plans/](docs/plans/)
 - Findings about the real library: [docs/reqs/xmp-survey.md](docs/reqs/xmp-survey.md),
   [docs/reqs/thumbs-layout.md](docs/reqs/thumbs-layout.md)
-- Work tracking: [TODO.md](TODO.md) and [docs/tickets/](docs/tickets/)
+- Work tracking: [TODO.md](TODO.md) (open work), [STATUS.md](STATUS.md) (completed), and
+  [docs/tickets/](docs/tickets/)
 
 ## Filtering (culling)
 
