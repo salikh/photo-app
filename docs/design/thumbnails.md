@@ -2,10 +2,19 @@
 
 Code: `photoapp/thumbs.py`, `photoapp/previews.py`, `photoapp/thumb_populate.py`, `photoapp/populate_thumbs.py`.
 
-## Two different RAW rendering paths — deliberately, not by accident
+## Two different RAW rendering paths — superseded 2026-09-23, see ticket 085/090
 
-There are **two separate code paths that render a RAW file into a JPEG thumbnail**, using two different tools,
-and that is intentional rather than duplication that should be merged:
+**This section's "not to be unified" conclusion no longer holds.** Ticket [090](../tickets/090.md)'s
+resolution (adjustable per-file RAW conversion settings, ticket [085](../tickets/085.md)) decided
+the opposite: the dcraw/rawpy split was "a legacy artifact, not an intended state," and 085 merges
+the two renderers into one (`rawpy`/LibRaw, used by both the on-demand and background paths) so a
+setting change has the same effect regardless of which path renders a file+size first. The
+reasoning below is kept for history — it explains why the split existed — but is no longer the
+app's design once 085 lands; check `photoapp/thumb_populate.py` directly for the current state if
+085 isn't done yet, rather than trusting the "deliberately not unified" framing below.
+
+There *were* **two separate code paths that render a RAW file into a JPEG thumbnail**, using two different tools,
+and that was intentional rather than duplication that should be merged:
 
 - **On-demand** (`photoapp/previews.py`, ticket 028): when a photo is opened and a size is missing, it is
   rendered synchronously from the embedded preview via `rawpy`/LibRaw — a Python library, no subprocess, and
@@ -21,10 +30,8 @@ and that is intentional rather than duplication that should be merged:
 
 Both paths write into the exact same `/zoo/Thumbs/<Size>/<path>.jpg` layout and the same `thumbs` table, and
 **both respect "never overwrite an existing thumbnail"** — whichever path gets there first for a given file and
-size wins, and the other simply has nothing left to do for it. There is no plan to unify them: they solve
-different problems (respond to a request now vs. work through a backlog patiently) with different constraints
-(no subprocess/binary dependency vs. matching the originally-specified tool), and forcing one tool to serve both
-would compromise whichever requirement it was not built for.
+size wins, and the other simply has nothing left to do for it. (This paragraph's "no plan to unify them" is the
+part 090/085 reversed — see the note at the top of this section.)
 
 ## The layout facts came from measuring the real tree, not from a spec
 

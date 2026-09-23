@@ -81,6 +81,7 @@ question tickets are tracked in `TODO.md`, not here.
 - [x] [063](docs/tickets/063.md) Try culling a real folder and tell how it feels → no issues (folder-open speed noted, see 069); unblocked 031
 - [x] [064](docs/tickets/064.md) Have a look at the dark theme → "Looks good for now, thanks!"; unblocked 047
 - [x] [065](docs/tickets/065.md) How should ratings newer in the database be written to the sidecars? → on the next edit only (already correct); unblocked 021; a future batch sync is ticket 068
+- [x] [090](docs/tickets/090.md) Should 085's adjustable RAW settings affect only the background dcraw cache, or the on-demand rawpy path too? → neither as originally framed: merge the two renderers into one (rawpy/LibRaw for both), with a revised Thumb-size rule; unblocked 085, superseded the "not to be unified" framing in docs/design/thumbnails.md
 
 Answered earlier: 053 (a single file's reject never rejects the pair while the other is picked; app rejects
 newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars), 042
