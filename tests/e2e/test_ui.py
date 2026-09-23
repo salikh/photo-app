@@ -198,6 +198,38 @@ def test_selection_and_batch_rating_and_undo(page, server):
   expect(page.locator(".badges .stars", has_text="5")).to_have_count(0)
 
 
+def test_shift_click_selects_range_from_the_anchor(page, server):
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  page.get_by_role("button", name="Select").click()
+  cells = page.locator(".cell")
+  cells.nth(1).click()   # anchor
+  cells.nth(4).click(modifiers=["Shift"])
+  expect(page.locator(".selection-bar")).to_contain_text("4 selected")
+  for i in range(1, 5):
+    expect(cells.nth(i)).to_have_class(re.compile(r"\bselected\b"))
+  expect(cells.nth(0)).not_to_have_class(re.compile(r"\bselected\b"))
+  expect(cells.nth(5)).not_to_have_class(re.compile(r"\bselected\b"))
+  # A second Shift+Click extends from the *same* original anchor (index 1), not from index 4.
+  cells.nth(2).click(modifiers=["Shift"])
+  expect(page.locator(".selection-bar")).to_contain_text("2 selected")
+  expect(cells.nth(1)).to_have_class(re.compile(r"\bselected\b"))
+  expect(cells.nth(2)).to_have_class(re.compile(r"\bselected\b"))
+  expect(cells.nth(3)).not_to_have_class(re.compile(r"\bselected\b"))
+  expect(cells.nth(4)).not_to_have_class(re.compile(r"\bselected\b"))
+
+
+def test_shift_click_with_nothing_selected_selects_just_the_one_and_sets_the_anchor(page, server):
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Select").click()
+  cells = page.locator(".cell")
+  cells.nth(2).click(modifiers=["Shift"])
+  expect(page.locator(".selection-bar")).to_contain_text("1 selected")
+  expect(cells.nth(2)).to_have_class(re.compile(r"\bselected\b"))
+  cells.nth(4).click(modifiers=["Shift"])
+  expect(page.locator(".selection-bar")).to_contain_text("3 selected")   # 2, 3, 4
+
+
 def test_pages_activity_attention_usage_jobs(page, server):
   ids = open_loupe(page, server)
   page.keyboard.press("4")
@@ -862,7 +894,7 @@ def test_selection_delete_review_back_link_deletes_nothing(page, server):
 # --------------------------------------------------------- export action (ticket 089) ---------
 
 def exported_root(server):
-  return os.path.join(os.path.dirname(server.pictures), "Exported")
+  return os.path.join(server.pictures, "Exported")   # ticket 096/098: inside the library now
 
 
 def test_export_button_prefills_target_and_writes_mirrored_jpegs(page, server):

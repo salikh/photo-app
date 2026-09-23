@@ -12,6 +12,7 @@ const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
 export async function loadFolder(route) {
   state.route = route;
   state.selected.clear();
+  selectAnchor = null;   // ticket 095: a new folder/filter invalidates any earlier range anchor
   const rec = route.recursive ? '&recursive=1' : '';
   const [dirs, first, counts, tags] = await Promise.all([
     get('/api/dirs?path=' + encodeURIComponent(route.dir)),
@@ -79,7 +80,8 @@ export function makeCell(photo) {
   const img = el('img', {src: imgUrl('Thumb', photo.file_id), loading: 'lazy', alt: photo.name, decoding: 'async'});
   retryImage(img);
   const check = el('button', {class: 'check', 'aria-label': 'select', text: '✓', onclick: (e) => {
-    e.preventDefault(); e.stopPropagation(); toggle(photo.id);
+    e.preventDefault(); e.stopPropagation();
+    if (e.shiftKey) selectRange(photo.id); else toggle(photo.id);
   }});
   return el('a', {
     class: 'cell' + (photo.rating === REJECT ? ' rejected' : '') + (state.selected.has(photo.id) ? ' selected' : ''),
@@ -87,15 +89,42 @@ export function makeCell(photo) {
     // recursive (ticket 086): several subfolders can share a filename, so disambiguate on hover.
     title: state.route && state.route.recursive ? photo.path : photo.name,
     onclick: (e) => {
-      if (state.selecting || e.shiftKey || e.ctrlKey || e.metaKey) { e.preventDefault(); toggle(photo.id); }
+      if (e.shiftKey) { e.preventDefault(); selectRange(photo.id); }
+      else if (state.selecting || e.ctrlKey || e.metaKey) { e.preventDefault(); toggle(photo.id); }
     },
   }, img, check, el('div', {class: 'badges'}, badges(photo)));
 }
 
+// ticket 095: the anchor for Shift+Click range selection -- the last plain/Ctrl-click id, held
+// fixed across a run of Shift+Clicks (so Shift+Click, Shift+Click further down extends from the
+// same original anchor, not from wherever the previous Shift+Click landed -- the usual
+// Explorer/Finder convention).
+let selectAnchor = null;
+
 function toggle(id) {
   if (state.selected.has(id)) state.selected.delete(id); else state.selected.add(id);
+  selectAnchor = id;
   const cell = document.querySelector(`.cell[data-id="${id}"]`);
   if (cell) cell.classList.toggle('selected', state.selected.has(id));
+  renderSelectionBar();
+}
+
+// Shift+Click: select every photo between the anchor and id, in the grid's current display
+// order (state.photos, which already follows the active sort/filter) -- replaces the selection
+// rather than adding to it. No anchor yet (nothing selected before) falls back to a plain toggle,
+// which then becomes the anchor for the next Shift+Click.
+function selectRange(id) {
+  if (selectAnchor == null) { toggle(id); return; }
+  const ids = state.photos.map((p) => p.id);
+  const a = ids.indexOf(selectAnchor);
+  const b = ids.indexOf(id);
+  if (a === -1 || b === -1) { toggle(id); return; }
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  const range = new Set(ids.slice(lo, hi + 1));
+  state.selected = range;
+  document.querySelectorAll('.cell').forEach((cell) => {
+    cell.classList.toggle('selected', range.has(Number(cell.dataset.id)));
+  });
   renderSelectionBar();
 }
 
@@ -142,6 +171,7 @@ function deleteSelected(ids) {
 
 export function clearSelection() {
   state.selected.clear();
+  selectAnchor = null;
   document.querySelectorAll('.cell.selected').forEach((c) => c.classList.remove('selected'));
   renderSelectionBar();
 }
