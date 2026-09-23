@@ -18,10 +18,12 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
 - [ ] [088](docs/tickets/088.md) Batch actions scoped to the current selection, including delete
 - [ ] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder
 - [ ] [091](docs/tickets/091.md) Help screen (keyboard shortcuts), opened by 'h', '?' or F1 (user request 2026-09-23)
+- [ ] [092](docs/tickets/092.md) Switch the active filter from inside the loupe (click the "filter: …"
+      HUD tag), staying on the same photo; non-matching filters grayed out (user request 2026-09-23)
 
 085-089 are priority "not now" (user request 2026-09-23); each ticket's own design-decision notes
 have been resolved (documented as decisions in the ticket text) except 085's, which needs your
-answer to 090. 091 has no priority note yet.
+answer to 090. 091 and 092 have no priority note yet.
 
 ## Question tickets (waiting on the user)
 
