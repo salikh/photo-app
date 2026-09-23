@@ -52,7 +52,11 @@ function filterRow(route) {
     }, el('span', {class: 'lbl', text}), el('span', {class: 'n'}))),
     el('select', {'aria-label': 'more filters', class: inMore ? 'on' : '', onchange: (e) => e.target.value && go(e.target.value)},
       el('option', {value: '', text: 'more\u2026'}),
-      extra.map(([v, text]) => el('option', {value: v, text, selected: v === route.filter}))));
+      extra.map(([v, text]) => el('option', {value: v, text, selected: v === route.filter}))),
+    // ticket 087: options are populated by filters.applyTags (state.tags, an open set) right
+    // after this element is in the DOM, not built here from a fixed list like the row above.
+    el('select', {'aria-label': 'tag filter', class: 'tag-filter', onchange: (e) => e.target.value && go(e.target.value)},
+      el('option', {value: '', text: 'tag: \u2026'})));
 }
 
 function renderHeader(route) {
@@ -86,7 +90,7 @@ function renderHeader(route) {
       el('a', {href: '#!usage', text: 'Thumbnails'}), el('a', {href: '#!jobs', text: 'Jobs'})));
   header ? header.replaceWith(newHeader) : app.prepend(newHeader);
   header = newHeader;
-  if (browsing) filters.applyCounts(state.counts);
+  if (browsing) { filters.applyCounts(state.counts); filters.applyTags(state.tags); }
 }
 
 function toggleSelecting() {
@@ -157,6 +161,7 @@ async function render() {
     }
     grid.renderFolder(main);
     filters.applyCounts(state.counts);
+    filters.applyTags(state.tags);
     document.title = (route.dir === '.' ? 'Photos' : route.dir.split('/').pop()) + ' — Photos';
   } else {
     state.route.photo = route.photo;

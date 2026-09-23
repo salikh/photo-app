@@ -5,6 +5,7 @@ export const state = {
   photos: [],         // photos of the current folder, in display order
   total: 0,           // matching photos on the server when the folder was loaded
   counts: {},         // photos per filter in this folder (ticket 057)
+  tags: [],           // [{tag, count}] present in this folder, for the tag filter dropdown (ticket 087)
   loaded: 0,          // how many of them have been fetched (the paging offset)
   removed: 0,         // photos that left the view after a rating change (ticket 056)
   epoch: 0,           // bumped on every removal/re-insertion, so in-flight page loads can be discarded

@@ -437,7 +437,8 @@ def test_one_star_is_unrated_flag_hides_star_1_and_skips_it(browser, tmp_path):
     expect(pg.locator(".badges .stars", has_text="4")).to_have_count(1)      # 4 stars still shown
     assert pg.locator(".badges .stars", has_text="1").count() == 0            # the 1-star badge is hidden
     assert pg.locator(".filters button .lbl").all_inner_texts() == [
-        "All", "\u2716 Rejected", "\u2606 Unrated", "\u26052", "\u26053", "\u26054", "\u26055"]   # no \u26051
+        "All", "\u2716 Rejected", "\u2606 Unrated", "\u26052", "\u26053", "\u26054", "\u26055",
+        "\u2665 Fav"]   # no \u26051
     pg.get_by_label("more filters").select_option("picked")
     expect(pg.locator(".cell")).to_have_count(1)                              # only the 4-star photo
     pg.goto(f"{srv.url}/#/2024/trip?photo={ids[3]}")                          # IMG_0004, real rating 1
@@ -514,9 +515,11 @@ def test_filter_buttons_show_the_right_photos_and_keep_state(page, server):
   page.goto(server.url + "/#/2024/trip")
   expect(page.locator(".cell")).to_have_count(6)
   kinds = page.locator(".filters button").evaluate_all("els => els.map(e => e.dataset.filter)")
-  assert kinds == ["all", "rejected", "unrated", "rating:1", "rating:2", "rating:3", "rating:4", "rating:5"]
+  assert kinds == ["all", "rejected", "unrated", "rating:1", "rating:2", "rating:3", "rating:4",
+                    "rating:5", "fav"]
   assert page.locator(".filters button .lbl").all_inner_texts() == [
-      "All", "\u2716 Rejected", "\u2606 Unrated", "\u26051", "\u26052", "\u26053", "\u26054", "\u26055"]
+      "All", "\u2716 Rejected", "\u2606 Unrated", "\u26051", "\u26052", "\u26053", "\u26054",
+      "\u26055", "\u2665 Fav"]
   expect(filter_button(page, "All")).to_have_class(ON)
   filter_button(page, "Unrated").click()
   expect(page.locator(".cell")).to_have_count(2)                       # 0001 and 0006 have no rating
@@ -533,9 +536,45 @@ def test_filter_buttons_show_the_right_photos_and_keep_state(page, server):
   expect(filter_button(page, "\u26053")).to_have_class(ON)
   filter_button(page, "Rejected").click()
   expect(page.locator(".cell")).to_have_count(1)
-  page.get_by_label("more filters").select_option("fav")
+  filter_button(page, "Fav").click()          # ticket 087: promoted out of "more filters"
   expect(page.locator(".cell")).to_have_count(0)
   assert "filter=fav" in page.url
+  page.get_by_label("more filters").select_option("picked")
+  expect(page.locator(".cell")).to_have_count(3)          # 0002, 0004, 0005 (rating > 0)
+  assert "filter=picked" in page.url
+
+
+def add_tag(page, server, index, tag):
+  ids = open_loupe(page, server, index)
+  page.keyboard.press("t")
+  page.locator(".hud input.tags").fill(tag)
+  page.keyboard.press("Enter")
+  page.keyboard.press("Escape")
+  return ids
+
+
+def test_tag_filter_dropdown_lists_and_filters_by_one_tag(page, server):
+  add_tag(page, server, 0, "vacation")
+  add_tag(page, server, 1, "vacation")
+  add_tag(page, server, 2, "family")
+  page.goto(server.url + "/#/2024/trip")
+
+  tag_select = page.get_by_label("tag filter")
+  expect(tag_select.locator("option")).to_have_count(3)                 # placeholder + 2 tags
+  assert tag_select.locator("option").all_inner_texts()[1:] == ["family (1)", "vacation (2)"]
+
+  tag_select.select_option("tag:vacation")
+  expect(page.locator(".cell")).to_have_count(2)
+  assert "filter=tag%3Avacation" in page.url
+  expect(tag_select).to_have_class(ON)
+
+  page.reload()                                          # state is in the URL
+  expect(page.locator(".cell")).to_have_count(2)
+  expect(tag_select).to_have_value("tag:vacation")
+
+  add_tag(page, server, 3, "vacation")                      # a 3rd photo joins the tag mid-session
+  page.goto(server.url + "/#/2024/trip?filter=tag%3Avacation")
+  expect(page.locator(".cell")).to_have_count(3)
 
 
 def test_filter_is_kept_when_changing_folder_and_shown_in_the_loupe(page, server):
@@ -863,7 +902,8 @@ def test_filter_buttons_show_counts_that_follow_ratings_and_undo(page, server):
   expect(page.locator(".cell")).to_have_count(6)
   expect(page.locator('.filters button[data-filter="unrated"] .n')).to_have_text("4")
   assert counts_on_buttons(page) == {"all": "6", "rejected": "1", "unrated": "4", "rating:1": "0",
-                                     "rating:2": "0", "rating:3": "0", "rating:4": "1", "rating:5": "0"}
+                                     "rating:2": "0", "rating:3": "0", "rating:4": "1", "rating:5": "0",
+                                     "fav": "0"}
   expect(page.locator('.filters button[data-filter="rating:3"]')).to_have_class("zero")     # dimmed, still clickable
   expect(page.locator('.filters button[data-filter="rating:4"]')).not_to_have_class("zero")
   # each number equals what its button shows

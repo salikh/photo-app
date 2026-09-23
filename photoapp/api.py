@@ -418,6 +418,11 @@ def create_app(conn, settings):
   def photo_counts(dir: str = ".", recursive: bool = False):
     return read(library.filter_counts, dir, settings.one_star_is_unrated, recursive)
 
+  @app.get("/api/photos/tags")
+  @db_route
+  def photo_tags(dir: str = ".", recursive: bool = False):
+    return read(library.tags_in_view, dir, recursive)
+
   @app.get("/api/photos/{photo_id}")
   @db_route
   def photo(photo_id: int):

@@ -7,12 +7,11 @@
 import {isOneStarUnrated} from './rating.js';
 import {get} from './api.js';
 import {state} from './state.js';
-import {enqueue} from './util.js';
+import {enqueue, el, setChildren} from './util.js';
 
 const MORE = [
   ['picked', 'picked (any stars)'],
   ['rated', 'rated or rejected'],
-  ['fav', 'favorites'],
   ['conflict', 'sidecars disagree'],
 ];
 
@@ -24,6 +23,7 @@ export function primary() {
     if (n === 1 && isOneStarUnrated()) continue;
     buttons.push([`rating:${n}`, `★${n}`, `exactly ${n} star${n > 1 ? 's' : ''} (Shift+${n})`]);
   }
+  buttons.push(['fav', '♥ Fav', 'favorites only']);   // ticket 087: promoted out of "more filters"
   return buttons;
 }
 
@@ -32,7 +32,9 @@ export function more() { return MORE; }
 // Short text for the current filter (loupe HUD, status line).
 export function label(filter) {
   const found = primary().find((b) => b[0] === filter) || MORE.find((m) => m[0] === filter);
-  return found ? found[1] : filter;
+  if (found) return found[1];
+  const t = /^tag:(.+)$/.exec(filter || '');
+  return t ? `tag: ${t[1]}` : filter;
 }
 
 // Does a photo match a filter? Mirrors photoapp/library.py so the UI agrees with what a
@@ -50,7 +52,9 @@ export function matches(photo, filter) {
     case 'conflict': return !!photo.conflict;
     default: {
       const m = /^rating:([1-5])$/.exec(filter || '');
-      return !!m && r === Number(m[1]);
+      if (m) return r === Number(m[1]);
+      const t = /^tag:(.+)$/.exec(filter || '');
+      return !!t && (photo.tags || []).includes(t[1]);
     }
   }
 }
@@ -80,6 +84,26 @@ export function applyCounts(counts) {
   });
 }
 
+// ---- tag filter dropdown (ticket 087) ----
+//
+// Tags are an open set (docs/design/databases.md's tags table has no controlled vocabulary), so
+// unlike the fixed "more filters" list this <select>'s options are rebuilt from state.tags
+// whenever they change, not just its selected value/counts.
+
+export function applyTags(tags) {
+  state.tags = tags || [];
+  const sel = document.querySelector('.filters select.tag-filter');
+  if (!sel) return;
+  const known = new Set(state.tags.map((t) => 'tag:' + t.tag));
+  setChildren(sel,
+    el('option', {value: '', text: 'tag: …'}),
+    state.tags.map(({tag, count}) => el('option', {value: 'tag:' + tag, text: `${tag} (${count})`})));
+  // state.route.filter is always the authoritative active filter -- select it here if it names
+  // a tag this folder actually has, whether this is the first render or a live refresh.
+  sel.value = state.route && known.has(state.route.filter) ? state.route.filter : '';
+  sel.classList.toggle('on', sel.value !== '');
+}
+
 // Refetch after the pending edits have been applied on the server (same ordered queue), so the
 // numbers are the server's. Debounced: a run of edits causes one request.
 let countsTimer = null;
@@ -88,9 +112,14 @@ export function scheduleCountsRefresh() {
   countsTimer = setTimeout(() => {
     enqueue(async () => {
       if (!state.route || state.route.page !== 'browse') return;
+      const dir = encodeURIComponent(state.route.dir);
+      const rec = state.route.recursive ? '&recursive=1' : '';
       try {
-        applyCounts((await get('/api/photos/counts?dir=' + encodeURIComponent(state.route.dir))).counts);
+        applyCounts((await get(`/api/photos/counts?dir=${dir}${rec}`)).counts);
       } catch (e) { /* the numbers are a convenience; leave them as they are */ }
+      try {
+        applyTags((await get(`/api/photos/tags?dir=${dir}${rec}`)).tags);
+      } catch (e) { /* same: convenience only */ }
     });
   }, 250);
 }

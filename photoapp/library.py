@@ -7,6 +7,7 @@ import re
 
 FILTERS = ("all", "unrated", "rejected", "picked", "rated", "fav", "conflict")
 RATING_FILTER_RE = re.compile(r"^rating:([1-5])$")   # exactly N stars
+TAG_FILTER_RE = re.compile(r"^tag:(.+)$")            # exactly one tag, e.g. "tag:vacation"
 SORTS = ("date", "name")
 
 _FILTER_SQL = {
@@ -29,18 +30,25 @@ _FILTER_SQL_ONE_STAR_UNRATED = dict(
 
 
 def filter_condition(name, one_star_is_unrated=False):
-  """SQL condition (on photos p) for a filter name; ValueError if unknown.
+  """(sql, params) condition (on photos p) for a filter name; ValueError if unknown.
 
-  Names: FILTERS, and 'rating:N' for exactly N stars (N in 1..5). With
-  one_star_is_unrated there is no 'rating:1' (1 star counts as unrated).
+  Names: FILTERS, 'rating:N' for exactly N stars (N in 1..5), and 'tag:NAME' for
+  exactly one tag (ticket 087). With one_star_is_unrated there is no 'rating:1'
+  (1 star counts as unrated). A tag name is arbitrary free text (docs/design/
+  databases.md's tags table has no controlled vocabulary), so it comes back as a
+  '?' placeholder + param rather than embedded in the SQL string, unlike the
+  fixed/rating conditions -- those never carry attacker-controlled text.
   """
   filters = _FILTER_SQL_ONE_STAR_UNRATED if one_star_is_unrated else _FILTER_SQL
   if name in filters:
-    return filters[name]
+    return filters[name], ()
   m = RATING_FILTER_RE.match(name or "")
   if m and not (one_star_is_unrated and m.group(1) == "1"):
-    return f"p.rating = {int(m.group(1))}"
-  raise ValueError(f"filter must be one of {FILTERS} or rating:1..5")
+    return f"p.rating = {int(m.group(1))}", ()
+  m = TAG_FILTER_RE.match(name or "")
+  if m:
+    return "EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?)", (m.group(1),)
+  raise ValueError(f"filter must be one of {FILTERS}, rating:1..5, or tag:NAME")
 
 
 def _prefix_range(rel_dir):
@@ -127,11 +135,12 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
   rel_dir = _norm_dir(rel_dir)
   if sort not in SORTS:
     raise ValueError(f"sort must be one of {SORTS}")
-  filter_sql = filter_condition(filter, one_star_is_unrated)
+  filter_sql, filter_args = filter_condition(filter, one_star_is_unrated)
   limit = max(1, min(int(limit), 1000))
   offset = max(0, int(offset))
-  scope_sql, args = _scope_condition(rel_dir, recursive)
+  scope_sql, scope_args = _scope_condition(rel_dir, recursive)
   where = scope_sql + " AND rf.missing = 0 AND " + filter_sql
+  args = scope_args + filter_args
   order = ("COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path"
            if sort == "date" else "rf.path COLLATE NOCASE")
   total = conn.execute(
@@ -171,12 +180,31 @@ def filter_counts(conn, rel_dir=".", one_star_is_unrated=False, recursive=False)
   scope_sql, scope_args = _scope_condition(rel_dir, recursive)
   names = [n for n in COUNT_FILTERS if not (one_star_is_unrated and n == "rating:1")]
   sums = ", ".join(
-      f"COALESCE(SUM(CASE WHEN {filter_condition(n, one_star_is_unrated)} THEN 1 ELSE 0 END), 0)"
-      for n in names)
+      f"COALESCE(SUM(CASE WHEN {filter_condition(n, one_star_is_unrated)[0]} THEN 1 ELSE 0 END), 0)"
+      for n in names)   # none of COUNT_FILTERS is a tag:NAME filter, so [0] never drops params
   row = conn.execute(
       f"SELECT {sums} FROM photos p JOIN files rf ON rf.id = p.representative_file_id "
       "WHERE " + scope_sql + " AND rf.missing = 0", scope_args).fetchone()
   return {"dir": rel_dir, "counts": dict(zip(names, row))}
+
+
+def tags_in_view(conn, rel_dir=".", recursive=False):
+  """Tags present on any Photo in rel_dir (ticket 087), with how many Photos each has.
+
+  Scoped the same way as filter_counts (via _scope_condition) rather than the whole
+  library, so the tag dropdown doesn't grow unbounded and agrees with what's on screen.
+  A separate, lightweight query rather than folding into filter_counts: tags are an open
+  set, so a COUNT_FILTERS-style one-SUM-per-tag query doesn't fit.
+  """
+  rel_dir = _norm_dir(rel_dir)
+  scope_sql, scope_args = _scope_condition(rel_dir, recursive)
+  rows = conn.execute(
+      "SELECT t.tag, COUNT(*) AS n FROM tags t"
+      " JOIN photos p ON p.id = t.photo_id"
+      " JOIN files rf ON rf.id = p.representative_file_id"
+      " WHERE " + scope_sql + " AND rf.missing = 0"
+      " GROUP BY t.tag ORDER BY t.tag", scope_args).fetchall()
+  return {"dir": rel_dir, "tags": [{"tag": r["tag"], "count": r["n"]} for r in rows]}
 
 
 def photo_detail(conn, photo_id):

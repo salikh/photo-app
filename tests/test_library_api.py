@@ -265,6 +265,40 @@ def test_rating_n_filter_means_exactly_n_stars(settings):
   assert names(on, "rating:2") == ["1.jpg", "2.jpg"]
 
 
+def test_tag_filter_and_tags_in_view_endpoint(settings):
+  # Ticket 087: filter=tag:NAME (one tag at a time), and /api/photos/tags for the dropdown --
+  # scoped to the current dir/subtree like filter_counts, not the whole library.
+  c = build(settings)
+  photos = c.get("/api/photos", params={"dir": "2020", "sort": "name"}).json()["photos"]
+  a, b, k = (p["id"] for p in photos)   # a.jpg, B.jpg, K1.JPG
+  c.post(f"/api/photos/{a}/tags", json={"add": ["vacation", "family"]})
+  c.post(f"/api/photos/{b}/tags", json={"add": ["vacation"]})
+  c.post(f"/api/photos/{k}/tags", json={"add": ["family"]})
+  # a tag on a Photo elsewhere in the library must not leak into an unrelated dir's view
+  other = c.get("/api/photos", params={"dir": "2021", "sort": "name"}).json()["photos"][0]["id"]
+  c.post(f"/api/photos/{other}/tags", json={"add": ["unrelated"]})
+
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "tag:vacation", "sort": "name"})) == \
+      ["a.jpg", "B.jpg"]   # sort=name is case-insensitive (test_photos_page_sort_filter_and_paging)
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "tag:family", "sort": "name"})) == \
+      ["a.jpg", "K1.JPG"]
+  assert names(c.get("/api/photos", params={"dir": "2020", "filter": "tag:nope"})) == []
+  # the count for a tag filter agrees with what filtering by it actually lists (086/057's rule)
+  assert c.get("/api/photos", params={"dir": "2020", "filter": "tag:vacation"}).json()["total"] == 2
+
+  view = c.get("/api/photos/tags", params={"dir": "2020"}).json()
+  assert view["tags"] == [{"tag": "family", "count": 2}, {"tag": "vacation", "count": 2}]
+
+  # recursive widens the tag list/counts the same way it widens list_photos (ticket 086)
+  c.post(f"/api/photos/{c.get('/api/photos', params={'dir': '2020/trip'}).json()['photos'][0]['id']}"
+         "/tags", json={"add": ["vacation"]})
+  recursive_view = c.get("/api/photos/tags", params={"dir": "2020", "recursive": "1"}).json()
+  assert recursive_view["tags"] == [{"tag": "family", "count": 2}, {"tag": "vacation", "count": 3}]
+  assert names(c.get("/api/photos", params={
+      "dir": "2020", "filter": "tag:vacation", "recursive": "1", "sort": "name"})) == \
+      ["a.jpg", "B.jpg", "c.jpg"]
+
+
 def test_filter_counts_match_what_each_filter_lists(settings):
   import dataclasses
   d = settings.pictures_dir

@@ -13,13 +13,15 @@ export async function loadFolder(route) {
   state.route = route;
   state.selected.clear();
   const rec = route.recursive ? '&recursive=1' : '';
-  const [dirs, first, counts] = await Promise.all([
+  const [dirs, first, counts, tags] = await Promise.all([
     get('/api/dirs?path=' + encodeURIComponent(route.dir)),
     get(`/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}&filter=${route.filter}&limit=${PAGE}${rec}`),
     get('/api/photos/counts?dir=' + encodeURIComponent(route.dir) + rec),
+    get('/api/photos/tags?dir=' + encodeURIComponent(route.dir) + rec),
   ]);
   state.dirs = dirs;
   state.counts = counts.counts;
+  state.tags = tags.tags;
   state.photos = first.photos;
   state.total = first.total;
   state.loaded = first.photos.length;
