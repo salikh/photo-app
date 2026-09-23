@@ -50,8 +50,9 @@ All ten build-order epics are done.
 - [x] [092](docs/tickets/092.md) Switch the active filter from inside the loupe (click the "filter: …" HUD tag), staying on the same photo; non-matching filters grayed out (user request 2026-09-23)
 - [x] [086](docs/tickets/086.md) "This folder" / "this folder + subdirectories" toggle for the grid (user request 2026-09-23)
 - [x] [087](docs/tickets/087.md) Fav and tag-based filter buttons in the folder view (user request 2026-09-23)
+- [x] [088](docs/tickets/088.md) Batch actions scoped to the current selection, including delete (user request 2026-09-23)
 
-Still open: [085](docs/tickets/085.md), [088](docs/tickets/088.md)-[089](docs/tickets/089.md) — see `TODO.md`.
+Still open: [085](docs/tickets/085.md), [089](docs/tickets/089.md) — see `TODO.md`.
 
 ## Cross-cutting
 

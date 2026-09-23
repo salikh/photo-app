@@ -12,6 +12,8 @@ export const state = {
   selected: new Set(),
   selecting: false,   // touch-friendly selection mode
   undoStack: [],      // {ids: [activity ids]} or {batch_id}, plus left: photos that left the view
+  deleteReview: null, // {ids, from: route} handoff to the delete-review page for a selection (ticket 088);
+                      // null means that page's other mode, "every rejected Photo in this dir"
   onPhotosChanged: null,   // set by the viewer: called when photos are added to or removed from the list
   dirty: false,
 };

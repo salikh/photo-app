@@ -758,6 +758,68 @@ def test_delete_review_screen_with_nothing_rejected(page, server):
   expect(page.locator(".review-grid")).to_have_count(0)
 
 
+# --- batch delete from a grid selection (ticket 088) ------------------------------------------
+
+def reject(server, pid):
+  urllib.request.urlopen(urllib.request.Request(
+      f"{server.url}/api/photos/{pid}/rating", data=json.dumps({"rating": -1}).encode(),
+      headers={"Content-Type": "application/json"}))
+
+
+def test_selection_delete_moves_only_the_selected_photos_and_returns_to_the_origin_view(page, server):
+  # The user's own example: filter rejected -> select a few -> Delete trashes only those, not
+  # the whole folder or the whole filtered view. Trashing is rating-gated (trash.py), so the
+  # selection bar's Delete button only appears at all when filter=rejected (see grid.js).
+  ids = photo_ids(server)
+  reject(server, ids[3])
+  reject(server, ids[4])                       # 0003 (already rejected), 0004, 0005 now rejected
+  page.goto(server.url + "/#/2024/trip?filter=rejected")
+  expect(page.locator(".cell")).to_have_count(3)
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").nth(1).click()
+  page.locator(".cell").nth(2).click()                              # IMG_0004 and IMG_0005
+  page.locator(".selection-bar").get_by_role("button", name="Delete").click()
+
+  expect(page.locator("h2")).to_have_text("Delete selected photos")
+  expect(page.locator(".review-grid .cell")).to_have_count(2)
+  confirm = page.locator(".delete-confirm button.danger")
+  expect(confirm).to_have_text("Move 2 photo(s) to trash")
+  confirm.click()
+
+  expect(page.locator("#toast")).to_contain_text("moved 2 photo(s) to trash")
+  expect(page).to_have_url(re.compile(r"filter=rejected"))            # back to the origin view
+  expect(page.locator(".cell")).to_have_count(1)                      # 0003 remains (still rejected)
+  assert names_in_grid(page) == ["IMG_0003.jpg"]
+  expect(page.locator(".selection-bar")).to_have_count(0)             # selection cleared by the reload
+
+  for n in (4, 5):
+    assert not os.path.exists(os.path.join(server.pictures, f"2024/trip/IMG_000{n}.jpg"))
+    assert os.path.isfile(os.path.join(server.pictures, f".trash/2024/trip/IMG_000{n}.jpg"))
+  assert os.path.isfile(os.path.join(server.pictures, "2024/trip/IMG_0003.jpg"))
+
+
+def test_selection_delete_button_only_offered_on_the_rejected_filter(page, server):
+  page.goto(server.url + "/#/2024/trip")                              # filter=all
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").first.click()
+  expect(page.locator(".selection-bar")).to_be_visible()
+  expect(page.locator(".selection-bar").get_by_role("button", name="Delete")).to_have_count(0)
+
+
+def test_selection_delete_review_back_link_deletes_nothing(page, server):
+  page.goto(server.url + "/#/2024/trip?filter=rejected")
+  expect(page.locator(".cell")).to_have_count(1)                      # IMG_0003
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").first.click()
+  page.locator(".selection-bar").get_by_role("button", name="Delete").click()
+  expect(page.locator("h2")).to_have_text("Delete selected photos")
+
+  page.get_by_role("link", name="← back").click()
+  expect(page).to_have_url(re.compile(r"filter=rejected"))
+  expect(page.locator(".cell")).to_have_count(1)                      # nothing was moved
+  assert os.path.isfile(os.path.join(server.pictures, "2024/trip/IMG_0003.jpg"))
+
+
 def test_last_photo_out_closes_the_viewer(page, server):
   page.goto(server.url + "/#/2024/trip?filter=rejected")                   # only IMG_0003
   page.locator(".cell").first.click()

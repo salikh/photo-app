@@ -2,7 +2,7 @@
 
 import {get, post, imgUrl} from './api.js';
 import {el, toast, retryImage, enqueue, setChildren} from './util.js';
-import {href} from './route.js';
+import {href, hrefPage} from './route.js';
 import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
@@ -120,8 +120,24 @@ export function renderSelectionBar() {
     el('button', {text: '✖', title: 'reject', onclick: () => rate(REJECT)}),
     ...choices().map((r) => el('button', {text: r === 0 ? '☆' : String(r), title: 'rate ' + r, onclick: () => rate(r)})),
     n === 2 ? el('button', {text: 'Link 2nd as tuning of 1st', onclick: () => linkSelected(ids)}) : null,
+    // Trashing is rating-gated server-side (trash.py's trash_photo: only a rejected Photo can be
+    // moved to .trash, an intentional safety rail from ticket 072/081) -- only offer it here when
+    // every selected Photo would actually be eligible, i.e. the Rejected filter is active, same
+    // as the header's own "Delete" link (ticket 072) already only appears there.
+    state.route && state.route.filter === 'rejected'
+      ? el('button', {class: 'danger', text: 'Delete', title: 'move selected photos to trash',
+                      onclick: () => deleteSelected(ids)}) : null,
     el('button', {text: 'Clear', onclick: clearSelection}),
   );
+}
+
+// Ticket 088: reuses pages.js's deleteReviewPage (ticket 072) rather than a second confirm-UI --
+// stash the ids and the route to return to (not the URL: an arbitrary-length id list doesn't
+// belong in a query string, and this hand-off is inherently one-shot/session-only, same as
+// selection itself already is).
+function deleteSelected(ids) {
+  state.deleteReview = {ids, from: {...state.route}};
+  location.hash = hrefPage('delete-review', state.route.dir);
 }
 
 export function clearSelection() {
