@@ -28,9 +28,11 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
         forward (uses the export job's own record, no heuristics)
   - [ ] [100](docs/tickets/100.md) One-off backfill: link what's already in `/zoo/Pictures/Exported`
         to its original (still-live job log first, then filename + dhash heuristics)
+- [ ] [101](docs/tickets/101.md) Ignore files by basename pattern (starting with `._*`, macOS
+      AppleDouble junk) so they're never scanned into the database
 
-093-096 are open follow-ups filed after 085 (2026-09-23/24), none yet scoped/built. 085-089, 091 and
-092 are done — see `STATUS.md`.
+093-096 and 101 are open follow-ups filed after 085 (2026-09-23/24), none yet scoped/built. 085-089,
+091 and 092 are done — see `STATUS.md`.
 
 ## Question tickets (waiting on the user)
 
