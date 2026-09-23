@@ -17,9 +17,11 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
       regen while adjusting RAW settings, a hotkey to compare current vs. new rendering, room for
       future browser-local rendering, and an explicit Save button that commits + triggers the real
       backend regen
+- [ ] [095](docs/tickets/095.md) Shift+Click in the grid should select the range from the last
+      selected photo to the newly clicked one, not just toggle the one photo
 
-093 and 094 are open follow-ups filed after 085 (2026-09-23/24), neither yet scoped/built. 085-089,
-091 and 092 are done — see `STATUS.md`.
+093-095 are open follow-ups filed after 085 (2026-09-23/24), none yet scoped/built. 085-089, 091 and
+092 are done — see `STATUS.md`.
 
 ## Question tickets (waiting on the user)
 
