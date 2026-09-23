@@ -481,8 +481,9 @@ def seconds_until(hour, now):
 def enqueue_nightly_scan(queue, pictures_dir):
   """Queue one 'scan_dir' job per top-level directory (ticket 076), instead of running one big
   scan synchronously right now, plus one 'prune_jobs' job (ticket 075's decision: pruning old
-  completed jobs rides along with the nightly scan rather than having its own schedule). Dedup
-  (JobQueue.enqueue) means a directory (or the prune) whose job from a previous night is still
+  completed jobs rides along with the nightly scan rather than having its own schedule) and one
+  'purge_trash' job (ticket 081's decision: same reasoning). Dedup (JobQueue.enqueue) means a
+  directory (or either of the housekeeping jobs) whose job from a previous night is still
   queued/running just keeps that job rather than getting a duplicate. Returns how many jobs are
   queued in total (including ones already queued from before)."""
   n = 0
@@ -490,7 +491,8 @@ def enqueue_nightly_scan(queue, pictures_dir):
     queue.enqueue("scan_dir", target=rel_dir)
     n += 1
   queue.enqueue("prune_jobs")
-  return n + 1
+  queue.enqueue("purge_trash")
+  return n + 2
 
 
 class NightlyScan:

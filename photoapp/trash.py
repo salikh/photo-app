@@ -4,8 +4,8 @@ Every other write this app makes is reversible (a rating) or additive (a sidecar
 cache entry); this is the first one that removes an original from where the rest of the library
 expects it. Nothing is ever unlinked: every file (the original, its camera JPG, any tuning, and
 every sidecar) is *moved* into a mirror of its own subdirectory structure under
-<pictures_dir>/.trash/, so it stays fully recoverable by hand (and, eventually, by an automatic
-purge after some retention window -- a separate ticket) rather than gone outright.
+<pictures_dir>/.trash/, so it stays fully recoverable by hand for RETENTION_DAYS before
+purge_trash (ticket 081) deletes it for good.
 
 The moved file's `files` row is marked missing=1 (the same state a file gets when a scan finds
 it vanished, ticket 010), not deleted, so the Photo's rating/history survives. .trash/ itself is
@@ -15,10 +15,14 @@ never scanned (see scan.top_level_steps) precisely so a trashed file's still-cor
 
 import os
 import shutil
+import time
 
 from absl import logging
 
 TRASH_DIRNAME = ".trash"
+
+# ticket 081: how long a file sits in .trash/ before purge_trash deletes it for good.
+RETENTION_DAYS = 7
 
 
 class TrashError(Exception):
@@ -106,3 +110,48 @@ def trash_photos(conn, settings, photo_ids):
     except TrashError as e:
       errors.append({"photo_id": pid, "error": str(e)})
   return {"trashed": trashed, "errors": errors}
+
+
+def purge_trash(pictures_dir, retention_days=RETENTION_DAYS, now=None):
+  """Permanently delete files under .trash/ that have sat there longer than retention_days,
+  then remove any subdirectory that ends up empty (ticket 081). now: injectable for tests
+  (ctime cannot be backdated through a normal syscall, unlike mtime, so a test simulates an
+  "old" file by moving now forward instead); defaults to time.time().
+
+  "How long has this been in the trash" is the file's ctime (metadata-change time), not mtime:
+  moving a file within the same filesystem (move_to_trash always does, since .trash/ is always
+  under pictures_dir) is a rename, which leaves mtime untouched but does bump ctime -- confirmed
+  empirically before writing this, since assuming otherwise would have silently purged nothing,
+  or everything, depending on how old the photos themselves were. Using mtime would have measured
+  "when was the photo last edited" instead of "when was it trashed," which for old family photos
+  can be decades off in the wrong direction.
+
+  Returns (files_deleted, dirs_removed). Never touches .trash/ itself, even if everything under
+  it is gone.
+  """
+  root = trash_dir(pictures_dir)
+  if not os.path.isdir(root):
+    return 0, 0
+  cutoff = (now if now is not None else time.time()) - retention_days * 86400
+  files_deleted = dirs_removed = 0
+  # topdown=False: a directory is visited only after every entry under it, so by the time we
+  # try to remove it, any subdirectory that emptied out has already removed itself.
+  for dirpath, _dirnames, filenames in os.walk(root, topdown=False):
+    for name in filenames:
+      path = os.path.join(dirpath, name)
+      try:
+        if os.stat(path).st_ctime < cutoff:
+          os.remove(path)
+          files_deleted += 1
+      except OSError as e:
+        logging.warning("purge_trash: could not remove %s: %s", path, e)
+    if dirpath != root:
+      try:
+        os.rmdir(dirpath)
+        dirs_removed += 1
+      except OSError:
+        pass   # not empty: a file is still within its retention window, or removal above failed
+  if files_deleted or dirs_removed:
+    logging.info("purge_trash: deleted %d file(s) older than %d day(s), removed %d empty dir(s)",
+                 files_deleted, retention_days, dirs_removed)
+  return files_deleted, dirs_removed

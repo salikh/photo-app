@@ -389,3 +389,24 @@ def test_prune_jobs_job_runs_through_the_background_queue(settings):
 
   remaining = conn.execute("SELECT kind FROM jobs WHERE kind = 'raw_render'").fetchall()
   assert remaining == []   # the 30-day-old done job was pruned
+
+
+def test_purge_trash_job_runs_through_the_background_queue(settings):
+  # ticket 081: a 'purge_trash' job (as enqueue_nightly_scan queues alongside scan_dir/prune_jobs)
+  # is handled by the running app. Age logic itself is unit-tested in tests/test_trash.py; this
+  # confirms the wiring runs without error and leaves a freshly-trashed file alone (not yet old).
+  from photoapp import trash as trash_lib
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.DNG"))
+  trash_lib.move_to_trash(d, "a.DNG")
+  conn = db.open_state(settings.state_dir)
+  app = api.create_app(conn, settings)
+  app.state.background_jobs.enqueue("purge_trash")
+  app.state.background_jobs.start()
+  try:
+    assert app.state.background_jobs.wait_idle(10)
+  finally:
+    app.state.background_jobs.stop()
+
+  assert app.state.background_jobs.list()[0]["state"] == "done"
+  assert os.path.isfile(os.path.join(d, trash_lib.TRASH_DIRNAME, "a.DNG"))   # too fresh to purge

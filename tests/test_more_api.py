@@ -168,27 +168,30 @@ def test_enqueue_nightly_scan_queues_one_job_per_top_level_dir(settings):
   make_jpeg(os.path.join(d, "2020", "a.jpg"))
   make_jpeg(os.path.join(d, "2021", "b.jpg"))
   db.open_state(settings.state_dir).close()
-  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None, "prune_jobs": lambda c, j: None})
+  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None, "prune_jobs": lambda c, j: None,
+                                       "purge_trash": lambda c, j: None})
 
   n = scan.enqueue_nightly_scan(q, d)
-  assert n == 4   # 3 directories + 1 prune_jobs (ticket 075: rides along with the nightly scan)
+  assert n == 5   # 3 directories + prune_jobs + purge_trash (tickets 075, 081)
   by_kind = {}
   for j in q.list():
     by_kind.setdefault(j["kind"], []).append(j["target"])
   assert sorted(by_kind["scan_dir"]) == [".", "2020", "2021"]
   assert by_kind["prune_jobs"] == [None]
+  assert by_kind["purge_trash"] == [None]
 
   # A second nightly fire while those jobs are still queued must not duplicate them (ticket 076).
   n2 = scan.enqueue_nightly_scan(q, d)
-  assert n2 == 4
-  assert len(q.list()) == 4
+  assert n2 == 5
+  assert len(q.list()) == 5
 
 
 def test_nightly_scan_thread_fires_and_stops(settings):
   d = settings.pictures_dir
   make_jpeg(os.path.join(d, "2020", "a.jpg"))
   db.open_state(settings.state_dir).close()
-  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None, "prune_jobs": lambda c, j: None})
+  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None, "prune_jobs": lambda c, j: None,
+                                       "purge_trash": lambda c, j: None})
   waits = []
   fired = threading.Event()
 
@@ -203,4 +206,4 @@ def test_nightly_scan_thread_fires_and_stops(settings):
   n._thread.join(5)
   assert n.runs == 1 and len(waits) == 2   # stop() fires during the 2nd wait, before a 2nd run
   assert all(0 < w <= 24 * 3600 for w in waits)
-  assert sorted(j["kind"] for j in q.list()) == ["prune_jobs", "scan_dir", "scan_dir"]
+  assert sorted(j["kind"] for j in q.list()) == ["prune_jobs", "purge_trash", "scan_dir", "scan_dir"]

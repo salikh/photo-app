@@ -143,8 +143,12 @@ every file under each shown Photo — the original, its camera JPG, any tuning, 
 file gets when a scan finds it vanished on its own). The server re-checks each Photo is still rated reject
 before moving anything, regardless of what the browser's list said.
 
-`.trash/` itself has no automatic cleanup yet — emptying it (or restoring from it) is a manual `mv`/`rm`
-for now; an automatic purge after a retention window is a separate, not-yet-built ticket (081).
+As of ticket 081, `.trash/` empties itself: the same nightly enqueue that queues `scan_dir`/`prune_jobs`
+also queues a `purge_trash` job, which permanently deletes anything that has sat in `.trash/` for more than
+`trash.RETENTION_DAYS` (7 days) and removes any subdirectory that ends up empty. "How long has it sat there"
+is the file's ctime (bumped by the move itself, unlike mtime, which a same-filesystem move leaves untouched
+— confirmed empirically before relying on it). Restoring a file before that window closes is still a manual
+`mv` back to its original location (then rescan).
 
 ## What is in the state directory, and what to back up
 

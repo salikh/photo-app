@@ -163,6 +163,12 @@ def create_app(conn, settings):
 
   app.state.background_jobs.add_handler("prune_jobs", prune_jobs_job)
 
+  def purge_trash_job(conn, job):
+    """ticket 081: rides along with the nightly scan, same as prune_jobs above."""
+    trash.purge_trash(settings.pictures_dir)
+
+  app.state.background_jobs.add_handler("purge_trash", purge_trash_job)
+
   @app.get("/api/jobs")
   @db_route
   def list_jobs(limit: int = 100):

@@ -12,9 +12,9 @@ actually get rejected photos off disk. The decision (see the ticket) was: move, 
 every file under a rejected Photo (the original, its camera JPG, any tuning, and every sidecar)
 moves into `<pictures_dir>/.trash/`, mirroring its original subdirectory structure exactly, so a
 trashed file is fully recoverable by hand (`mv` it back) for as long as it sits there. An automatic
-purge after a retention window is deliberately a separate, not-yet-built ticket (081) — trashing
-and purging are different enough operations (one is triggered by a user reviewing photos, the
-other is a scheduled sweep) that bundling them would have made the first one harder to get right.
+purge after a retention window is deliberately a separate ticket (081) — trashing and purging are
+different enough operations (one is triggered by a user reviewing photos, the other is a scheduled
+sweep) that bundling them would have made the first one harder to get right.
 
 ## trash must never be scanned, not just hidden
 
@@ -64,3 +64,18 @@ an orphaned cache entry is harmless. The stale `xmp_sidecars` database row at a 
 *old* path is not explicitly cleaned up by the trash operation either — the next ordinary scan of
 that (still-scanned, non-`.trash`) directory naturally notices the sidecar file is gone and deletes
 the row itself, the same way it always reconciles any other externally-deleted sidecar.
+
+## Purging: ctime, not mtime (ticket 081)
+
+`trash.purge_trash` permanently deletes anything under `.trash/` older than `RETENTION_DAYS`,
+riding along with the nightly `scan_dir`/`prune_jobs` enqueue (same reasoning as
+[concurrency-and-jobs.md](concurrency-and-jobs.md)'s shared queue). "Older than" needed a concrete
+answer to "when was this file trashed" — the file's own `mtime` is *not* that: `move_to_trash`
+always moves within one filesystem (`.trash/` is always under `pictures_dir`), which is a rename,
+and a rename does not touch `mtime`. Verified with a throwaway script before writing any purge
+logic: a file backdated to look old, then moved, kept its old `mtime` exactly but got a *new*
+`ctime` (POSIX bumps ctime — inode metadata change time — on any rename, on top of whatever the
+file's content-derived timestamps already say). Using `mtime` here would have measured "when was
+this photo last edited," which for an old family photo can be decades removed from "when was it
+trashed," in the wrong direction — every trashed file would have looked ancient immediately.
+`purge_trash` uses `os.stat(path).st_ctime` instead, with no new tracking state added anywhere.

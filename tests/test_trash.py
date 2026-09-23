@@ -1,4 +1,5 @@
 import os
+import time
 
 from photoapp import curation
 from photoapp import scan
@@ -119,3 +120,45 @@ def test_a_trashed_photos_sidecar_is_not_rediscovered_by_a_scan(conn, settings):
   assert after_photos == before_photos   # no new Photo created from the trashed files
   rows = conn.execute("SELECT missing FROM files WHERE photo_id = ?", (pid,)).fetchall()
   assert [r["missing"] for r in rows] == [1, 1]   # still missing
+
+
+# ---- purge_trash (ticket 081) ----
+
+def test_purge_trash_deletes_only_files_past_retention(settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.DNG"))
+  touch(os.path.join(d, "b.DNG"))
+  trash.move_to_trash(d, "a.DNG")
+  trash.move_to_trash(d, "b.DNG")
+  far_future = time.time() + 30 * 86400   # well past the default 7-day retention
+
+  deleted, dirs = trash.purge_trash(d, retention_days=7, now=far_future)
+  assert deleted == 2
+  assert not os.path.exists(os.path.join(d, trash.TRASH_DIRNAME, "a.DNG"))
+  assert not os.path.exists(os.path.join(d, trash.TRASH_DIRNAME, "b.DNG"))
+
+
+def test_purge_trash_keeps_files_within_retention(settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "a.DNG"))
+  trash.move_to_trash(d, "a.DNG")
+
+  deleted, dirs = trash.purge_trash(d, retention_days=7)   # now defaults to real time.time()
+  assert deleted == 0 and dirs == 0
+  assert os.path.isfile(os.path.join(d, trash.TRASH_DIRNAME, "a.DNG"))
+
+
+def test_purge_trash_removes_now_empty_subdirectories_but_not_trash_itself(settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "2019", "trip", "a.DNG"))
+  trash.move_to_trash(d, "2019/trip/a.DNG")
+  far_future = time.time() + 30 * 86400
+
+  deleted, dirs_removed = trash.purge_trash(d, retention_days=7, now=far_future)
+  assert deleted == 1 and dirs_removed == 2   # 2019/trip and 2019, both now empty
+  assert not os.path.exists(os.path.join(d, trash.TRASH_DIRNAME, "2019"))
+  assert os.path.isdir(os.path.join(d, trash.TRASH_DIRNAME))   # .trash/ itself untouched
+
+
+def test_purge_trash_on_a_library_with_no_trash_yet(settings):
+  assert trash.purge_trash(settings.pictures_dir) == (0, 0)
