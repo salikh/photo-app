@@ -92,13 +92,14 @@ It writes to the same state database the running app uses, so its progress — q
 and any per-file error — shows on the app's **Jobs** page immediately, no restart needed. Safe to interrupt
 (Ctrl-C, a reboot) and rerun: already-made thumbnails are left alone and the rest picks up where it stopped.
 
-RAW (`.DNG`) files are rendered with the external **`dcraw`** command (`apt install dcraw` if it is not already
-on `PATH`; a missing sidecar tool like this fails each RAW file's job with a clear message on the Jobs page
-rather than crashing the queue). `Thumb` is the camera's own embedded preview (`dcraw -e -c`); `Small`/`Medium`
-are a half-size demosaic (`dcraw -c -h -w`); `Huge` is a full-size, high-quality demosaic (`dcraw -c -w -q 3`).
-Non-RAW files use Pillow, the same as on-demand generation. This is a different path from the on-demand RAW
-renderer (`raw_render`, ticket 028), which uses `rawpy`/LibRaw instead of `dcraw` — both can run at the same
-time without interfering (`--limit=N` restricts a run to N files, handy for a quick check).
+RAW files and non-RAW files alike are rendered through `thumbs.ensure` — the same `rawpy`/LibRaw renderer and
+per-file settings (brightness, white balance, highlight recovery; ticket 085) the on-demand path uses, so a
+photo's thumbnails look the same whether this background populator or a live request made them first
+(`docs/design/thumbnails.md`). An untouched RAW file's `Thumb`/`Small`/`Medium`/`Huge` all come from the
+camera's own embedded preview until its settings are tuned away from default, at which point every size
+demosaics instead. This background queue and the on-demand path's own `raw_render` job queue can run at the
+same time without interfering (`--limit=N` restricts a run to N files, handy for a quick check). `dcraw` is no
+longer used anywhere in this app.
 
 As of ticket 080, opening a folder in the app (the first page of `/api/photos`) bumps that folder's still-missing
 thumbnails ahead of the queue's standing backlog: the automatic worker claims its newest-enqueued job first, and

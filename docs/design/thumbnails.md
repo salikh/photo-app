@@ -1,37 +1,78 @@
 # Thumbnails
 
-Code: `photoapp/thumbs.py`, `photoapp/previews.py`, `photoapp/thumb_populate.py`, `photoapp/populate_thumbs.py`.
+Code: `photoapp/thumbs.py`, `photoapp/previews.py`, `photoapp/thumb_populate.py`,
+`photoapp/populate_thumbs.py`, `photoapp/raw_settings.py`.
 
-## Two different RAW rendering paths — superseded 2026-09-23, see ticket 085/090
+## One RAW renderer, used by both paths (ticket 085/090)
 
-**This section's "not to be unified" conclusion no longer holds.** Ticket [090](../tickets/090.md)'s
-resolution (adjustable per-file RAW conversion settings, ticket [085](../tickets/085.md)) decided
-the opposite: the dcraw/rawpy split was "a legacy artifact, not an intended state," and 085 merges
-the two renderers into one (`rawpy`/LibRaw, used by both the on-demand and background paths) so a
-setting change has the same effect regardless of which path renders a file+size first. The
-reasoning below is kept for history — it explains why the split existed — but is no longer the
-app's design once 085 lands; check `photoapp/thumb_populate.py` directly for the current state if
-085 isn't done yet, rather than trusting the "deliberately not unified" framing below.
+There are two separate places a RAW file's thumbnail can get made — the on-demand path
+(`photoapp/previews.py`, ticket 028, when a photo is opened and a size is missing) and the
+background bulk populator (`photoapp/thumb_populate.py`, ticket 066, a low-priority process that
+walks the whole library filling in every missing size ahead of time) — but as of ticket 085 they
+call the **same renderer** (`previews.embedded_preview`/`previews.render`, `rawpy`/LibRaw) with the
+**same per-file settings** (`photoapp/raw_settings.py`). This used to not be true: the background
+path shelled out to the external `dcraw` binary instead, a second RAW renderer with its own
+tool-specific behavior, kept deliberately separate (see the history note below). That split had to
+go once a photo's thumbnails needed to look identical regardless of which path rendered them
+first — ticket 085's whole point (per-file brightness/white-balance/highlight-recovery settings)
+would otherwise silently depend on whichever path won the race for a given size.
 
-There *were* **two separate code paths that render a RAW file into a JPEG thumbnail**, using two different tools,
-and that was intentional rather than duplication that should be merged:
+Both paths still write into the exact same `/zoo/Thumbs/<Size>/<path>.jpg` layout and the same
+`thumbs` table, and **both still respect "never overwrite an existing thumbnail"** — whichever path
+gets there first for a given file and size wins, and the other simply has nothing left to do for it.
 
-- **On-demand** (`photoapp/previews.py`, ticket 028): when a photo is opened and a size is missing, it is
-  rendered synchronously from the embedded preview via `rawpy`/LibRaw — a Python library, no subprocess, and
-  fast (an embedded preview extracts in ~0.02s; a demosaic when there's no usable embedded preview is ~0.7s).
-  This replaced the plan's original `exiftool` + `dcraw` design specifically because neither binary was
-  installed on the development machine and `rawpy` needed nothing beyond `pip install`.
-- **Background bulk population** (`photoapp/thumb_populate.py`, ticket 066, explicit user request): a
-  low-priority process that walks the whole library filling in every missing size ahead of time, using the
-  external **`dcraw`** binary — requested by name, matching what the original plan (§4.5) had specified before
-  the on-demand path switched away from it (`dcraw -e -c` for the embedded `Thumb` preview, `dcraw -c -h -w` for
-  `Small`/`Medium`, `dcraw -c -w -q 3` for the full-size `Huge`). `dcraw` was not installed on the development
-  machine either; it was installed (`apt-get install dcraw`) specifically to build and test this path.
+<details>
+<summary>History: why they were two renderers, and why that stopped being true</summary>
 
-Both paths write into the exact same `/zoo/Thumbs/<Size>/<path>.jpg` layout and the same `thumbs` table, and
-**both respect "never overwrite an existing thumbnail"** — whichever path gets there first for a given file and
-size wins, and the other simply has nothing left to do for it. (This paragraph's "no plan to unify them" is the
-part 090/085 reversed — see the note at the top of this section.)
+The on-demand path (`previews.py`) uses `rawpy`/LibRaw, a Python library — no subprocess, and fast
+(an embedded preview extracts in ~0.02s; a demosaic when there's no usable embedded preview is
+~0.7s). This replaced the plan's original `exiftool` + `dcraw` design specifically because neither
+binary was installed on the development machine and `rawpy` needed nothing beyond `pip install`.
+
+The background populator (ticket 066, explicit user request) used the external `dcraw` binary
+instead — requested by name, matching what the original plan (§4.5) had specified before the
+on-demand path switched away from it (`dcraw -e -c` for the embedded `Thumb` preview, `dcraw -c -h
+-w` for `Small`/`Medium`, `dcraw -c -w -q 3` for the full-size `Huge`). At the time this was
+considered deliberate, not duplication to merge: the two paths solve different problems (respond to
+a request now vs. work through a backlog patiently) with different constraints (no subprocess/binary
+dependency vs. matching the originally-specified tool). Ticket 090's resolution to ticket 085
+reversed that: "the split of dcraw in batch and LibRaw in online processing is a legacy artifact,
+not an intended state." `dcraw` is no longer used anywhere in this app; `previews.render`'s `rawpy`
+`postprocess()` call covers every setting ticket 085 scoped (brightness, white balance, highlight
+recovery all have direct LibRaw equivalents).
+</details>
+
+## The embedded-preview shortcut is per-file and per-size, not fixed to `Thumb` (ticket 085)
+
+A RAW file's embedded preview (the camera's own already-baked JPEG, extracted via
+`previews.embedded_preview`) is not demosaiced at all — a per-file setting (`raw_settings.py`:
+brightness, white balance mode, highlight recovery) can only have a visible effect on a render that
+actually ran LibRaw's `postprocess()`. So the rule `thumbs._open`/`make` follow, for **every** size,
+not just `Thumb`:
+
+- While a file's settings are all at default (every column in `raw_settings.py`'s `COLUMNS` is
+  `NULL`), the embedded-preview shortcut is used at every size — `Thumb`/`Small`/`Medium`/`Huge` are
+  all just different downscales of the same free, ~20ms extraction. This is why, for the common
+  case of an untouched RAW photo, browsing a RAW-heavy folder is not noticeably slower than a
+  JPEG-heavy one even before the background populator has caught up.
+- The moment a file's settings are tuned away from default, every size (that isn't already cached —
+  the "never overwrite" rule above still applies) demosaics instead, applying those settings. A
+  settings change clears every cached size first (`thumbs.clear`, ticket 079's mechanism, reused by
+  `POST /api/files/{id}/raw_settings`) specifically so nothing stale from before the change survives
+  to be found by the "downscale from a larger cached size" step below.
+- A RAW with no usable embedded preview at all demosaics regardless of settings — there is no faster
+  path available for it either way (`render_raw_sizes`, the `raw_render` job queue fallback).
+
+Earlier drafts of ticket 085 assumed only `Thumb` ever took the embedded-preview shortcut (matching
+the *old*, dcraw-based background path, which really did always demosaic `Small`/`Medium`/`Huge`).
+That turned out not to describe the on-demand path at all — it already used the shortcut at every
+size — and generalizing the shortcut to every size (rather than making `Small`/`Medium`/`Huge`
+always demosaic) was a deliberate choice to keep today's browsing speed for untouched photos,
+confirmed directly rather than assumed.
+
+See ticket [093](../tickets/093.md) for a follow-up not yet implemented: when a demosaic does have
+to happen, doing it once at `Huge` and downscaling the smaller sizes from that, instead of
+demosaicing separately per requested size.
 
 ## The layout facts came from measuring the real tree, not from a spec
 
@@ -51,6 +92,12 @@ already on the NAS), asking for `Thumb` costs a cheap downscale instead of a sec
 `render`/`save` never upscale: a source image smaller than the requested long edge keeps its own size, matching
 what the pre-existing tree already does (verified during the layout inspection) rather than introducing
 interpolated blur that wasn't there before.
+
+A "downscale from a larger cached size" source is already a plain JPEG — whatever settings were (or weren't)
+baked in when that larger size was itself produced — so `make` doesn't need to re-check settings for that step;
+it only matters when rendering straight from the original RAW file. This is safe specifically because a settings
+change clears every cached size at once (see above): a smaller size can never end up downscaled from a larger
+one that was rendered under different, stale settings.
 
 ## Job-queue generation, not inline, for anything that needs a real RAW decode
 

@@ -11,15 +11,11 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 All ten build-order epics, v1 filtering, and every cross-cutting ticket are done (see
 `STATUS.md`). What's left:
 
-- [ ] [085](docs/tickets/085.md) Adjustable per-file RAW conversion settings with sliders and
-      thumbnail regeneration — unblocked by [090](docs/tickets/090.md)'s answer, now also merges the
-      on-demand and background RAW renderers into one
 - [ ] [093](docs/tickets/093.md) Render a tuned RAW's thumbnails once at Huge and downscale the
       rest from it, instead of demosaicing separately per size (follow-up to 085/090, not blocking)
 
-085 is priority "not now" (user request 2026-09-23) and has its design decisions resolved,
-ready to implement. 093 is a fresh follow-up filed mid-085, not yet scoped. 086-089, 091 and 092
-are done — see `STATUS.md`.
+093 is a fresh follow-up filed mid-085 (2026-09-23/24), not yet scoped, and is the only open
+ticket left. 085-089, 091 and 092 are done — see `STATUS.md`.
 
 ## Question tickets (waiting on the user)
 

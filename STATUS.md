@@ -52,6 +52,9 @@ All ten build-order epics are done.
 - [x] [087](docs/tickets/087.md) Fav and tag-based filter buttons in the folder view (user request 2026-09-23)
 - [x] [088](docs/tickets/088.md) Batch actions scoped to the current selection, including delete (user request 2026-09-23)
 - [x] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder (user request 2026-09-23)
+- [x] [085](docs/tickets/085.md) Adjustable per-file RAW conversion settings with sliders and thumbnail regeneration — merged the on-demand and background RAW renderers onto rawpy/LibRaw (090's resolution); spun off ticket 093 as a follow-up optimization, not blocking
+
+Still open: [093](docs/tickets/093.md) — see `TODO.md`.
 
 Still open: [085](docs/tickets/085.md) — see `TODO.md`.
 
