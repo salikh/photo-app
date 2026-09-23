@@ -87,7 +87,7 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
 
 **No open question tickets right now.** Every build-order and cross-cutting item above is done. What remains is
-080–085 (none urgent; 084 is blocked by 083; 080/081/085 need design decisions before they're actionable) and
+082–085 (none urgent; 084 is blocked by 083; 083/085 still need design decisions before they're actionable) and
 whatever the next `/loop` iteration or the user asks for.
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
