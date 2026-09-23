@@ -176,6 +176,17 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None):
   it needs no further settings-awareness here. Callers that change a file's settings are
   responsible for clearing every cached size first (thumbs.clear) so a stale, differently-tuned
   cache is never downscaled from by mistake.
+
+  Ticket 093: a settings-tuned RAW demosaics through previews.render() (slow, ~1s) rather than
+  the fast embedded-preview path, and would otherwise pay that cost again for every distinct size
+  requested (grid Thumb, then loupe Medium, then a Huge zoom -- up to 4 full demosaics for one
+  photo). When about to demosaic such a file and nothing larger is cached yet, render Huge once
+  first -- written straight into the thumbs tree, same as any other size -- then fall through to
+  the existing downscale-from-larger-cached-size path below to produce the size actually asked
+  for. A later request for a different size finds that Huge file on disk (lookup() is disk-based)
+  and only pays a cheap resize. The bonus Huge isn't recorded in the `thumbs` table here (make()
+  stays DB-free); it self-heals into the table the same way any other on-disk-but-unrecorded
+  thumbnail does, via index_existing() on the next scan or background populate pass.
   """
   path = lookup(thumbs_dir, size, file_path)
   if path:
@@ -185,7 +196,18 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None):
   sources = [lookup(thumbs_dir, s, file_path)
              for s in SIZES[SIZES.index(size) + 1:]]
   sources = [s for s in sources if s]
-  sources.append(os.path.join(pictures_dir, file_path))
+  original = os.path.join(pictures_dir, file_path)
+  if (not sources and size != "Huge" and fileinfo.is_raw(original)
+      and settings and not raw_settings.is_default(settings)):
+    huge_dest = thumb_path(thumbs_dir, "Huge", file_path)
+    try:
+      render(original, huge_dest, LONG_EDGE["Huge"], settings=settings)
+      sources = [huge_dest]
+      logging.vlog(5, "%s: rendered Huge once to also satisfy %s (ticket 093)",
+                   file_path, size)
+    except Unsupported as e:
+      logging.vlog(3, "cannot render Huge from %s: %s", original, e)
+  sources.append(original)
   for source in sources:
     try:
       render(source, dest, LONG_EDGE[size], settings=settings)

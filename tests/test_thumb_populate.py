@@ -60,7 +60,10 @@ def test_populate_file_raw_with_tuned_settings_demosaics_every_size(conn, settin
   raw_settings.set(conn, fid, bright=1.4)
   made = thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, fid, "a.DNG")
   assert sorted(made) == ["Huge", "Medium", "Small", "Thumb"]
-  assert stub_raw == {"embedded": 0, "demosaic": 4}     # no size took the free shortcut once tuned
+  # ticket 093: the first size demosaics once at Huge; every other size downscales from that
+  # cached Huge instead of demosaicing again -- no size takes the free embedded-preview shortcut
+  # once tuned, but only one demosaic happens for the whole file, not one per size.
+  assert stub_raw == {"embedded": 0, "demosaic": 1}
 
 
 def test_populate_file_skips_sizes_that_already_exist(conn, settings, stub_raw):
@@ -70,7 +73,10 @@ def test_populate_file_skips_sizes_that_already_exist(conn, settings, stub_raw):
   made = thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, fid, "a.DNG")
   assert "Thumb" not in made and sorted(made) == ["Huge", "Medium", "Small"]
   # each remaining size (not Thumb, already cached) independently takes the embedded-preview
-  # shortcut -- one call per size, not shared across them (that sharing is ticket 093, not yet done)
+  # shortcut -- one call per size. Ticket 093's demosaic-once sharing only applies to the
+  # expensive tuned-settings path (see test_populate_file_raw_with_tuned_settings_demosaics_
+  # every_size above); the embedded-preview shortcut used here is already cheap, so it isn't
+  # worth sharing across sizes.
   assert stub_raw == {"embedded": 3, "demosaic": 0}
   assert open(os.path.join(settings.thumbs_dir, "Thumb", "a.DNG.jpg"), "rb").read() == before
   made_again = thumb_populate.populate_file(

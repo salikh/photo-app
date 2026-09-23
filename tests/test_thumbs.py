@@ -94,6 +94,38 @@ def test_ensure_returns_none_for_raw_without_thumbnail(conn, settings):
                        fid, "a.dng", "Small") is None
 
 
+def test_make_tuned_raw_demosaics_once_and_downscales_the_rest_from_huge(conn, settings, monkeypatch):
+  # Ticket 093: a settings-tuned RAW's first differently-sized request demosaics once at Huge
+  # (regardless of which size was actually asked for) and every later request for a different
+  # size downscales from that cached Huge instead of demosaicing again.
+  from photoapp import previews
+  from photoapp import raw_settings
+
+  calls = {"demosaic": 0}
+
+  def render(path, settings=None, half_size=False):
+    calls["demosaic"] += 1
+    return Image.new("RGB", (1600, 1200), (10, 20, 30))
+
+  monkeypatch.setattr(previews, "render", render)
+
+  d, t = settings.pictures_dir, settings.thumbs_dir
+  touch(os.path.join(d, "a.DNG"))
+  scan.scan(conn, d)
+  fid = conn.execute("SELECT id FROM files").fetchone()[0]
+  raw_settings.set(conn, fid, bright=1.4)
+
+  out = thumbs.ensure(conn, d, t, fid, "a.DNG", "Thumb")
+  assert Image.open(out).size == (300, 225) and calls == {"demosaic": 1}
+  assert thumbs.lookup(t, "Huge", "a.DNG") is not None   # bonus Huge written as a side effect
+
+  out = thumbs.ensure(conn, d, t, fid, "a.DNG", "Medium")
+  assert Image.open(out).size == (1600, 1200) and calls == {"demosaic": 1}   # downscaled, not re-demosaiced
+
+  out = thumbs.ensure(conn, d, t, fid, "a.DNG", "Huge")
+  assert Image.open(out).size == (1600, 1200) and calls == {"demosaic": 1}   # the bonus write, found as-is
+
+
 def test_clear_removes_cached_files_and_rows_so_the_next_request_regenerates(conn, settings):
   d, t = settings.pictures_dir, settings.thumbs_dir
   make_jpeg(os.path.join(d, "y", "a.JPG"), size=(3000, 2000))
