@@ -98,7 +98,11 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .filters .n:empty { display: none; }
 .filters button.on .n { color: inherit; }
 .filters button.zero:not(.on) { opacity: 0.55; }
-.hud .filter-tag { color: var(--accent); border-color: var(--accent); }
+.hud .filter-tag {
+  padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px;
+  color: var(--accent); border-color: var(--accent);
+}
+.hud .filter-tag.on { background: var(--bg-hover); }
 
 /* ---------- grid ---------- */
 
@@ -230,6 +234,18 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .files-panel .file.rep { border-color: var(--accent); }
 .files-panel .meta { color: var(--text-dim); font-size: 13px; word-break: break-all; }
 .files-panel .row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+/* ticket 092: filter switcher opened from the loupe HUD's filter tag */
+.filter-picker {
+  position: absolute; left: max(12px, env(safe-area-inset-left)); bottom: 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px; z-index: 3;
+}
+.filter-picker .filter-option {
+  display: flex; justify-content: space-between; gap: 12px; text-align: left; padding: 0 10px;
+}
+.filter-picker .filter-option .n { color: var(--text-dim); font-size: 12px; }
 
 /* ticket 082: modal confirmation before moving a single file to trash -- above the loupe (20)
    and the files panel (3), below the toast (50) so a post-confirm toast still shows on top */

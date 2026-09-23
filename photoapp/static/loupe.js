@@ -7,11 +7,11 @@ import {href} from './route.js';
 import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
-import {label as filterLabel} from './filters.js';
+import {label as filterLabel, primary as filterPrimary} from './filters.js';
 import * as preloader from './preload.js';
 import {createFilmstrip} from './filmstrip.js';
 import {createZoom} from './zoom.js';
-import {updateCell, settle, reinsertPhotos, loadRest} from './grid.js';
+import {updateCell, settle, reinsertPhotos, loadRest, loadFolder} from './grid.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
 
 
@@ -20,6 +20,7 @@ const ui = {};
 let index = -1;
 let zoomed = false;
 let filesOpen = false;
+let filterPanelOpen = false;   // ticket 092: the filter-switcher panel opened from the HUD's filter tag
 let brokenFileId = null;   // set when the main image fails to load after every retry (ticket 079)
 
 const current = () => state.photos[index];
@@ -40,6 +41,7 @@ function build() {
   ui.filmstrip = ui.strip.element;
   ui.hud = el('div', {class: 'hud'});
   ui.panel = null;
+  ui.filterPanel = null;
   root = el('div', {class: 'loupe', hidden: true, role: 'dialog', 'aria-label': 'photo viewer'},
             ui.stage, ui.filmstrip, ui.hud);
   document.body.append(root);
@@ -115,6 +117,7 @@ export function close() {
   document.body.style.overflow = '';
   document.removeEventListener('keydown', onKey);
   closeFiles();
+  closeFilterPicker();
   closeDeleteModal();
   ui.zoom.reset();
   zoomed = false;
@@ -265,8 +268,12 @@ function renderHud() {
     p.fav ? el('span', {class: 'fav-on', text: '♥'}) : null,
     p.conflict ? el('span', {class: 'conflict', title: 'sidecars disagree', text: '⚠ conflict'}) : null,
     p.tags.map((t) => el('span', {class: 'tag', text: t})),
-    state.route && state.route.filter !== 'all'
-      ? el('span', {class: 'tag filter-tag', title: 'active filter', text: 'filter: ' + filterLabel(state.route.filter)}) : null,
+    // Deliberately not class "tag" -- .hud .tag is also used for the photo's own tags, and tests
+    // (and a future feature) count them separately from this filter-switcher button.
+    state.route
+      ? el('button', {class: 'filter-tag' + (filterPanelOpen ? ' on' : ''), title: 'switch the active filter',
+                      text: 'filter: ' + filterLabel(state.route.filter),
+                      onclick: (e) => { e.stopPropagation(); toggleFilterPicker(); }}) : null,
     ui.tagInput,
     el('div', {class: 'buttons'},
       el('button', {text: '✖', title: 'reject (X)', class: p.rating === REJECT ? 'on' : '', onclick: () => setRating(afterKey(p.rating, 'x', p.previous_stars))}),
@@ -538,6 +545,68 @@ function closeFiles() {
   if (root && !root.hidden) renderHud();
 }
 
+// ------------------------------------------------- filter switcher (ticket 092)
+//
+// Switches the active filter from inside the loupe without losing the currently-shown photo:
+// the filmstrip/prev-next context updates to the new filter's photo list, but the image on
+// screen does not reload or reset (no call to show()). Deliberately not app.js's filterRow.go(),
+// which always closes the loupe and drops the current photo.
+
+function renderFilterPanel() {
+  const photo = current();
+  ui.filterPanel = el('div', {class: 'filter-picker', onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation()},
+    filterPrimary().map(([value, text]) => {
+      const active = state.route.filter === value;
+      const ok = matches(photo, value);
+      const count = state.counts ? state.counts[value] : null;
+      return el('button', {
+        class: 'filter-option' + (active ? ' on' : ''),
+        disabled: !ok,
+        title: ok ? null : 'this photo does not match this filter',
+        onclick: ok ? () => switchFilterTo(value) : null,
+      }, el('span', {class: 'lbl', text}), count != null ? el('span', {class: 'n', text: String(count)}) : null);
+    }));
+  ui.stage.append(ui.filterPanel);
+}
+
+function openFilterPicker() {
+  filterPanelOpen = true;
+  closeFilterPanelOnly();
+  renderFilterPanel();
+  renderHud();
+}
+
+function closeFilterPanelOnly() {
+  if (ui.filterPanel) { ui.filterPanel.remove(); ui.filterPanel = null; }
+}
+
+function closeFilterPicker() {
+  filterPanelOpen = false;
+  closeFilterPanelOnly();
+  if (root && !root.hidden) renderHud();
+}
+
+function toggleFilterPicker() { filterPanelOpen ? closeFilterPicker() : openFilterPicker(); }
+
+async function switchFilterTo(newFilter) {
+  const photoId = current().id;
+  closeFilterPicker();
+  if (newFilter === state.route.filter) return;
+  const newRoute = {...state.route, filter: newFilter};
+  history.replaceState(null, '', href(newRoute));
+  try {
+    await loadFolder(newRoute);
+    if (!state.photos.some((p) => p.id === photoId)) await loadRest(newRoute);
+  } catch (e) { toast(e.message, true); return; }
+  if (!isOpen()) return;
+  const i = state.photos.findIndex((p) => p.id === photoId);
+  if (i < 0) { toast('lost track of the photo while switching filters', true); return; }
+  index = i;
+  renderFilmstrip(true);
+  preload(1);
+  renderHud();
+}
+
 async function setRepresentative(detail, fileId) {
   const photo = current();
   try {
@@ -622,7 +691,11 @@ function onKey(e) {
   else if (key === 'g' || key === 'G') cycleRepresentative();
   else if (key === 'u' || key === 'U') undo();
   else if (key === 'i' || key === 'I') filesOpen ? closeFiles() : openFiles();
-  else if (key === 'Escape') { if (filesOpen) closeFiles(); else closeToGrid(); }
+  else if (key === 'Escape') {
+    if (filterPanelOpen) closeFilterPicker();
+    else if (filesOpen) closeFiles();
+    else closeToGrid();
+  }
   else return;
   e.preventDefault();
 }

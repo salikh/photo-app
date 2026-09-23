@@ -18,12 +18,9 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
 - [ ] [087](docs/tickets/087.md) Fav and tag-based filter buttons in the folder view (pairs well with 086)
 - [ ] [088](docs/tickets/088.md) Batch actions scoped to the current selection, including delete
 - [ ] [089](docs/tickets/089.md) Export action: Huge-equivalent JPEGs of all/selected photos to a chosen folder
-- [ ] [092](docs/tickets/092.md) Switch the active filter from inside the loupe (click the "filter: …"
-      HUD tag), staying on the same photo; non-matching filters grayed out (user request 2026-09-23)
 
-085-089 are priority "not now" (user request 2026-09-23); every one of them, including 085, now has
-its design decisions resolved and is ready to implement. 092 has no priority note yet. 091 (help
-screen) is done — see `STATUS.md`.
+085-089 are priority "not now" (user request 2026-09-23); every one of them now has its design
+decisions resolved and is ready to implement. 091 and 092 are done — see `STATUS.md`.
 
 ## Question tickets (waiting on the user)
 

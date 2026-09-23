@@ -1578,3 +1578,35 @@ def test_help_overlay_does_not_open_while_typing_in_the_tag_field(page, server):
   page.keyboard.press("h")
   expect(page.locator(".help-card")).to_be_hidden()
   page.keyboard.press("Escape")
+
+
+# ------------------------------------------------- filter switcher in the loupe (ticket 092)
+
+def test_switch_filter_from_loupe_keeps_the_same_photo_and_updates_context(page, server):
+  open_loupe(page, server, 0)                                   # IMG_0001, unrated, 1/6 in "all"
+  expect(page.locator(".hud .pos")).to_have_text("1/6")
+  expect(page.locator(".filmstrip .thumb")).to_have_count(6)
+
+  page.locator(".hud .filter-tag").click()
+  expect(page.locator(".filter-picker")).to_be_visible()
+  expect(page.locator(".filter-picker .filter-option", has_text="★5")).to_be_disabled()   # doesn't match
+
+  page.locator(".filter-picker .filter-option", has_text="Unrated").click()
+  expect(page.locator(".filter-picker")).to_have_count(0)       # closes after picking
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")  # same photo still shown
+  expect(page.locator(".hud .pos")).to_have_text("1/4")           # context updated to the new filter
+  expect(page.locator(".filmstrip .thumb")).to_have_count(4)
+  expect(page.locator(".hud .filter-tag")).to_contain_text("Unrated")
+  assert "filter=unrated" in page.url
+
+
+def test_filter_switcher_disabled_option_does_nothing_and_escape_closes_the_panel(page, server):
+  open_loupe(page, server, 0)                                   # IMG_0001, unrated
+  page.locator(".hud .filter-tag").click()
+  expect(page.locator(".filter-picker")).to_be_visible()
+  page.locator(".filter-picker .filter-option", has_text="★5").click(force=True)
+  expect(page.locator(".filter-picker")).to_be_visible()        # disabled: nothing happened
+  expect(page.locator(".hud .pos")).to_have_text("1/6")          # still unfiltered
+  page.keyboard.press("Escape")
+  expect(page.locator(".filter-picker")).to_have_count(0)
+  expect(page.locator(".loupe")).to_be_visible()                 # Escape closed the panel, not the viewer
