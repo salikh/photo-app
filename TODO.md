@@ -13,6 +13,8 @@ done (see `STATUS.md`). What's left:
 
 - [ ] [108](docs/tickets/108.md) Busy indicator while LibRaw-Wasm renders the RAW tuning preview
       (user request 2026-09-25)
+- [ ] [109](docs/tickets/109.md) Exposure and shadow-pull correction as tunable RAW conversion
+      parameters (user request 2026-09-25) — filed only, not yet implemented
 
 ## Question tickets (waiting on the user)
 
