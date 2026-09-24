@@ -96,6 +96,12 @@ All ten build-order epics are done.
 - [x] [108](docs/tickets/108.md) Busy indicator (a small spinner, `.tuning-busy`) shown for the
       span of a local LibRaw-Wasm render, guarded by a sequence counter so a superseded call or
       navigating away mid-render can never leave it stuck visible (user request 2026-09-25)
+- [x] [110](docs/tickets/110.md) Bug fix: the grid cell and filmstrip Thumb for a re-tuned RAW
+      file (when it's the Photo's representative) never refreshed after Save — `/img/Thumb/
+      {file_id}`'s URL doesn't change even though its bytes do, and the response is cached up to
+      an hour; `grid.js`'s `refreshCellThumb`/`filmstrip.js`'s `refreshThumb` cache-bust them the
+      same way `saveRawSettings` already did for the loupe's own main image (user bug report
+      2026-09-25)
 
 ## Cross-cutting
 

@@ -13,8 +13,6 @@ done (see `STATUS.md`). What's left:
 
 - [ ] [109](docs/tickets/109.md) Exposure and shadow-pull correction as tunable RAW conversion
       parameters (user request 2026-09-25) — filed only, not yet implemented
-- [ ] [110](docs/tickets/110.md) Bug: Thumb thumbnail stays stale after editing RAW tuning
-      settings (user bug report 2026-09-25)
 
 ## Question tickets (waiting on the user)
 
