@@ -11,7 +11,7 @@ import {label as filterLabel, primary as filterPrimary} from './filters.js';
 import * as preloader from './preload.js';
 import {createFilmstrip} from './filmstrip.js';
 import {createZoom} from './zoom.js';
-import {updateCell, settle, reinsertPhotos, loadRest, loadFolder} from './grid.js';
+import {updateCell, refreshCellThumb, settle, reinsertPhotos, loadRest, loadFolder} from './grid.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
 import {RawTuningSession} from './rawTuning.js';
 
@@ -38,9 +38,13 @@ function build() {
   // Appended after ui.tuning so it paints on top if both were somehow active at once.
   ui.rowPreview = el('img', {class: 'tuning row-preview', alt: '', draggable: 'false', hidden: true,
                              onload: () => { if (hoverFile) ui.rowPreview.hidden = false; }});
+  // Ticket 108: shown for the span of a RawTuningSession.render() call (requestPreview), so the
+  // user sees something is happening during a slow local LibRaw-Wasm decode (worst case: a cold
+  // session's DNG fetch + WASM compile).
+  ui.tuningBusy = el('div', {class: 'tuning-busy', hidden: true});
   ui.preview = el('div', {class: 'rate-preview'});
   ui.stage = el('div', {class: 'stage'},
-    ui.img, ui.tuning, ui.rowPreview, ui.preview,
+    ui.img, ui.tuning, ui.rowPreview, ui.tuningBusy, ui.preview,
     el('button', {class: 'nav-hint prev', 'aria-label': 'previous', text: '‹', onclick: (e) => { e.stopPropagation(); go(-1); }}),
     el('button', {class: 'nav-hint next', 'aria-label': 'next', text: '›', onclick: (e) => { e.stopPropagation(); go(1); }}));
   ui.strip = createFilmstrip((id) => {
@@ -584,7 +588,9 @@ function discardPending() {
   if (pending) { clearTimeout(pending.timer); if (pending.session) pending.session.dispose(); }
   pending = null;
   sliderHover = false;
+  previewSeq++;   // ticket 108: invalidate any requestPreview() still in flight
   if (ui.tuning) { ui.tuning.hidden = true; ui.tuning.src = ''; }
+  if (ui.tuningBusy) ui.tuningBusy.hidden = true;
 }
 
 function schedulePreview(f) {
@@ -592,14 +598,23 @@ function schedulePreview(f) {
   pending.timer = setTimeout(() => requestPreview(f), PREVIEW_DEBOUNCE_MS);
 }
 
+// Ticket 108: bumped at the start of every requestPreview() call and compared against on the way
+// out, so a busy indicator hide from a stale/superseded call (a rapid slider drag, or the panel
+// closing mid-render) can never clobber a newer call's own show/hide.
+let previewSeq = 0;
+
 // Ticket 105: try a local LibRaw-Wasm render first (one RawTuningSession per file, reused
 // across every tick); requestPreviewNetwork -- 094's original GET .../raw_preview round trip --
 // is the fallback when render() can't (LibRaw-Wasm unavailable, the preview DNG missing, or a
-// decode error), not something removed.
+// decode error), not something removed. Ticket 108: ui.tuningBusy shows for exactly the span of
+// the render() call -- "LibRaw-Wasm is working" -- not the network fallback's own image load.
 async function requestPreview(f) {
   if (!pending || pending.fileId !== f.id) return;   // superseded by a discard/navigation
   if (!pending.session) pending.session = new RawTuningSession(f.id);
+  const mySeq = ++previewSeq;
+  ui.tuningBusy.hidden = false;
   const url = await pending.session.render(pending.values);
+  if (mySeq === previewSeq) ui.tuningBusy.hidden = true;
   if (!pending || pending.fileId !== f.id) return;   // superseded while the render was in flight
   if (url) ui.tuning.src = url;
   else requestPreviewNetwork(f);
@@ -621,6 +636,10 @@ async function saveRawSettings(f) {
   if (current().file_id === f.id) {
     ui.img.src = imgUrl('Medium', f.id) + '?r=' + Date.now();
     retryOnce(ui.img, current());
+    // Ticket 110: the grid cell and filmstrip node for this photo, if already in the DOM, would
+    // otherwise never notice the Thumb they're showing just went stale server-side.
+    refreshCellThumb(current().id, f.id);
+    ui.strip.refreshThumb(current().id, f.id);
   }
   if (filesOpen) openFiles();
 }

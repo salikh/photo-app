@@ -93,6 +93,9 @@ All ten build-order epics are done.
       render agree within ~1-2% mean RGB against a real Pentax K-5 DNG.
 - [x] [102](docs/tickets/102.md) Epic: client-side RAW tuning via LibRaw-Wasm — done (103-107 all
       landed)
+- [x] [108](docs/tickets/108.md) Busy indicator (a small spinner, `.tuning-busy`) shown for the
+      span of a local LibRaw-Wasm render, guarded by a sequence counter so a superseded call or
+      navigating away mid-render can never leave it stuck visible (user request 2026-09-25)
 
 ## Cross-cutting
 

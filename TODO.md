@@ -11,10 +11,10 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 All ten build-order epics, v1 filtering, every cross-cutting ticket, and epic 102 (103-107) are
 done (see `STATUS.md`). What's left:
 
-- [ ] [108](docs/tickets/108.md) Busy indicator while LibRaw-Wasm renders the RAW tuning preview
-      (user request 2026-09-25)
 - [ ] [109](docs/tickets/109.md) Exposure and shadow-pull correction as tunable RAW conversion
       parameters (user request 2026-09-25) — filed only, not yet implemented
+- [ ] [110](docs/tickets/110.md) Bug: Thumb thumbnail stays stale after editing RAW tuning
+      settings (user bug report 2026-09-25)
 
 ## Question tickets (waiting on the user)
 

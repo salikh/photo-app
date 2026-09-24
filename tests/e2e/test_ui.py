@@ -472,6 +472,64 @@ def test_local_libraw_wasm_renders_the_tuning_preview_for_a_real_raw(page, serve
   assert network_preview_requests == []
 
 
+@real_dng_only
+def test_busy_indicator_shows_while_libraw_wasm_renders(page, server):
+  # Ticket 108: a real RAW file so there's an actual local render to wait on (a fake DNG resolves
+  # near-instantly via the network fallback, giving no real window to observe "busy" in).
+  shutil.copy(REAL_DNG, os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"))
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+
+  busy = page.locator(".tuning-busy")
+  expect(busy).to_be_hidden()   # nothing pending yet
+  slider = dng_row.locator(".raw-settings input[type=range]").first
+  slider.focus()
+  slider.press("ArrowRight")
+  expect(busy).to_be_visible()   # shown for the span of the render
+  expect(busy).to_be_hidden(timeout=30000)   # cleared once it resolves (same cold-compile budget as above)
+  tuning = page.locator(".stage img.tuning:not(.row-preview)")
+  expect(tuning).to_have_attribute("src", re.compile(r"^blob:"))
+
+
+def test_saving_raw_settings_cache_busts_the_grid_cell_and_filmstrip_thumb(page, server):
+  # Ticket 110: the grid cell's (and filmstrip's) Thumb <img> for a re-tuned RAW must pick up a
+  # cache-busting param on Save, or a browser that already cached /img/Thumb/{file_id} keeps
+  # showing the pre-edit thumbnail indefinitely -- the URL itself never changes, only its bytes
+  # do. Uses a standalone DNG (no same-named JPG sibling, unlike every other RAW-tuning test
+  # here) so it's its own Photo's representative file and actually appears in the grid/filmstrip
+  # -- tuning a *non*-representative sibling's settings correctly changes nothing on screen.
+  open(os.path.join(server.pictures, "2024/home", "K_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server, folder="2024/home")
+  photo_id = ids[-1]   # "K_0001.DNG" sorts after the IMG_000{7,8,9}.jpg fixtures already in this folder
+
+  page.goto(f"{server.url}/#/2024/home")
+  cell_img = page.locator(f'.cell[data-id="{photo_id}"] img')
+  expect(cell_img).to_be_visible()
+  before = cell_img.get_attribute("src")
+
+  page.goto(f"{server.url}/#/2024/home?photo={photo_id}")
+  expect(page.locator(".hud .name")).to_contain_text("K_0001.DNG")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="K_0001.DNG")
+  dng_row.get_by_role("button", name="manual", exact=True).click()
+  dng_row.get_by_role("button", name="Save", exact=True).click()
+  expect(page.locator("#toast")).to_contain_text("saved")
+
+  page.keyboard.press("Escape")   # back to the grid, same folder -- the cell is not rebuilt
+  after = cell_img.get_attribute("src")
+  assert after != before and after.startswith(before + "?r=") and re.search(r"\?r=\d+$", after)
+  page.wait_for_timeout(500)
+  page.errors.clear()   # the fake one-byte DNG legitimately has no image (404): ui.img's, the
+                        # grid cell's and the filmstrip's cache-busted refreshes all hit it
+
+
 def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):
   # ticket 082: per-file delete from the Files panel, gated by a modal confirmation.
   import os

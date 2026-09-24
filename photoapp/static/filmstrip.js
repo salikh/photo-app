@@ -129,6 +129,14 @@ export function createFilmstrip(onPick) {
   return {
     element: root,
     render,
+    // Ticket 110: a node's <img> is only created once (loadImages skips it if already present),
+    // so a re-tuned RAW's already-loaded strip thumbnail never re-fetches on its own -- same bug,
+    // same fix, as grid.js's refreshCellThumb.
+    refreshThumb(photoId, fileId) {
+      const node = nodes.get(photoId);
+      const img = node && node.querySelector('img');
+      if (img) img.src = imgUrl('Thumb', fileId) + '?r=' + Date.now();
+    },
     // For the viewer opening again: forget the scroll position logic and drop the nodes.
     reset() {
       for (const [id, node] of [...nodes]) releaseNode(id, node);

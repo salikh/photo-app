@@ -76,6 +76,18 @@ export function updateCell(photo) {
   setChildren(cell.querySelector('.badges'), badges(photo));
 }
 
+// Ticket 110: the file_id (hence the /img/Thumb/{file_id} URL) does not change when a
+// RAW's tuning settings are saved, only the bytes that URL serves -- unlike setRepresentative's
+// own cell-image refresh below, which naturally gets a fresh URL because the file_id itself
+// changes. Without a cache-busting param, a grid cell whose image already loaded once keeps
+// showing the pre-edit thumbnail (the DOM node's src never changes, so no request is even made
+// to notice the server-side thumbnail changed) even across a full page reload, if the browser's
+// HTTP cache still holds the old response (Cache-Control: max-age=3600 on /img/*).
+export function refreshCellThumb(photoId, fileId) {
+  const img = document.querySelector(`.cell[data-id="${photoId}"] img`);
+  if (img) img.src = imgUrl('Thumb', fileId) + '?r=' + Date.now();
+}
+
 export function makeCell(photo) {
   const img = el('img', {src: imgUrl('Thumb', photo.file_id), loading: 'lazy', alt: photo.name, decoding: 'async'});
   retryImage(img);

@@ -188,6 +188,19 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   pointer-events: none; -webkit-user-drag: none; transition: none;
 }
 .stage img.tuning[hidden] { display: none; }
+/* Ticket 108: busy indicator while rawTuning.js's LibRaw-Wasm render is in flight. */
+.tuning-busy {
+  position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%;
+  background: var(--overlay-bg); display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.tuning-busy[hidden] { display: none; }
+.tuning-busy::after {
+  content: ''; width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--overlay-text); border-top-color: transparent;
+  animation: tuning-busy-spin 0.7s linear infinite;
+}
+@keyframes tuning-busy-spin { to { transform: rotate(360deg); } }
 /* zoomed: the photo is drawn at its original size and moved/scaled by a transform (zoom.js), so only the
    photo scales, never the page */
 .stage.zoomed { overflow: hidden; touch-action: none; cursor: grab; }
