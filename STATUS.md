@@ -77,9 +77,22 @@ All ten build-order epics are done.
       undemosaiced Bayer data binned down to a size cap (103's answer), written via `tifffile`
       (a new dependency: rawpy can't write DNG); verified against the real vendored LibRaw-Wasm
       1.6.0 build (`photoapp/static/vendor/libraw-wasm/`), not just rawpy
-
-Still open: [102](docs/tickets/102.md) (epic, with [105](docs/tickets/105.md)/[106](docs/tickets/106.md)
-left) — see `TODO.md`.
+- [x] [105](docs/tickets/105.md) Client-side RAW tuning: `photoapp/static/rawTuning.js`
+      (`RawTuningSession`) loads the vendored LibRaw-Wasm module, fetches 104's preview DNG once
+      per file, and re-renders locally on every slider tick (`open()` + `imageData()` painted onto
+      a throwaway canvas, read back as a `blob:` URL) instead of 094's network `raw_preview`
+      round trip, which becomes the fallback when local rendering isn't available
+- [x] [106](docs/tickets/106.md) Save flow: already correct unchanged (still POSTs the same four
+      parameters, still `thumbs.clear`s and re-renders from the original DNG) — this ticket turned
+      out to be its two open design notes: parameter parity resolved as "restrict to today's four"
+      (matches 105's `mapSettings`), and the "drift risk" between LibRaw-Wasm and rawpy checked for
+      real, finding (and fixing, in 104) two real DNG-generation bugs — a `BlackLevel` tag needs
+      its `BlackLevelRepeatDim` companion, and LibRaw's color matrix is driven by a recognized
+      Make/Model, not by a DNG's own embedded `ColorMatrix1` (a LibRaw limitation, not a coding
+      mistake to design around). After both fixes, the local preview and the backend-committed
+      render agree within ~1-2% mean RGB against a real Pentax K-5 DNG.
+- [x] [102](docs/tickets/102.md) Epic: client-side RAW tuning via LibRaw-Wasm — done (103-107 all
+      landed)
 
 ## Cross-cutting
 

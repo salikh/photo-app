@@ -8,15 +8,8 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-All ten build-order epics, v1 filtering, and every cross-cutting ticket are done (see
-`STATUS.md`). What's left:
-
-- [ ] [102](docs/tickets/102.md) Epic: client-side RAW tuning via LibRaw-Wasm (user request
-      2026-09-24) — a lossy, size-reduced DNG downloaded once per tuning session, decoded and
-      re-rendered locally in the browser as the user adjusts settings, no per-tick backend round
-      trip; Save still commits and re-renders from the original DNG server-side, as today
-  - [ ] [105](docs/tickets/105.md) not blocked — 104 is done
-  - [ ] [106](docs/tickets/106.md) blocked by 105
+All ten build-order epics, v1 filtering, every cross-cutting ticket, and epic 102 (103-107) are
+done (see `STATUS.md`). Nothing open right now.
 
 ## Question tickets (waiting on the user)
 

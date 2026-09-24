@@ -41,6 +41,30 @@ def test_real_dng_preview_is_downsampled_and_still_a_valid_bayer_raw(tmp_path):
 
 
 @_skip
+def test_real_dng_preview_color_matches_the_original_closely(tmp_path):
+  # Ticket 106's "drift risk" concern, checked directly: LibRaw's color pipeline turned out to
+  # ignore a synthetic DNG's own embedded ColorMatrix1 entirely unless the camera's real Make/
+  # Model (passed through from the source's EXIF, see _make_model) is also present, letting LibRaw
+  # use its own built-in matrix for that camera -- the same one it uses for the original file, so
+  # the two should render close to identically (mean RGB within a few percent; some difference is
+  # expected from the resolution reduction itself, not a color bug).
+  pictures = tmp_path / "pics"
+  os.makedirs(pictures)
+  shutil.copy(REAL_DNG, pictures / "a.dng")
+  thumbs_dir = str(tmp_path / "thumbs")
+  dest = raw_preview_dng.ensure(thumbs_dir, str(pictures), "a.dng")
+
+  with rawpy.imread(dest) as preview:
+    preview_rgb = preview.postprocess(use_camera_wb=True, output_bps=8)
+  with rawpy.imread(REAL_DNG) as original:
+    original_rgb = original.postprocess(use_camera_wb=True, output_bps=8)
+
+  for c in range(3):
+    p, o = preview_rgb[..., c].mean(), original_rgb[..., c].mean()
+    assert abs(p - o) / max(o, 1) < 0.15, f"channel {c}: preview {p} vs original {o}"
+
+
+@_skip
 def test_real_dng_preview_is_cached_not_regenerated(tmp_path, monkeypatch):
   pictures = tmp_path / "pics"
   os.makedirs(pictures)

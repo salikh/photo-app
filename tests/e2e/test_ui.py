@@ -3,14 +3,19 @@
 import json
 import os
 import re
+import shutil
 import time
 import urllib.request
 
+import pytest
 from PIL import Image
 from playwright.sync_api import expect
 
 
 ON = re.compile(r"(^|\s)on(\s|$)")          # a filter button's class list may also hold 'zero'
+REAL_DNG = os.environ.get("REAL_DNG")
+real_dng_only = pytest.mark.skipif(not REAL_DNG or not os.path.exists(REAL_DNG or ""),
+                                   reason="REAL_DNG not set")
 
 
 def api(server, path):
@@ -389,8 +394,13 @@ def test_compare_hover_and_shift_reveal_the_provisional_overlay(page, server, mo
   slider.focus()
   slider.press("ArrowRight")   # dirty the pending value (and leave the slider focused) so a
                                 # provisional render is requested
+  # Ticket 105: rawTuning.js tries a local LibRaw-Wasm render first, which needs a real preview
+  # DNG (GET .../raw_preview_dng) -- the fake one-byte DNG here legitimately has none (a real 404,
+  # logged by the browser), so it falls back to 094's network .../raw_preview path, same as before
+  # 105 landed. Both the fallback's own request and the 404 that triggered it are expected.
   expect(tuning).to_have_attribute("src", re.compile(r"/api/files/\d+/raw_preview"))   # loaded...
   expect(tuning).to_be_hidden()   # ...but stays hidden: neither hover nor Shift is active yet
+  page.errors.clear()
 
   # Shift works even with the slider itself focused -- the bug ticket 107 fixes.
   page.keyboard.down("Shift")
@@ -430,6 +440,36 @@ def test_hovering_a_sibling_file_row_previews_its_own_thumbnail(page, server, mo
   expect(row_preview).to_have_attribute("src", re.compile(r"/img/Medium/"))
   page.locator(".hud").hover()
   expect(row_preview).to_be_hidden()
+
+
+@real_dng_only
+def test_local_libraw_wasm_renders_the_tuning_preview_for_a_real_raw(page, server):
+  # Ticket 105: every other RAW-tuning test here uses a fake one-byte DNG, so it only ever
+  # exercises the network fallback (raw_preview_dng.ensure raises Unsupported, a real 404). With
+  # a real, decodable RAW file the local LibRaw-Wasm path should actually engage instead: ui.tuning
+  # ends up a blob: URL, and no request ever reaches the server's network .../raw_preview endpoint.
+  shutil.copy(REAL_DNG, os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"))
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+
+  network_preview_requests = []
+  page.on("request", lambda r: network_preview_requests.append(r.url)
+          if "/raw_preview?" in r.url else None)
+
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+
+  tuning = page.locator(".stage img.tuning:not(.row-preview)")
+  slider = dng_row.locator(".raw-settings input[type=range]").first
+  slider.focus()
+  slider.press("ArrowRight")
+  # A generous timeout: the vendored ~1.4MB WASM module has to compile fresh in every test's own
+  # browser context (no cross-test cache), which can take a while under this machine's load.
+  expect(tuning).to_have_attribute("src", re.compile(r"^blob:"), timeout=30000)
+  assert network_preview_requests == []
 
 
 def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):

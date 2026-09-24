@@ -13,6 +13,7 @@ import {createFilmstrip} from './filmstrip.js';
 import {createZoom} from './zoom.js';
 import {updateCell, settle, reinsertPhotos, loadRest, loadFolder} from './grid.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
+import {RawTuningSession} from './rawTuning.js';
 
 
 let root = null;
@@ -580,7 +581,7 @@ function hideRowPreview() {
 }
 
 function discardPending() {
-  if (pending) clearTimeout(pending.timer);
+  if (pending) { clearTimeout(pending.timer); if (pending.session) pending.session.dispose(); }
   pending = null;
   sliderHover = false;
   if (ui.tuning) { ui.tuning.hidden = true; ui.tuning.src = ''; }
@@ -591,8 +592,20 @@ function schedulePreview(f) {
   pending.timer = setTimeout(() => requestPreview(f), PREVIEW_DEBOUNCE_MS);
 }
 
-function requestPreview(f) {
+// Ticket 105: try a local LibRaw-Wasm render first (one RawTuningSession per file, reused
+// across every tick); requestPreviewNetwork -- 094's original GET .../raw_preview round trip --
+// is the fallback when render() can't (LibRaw-Wasm unavailable, the preview DNG missing, or a
+// decode error), not something removed.
+async function requestPreview(f) {
   if (!pending || pending.fileId !== f.id) return;   // superseded by a discard/navigation
+  if (!pending.session) pending.session = new RawTuningSession(f.id);
+  const url = await pending.session.render(pending.values);
+  if (!pending || pending.fileId !== f.id) return;   // superseded while the render was in flight
+  if (url) ui.tuning.src = url;
+  else requestPreviewNetwork(f);
+}
+
+function requestPreviewNetwork(f) {
   const qs = new URLSearchParams({size: 'Medium'});
   for (const [k, v] of Object.entries(pending.values)) if (v != null) qs.set(k, v);
   ui.tuning.src = `/api/files/${f.id}/raw_preview?${qs}`;   // onload -> syncTuningVisible
@@ -614,6 +627,7 @@ async function saveRawSettings(f) {
 
 function rawSettingsControls(f) {
   if (!pending || pending.fileId !== f.id) {
+    if (pending && pending.session) pending.session.dispose();   // ticket 105: don't leak a worker
     pending = {fileId: f.id, values: committedValues(f), timer: null};
   }
   // Ticket 107: hovering the sliders block is one of the two ways to reveal the tuned overlay

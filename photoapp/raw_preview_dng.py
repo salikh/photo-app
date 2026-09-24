@@ -22,6 +22,7 @@ import numpy as np
 import rawpy
 import tifffile
 from absl import logging
+from PIL import Image
 
 PREVIEW_DIR = "PreviewDNG"   # a cache dimension alongside thumbs.SIZES, tracked purely on disk
 MAX_DIM = 1600                # long edge cap -- generous for an on-screen tuning preview
@@ -34,6 +35,24 @@ class Unsupported(Exception):
 
 def path_for(thumbs_dir, file_path):
   return os.path.join(thumbs_dir, PREVIEW_DIR, file_path + ".preview.dng")
+
+
+def _make_model(source_path):
+  """(Make, Model) from the source's own EXIF (IFD0, tags 271/272), or (None, None).
+
+  Passed straight through into the preview DNG: LibRaw recognizes a real camera's Make/Model
+  and applies its own built-in color matrix for it, which is what actually gives a correctly
+  colored preview -- confirmed empirically against a real Pentax K-5 DNG, ColorMatrix1/
+  AsShotNeutral alone were not enough (see the extratags comment below). Best-effort: read_
+  image_metadata already opens RAW files with Pillow purely for EXIF, the same reason this works.
+  """
+  try:
+    with Image.open(source_path) as img:
+      exif = img.getexif()
+      return exif.get(271), exif.get(272)
+  except Exception as e:
+    logging.vlog(3, "%s: could not read Make/Model: %s", source_path, e)
+    return None, None
 
 
 def _bin_mosaic(img, factor):
@@ -83,18 +102,54 @@ def _generate(source_path, dest_path, max_dim=MAX_DIM):
     wb = wb / wb[1]
     as_shot_neutral = (1.0 / wb).tolist()
 
+    def rational(values, denom=1000000):
+      # DNG's numeric tags are RATIONAL/SRATIONAL (a signed/unsigned int32 numerator and
+      # denominator), not float/double -- LibRaw's DNG tag parser silently drops values given as
+      # DOUBLE for at least BlackLevel and ColorMatrix1 (confirmed empirically: a first version of
+      # this function used 'd' for those and both came back as zero through rawpy on the result).
+      out = []
+      for v in values:
+        if float(v).is_integer():
+          out.extend((int(v), 1))
+        else:
+          out.extend((round(v * denom), denom))
+      return tuple(out)
+
+    make, model = _make_model(source_path)
+
     extratags = [
-        (33421, "H", 2, (2, 2), False),                          # CFARepeatPatternDim
-        (33422, "B", 4, cfa_bytes, False),                       # CFAPattern
-        (50706, "B", 4, (1, 4, 0, 0), False),                    # DNGVersion 1.4.0.0
-        (50707, "B", 4, (1, 1, 0, 0), False),                    # DNGBackwardVersion 1.1.0.0
-        (50708, "s", 0, "photoapp tuning preview\x00", False),   # UniqueCameraModel
-        (50714, "H", 4, tuple(black_per_pos), False),            # BlackLevel
-        (50717, "H", 1, (int(raw.white_level),), False),         # WhiteLevel
-        (50721, "d", 9, tuple(color_matrix1.flatten()), False),  # ColorMatrix1
-        (50728, "d", 3, tuple(as_shot_neutral), False),          # AsShotNeutral
-        (50778, "H", 1, (21,), False),                           # CalibrationIlluminant1 (D65)
+        (254, "I", 1, (0,), False),                                    # NewSubfileType: main image
+        (33421, "H", 2, (2, 2), False),                                # CFARepeatPatternDim
+        (33422, "B", 4, cfa_bytes, False),                             # CFAPattern
+        (50706, "B", 4, (1, 4, 0, 0), False),                          # DNGVersion 1.4.0.0
+        (50707, "B", 4, (1, 1, 0, 0), False),                          # DNGBackwardVersion 1.1.0.0
+        # BlackLevel needs its RepeatDim tag declared alongside it, or LibRaw silently treats a
+        # multi-value BlackLevel as unset (confirmed empirically: black_level_per_channel came
+        # back all zeros without this, even though the BlackLevel tag itself was present and
+        # correctly typed).
+        (50713, "H", 2, (2, 2), False),                                # BlackLevelRepeatDim
+        (50714, tifffile.DATATYPE.RATIONAL, 4, rational(black_per_pos), False),   # BlackLevel
+        (50717, "H", 1, (int(raw.white_level),), False),               # WhiteLevel
+        (50728, tifffile.DATATYPE.RATIONAL, 3, rational(as_shot_neutral), False),  # AsShotNeutral
     ]
+    # Make/Model, when the source has them, let LibRaw apply its own built-in color matrix for
+    # this camera -- confirmed empirically to match the original file's own rendering almost
+    # exactly (mean RGB within ~1%). UniqueCameraModel + an embedded ColorMatrix1/2 is the
+    # fallback for a source with no usable Make/Model: also confirmed empirically, but as a
+    # *combination* with Make/Model present, not a complement -- LibRaw's built-in table produced
+    # visibly wrong color once an embedded ColorMatrix1 sat alongside a recognized Make/Model (mean
+    # green channel off by ~2.3x), so the two paths are mutually exclusive, not layered.
+    if make and model:
+      extratags.append((271, "s", 0, str(make).strip() + "\x00", False))
+      extratags.append((272, "s", 0, str(model).strip() + "\x00", False))
+    else:
+      extratags.append((50708, "s", 0, "photoapp tuning preview\x00", False))  # UniqueCameraModel
+      extratags.append(
+          (50721, tifffile.DATATYPE.SRATIONAL, 9, rational(color_matrix1.flatten()), False))
+      extratags.append(
+          (50722, tifffile.DATATYPE.SRATIONAL, 9, rational(color_matrix1.flatten()), False))
+      extratags.append((50778, "H", 1, (21,), False))   # CalibrationIlluminant1 (D65)
+      extratags.append((50779, "H", 1, (17,), False))   # CalibrationIlluminant2 (StdA)
 
   os.makedirs(os.path.dirname(dest_path), exist_ok=True)
   fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest_path), suffix=".tmp")
