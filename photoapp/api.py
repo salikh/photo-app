@@ -28,6 +28,7 @@ from photoapp import jobs
 from photoapp import library
 from photoapp import manual_links
 from photoapp import previews
+from photoapp import raw_preview_dng
 from photoapp import recovery
 from photoapp import scan as scan_lib
 from photoapp import raw_settings
@@ -640,6 +641,24 @@ def create_app(conn, settings):
     img.save(buf, "JPEG", quality=thumbs.JPEG_QUALITY)
     return Response(content=buf.getvalue(), media_type="image/jpeg",
                     headers={"Cache-Control": "no-store"})
+
+  @app.get("/api/files/{file_id}/raw_preview_dng")
+  async def raw_preview_dng_route(file_id: int):
+    """Ticket 104: the lossy, size-reduced preview DNG [105](105.md)'s client-side LibRaw-Wasm
+    tuning fetches once per session -- generated on first request, cached forever after (it
+    depends only on the original file, never on raw_settings; see raw_preview_dng.py)."""
+    row = file_row(file_id)
+    if not fileinfo.is_raw(row["path"]):
+      raise HTTPException(400, "raw_preview_dng is only for RAW files")
+
+    def make():
+      with render_slots:
+        return raw_preview_dng.ensure(settings.thumbs_dir, settings.pictures_dir, row["path"])
+    try:
+      path = await run_in_threadpool(make)
+    except raw_preview_dng.Unsupported as e:
+      raise HTTPException(404, str(e))
+    return FileResponse(path, media_type="image/x-adobe-dng", headers=cache)
 
   app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

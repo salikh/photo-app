@@ -1,0 +1,58 @@
+import os
+import shutil
+
+import pytest
+import rawpy
+
+from photoapp import raw_preview_dng
+from tests.test_grouping import touch
+
+
+def test_undecodable_raw_raises_unsupported_and_leaves_no_partial_file(tmp_path):
+  pictures = tmp_path / "pics"
+  thumbs_dir = tmp_path / "thumbs"
+  raw = pictures / "a.dng"
+  touch(str(raw))   # a real file exists, but rawpy can't decode a 1-byte fake
+  with pytest.raises(raw_preview_dng.Unsupported):
+    raw_preview_dng.ensure(str(thumbs_dir), str(pictures), "a.dng")
+  assert not os.path.exists(raw_preview_dng.path_for(str(thumbs_dir), "a.dng"))
+
+
+REAL_DNG = os.environ.get("REAL_DNG")
+_skip = pytest.mark.skipif(not REAL_DNG or not os.path.exists(REAL_DNG or ""), reason="REAL_DNG not set")
+
+
+@_skip
+def test_real_dng_preview_is_downsampled_and_still_a_valid_bayer_raw(tmp_path):
+  pictures = tmp_path / "pics"
+  os.makedirs(pictures)
+  shutil.copy(REAL_DNG, pictures / "a.dng")
+  thumbs_dir = str(tmp_path / "thumbs")
+
+  dest = raw_preview_dng.ensure(thumbs_dir, str(pictures), "a.dng")
+  assert dest == raw_preview_dng.path_for(thumbs_dir, "a.dng")
+  assert os.path.getsize(dest) > 0
+
+  with rawpy.imread(dest) as raw:
+    assert max(raw.sizes.width, raw.sizes.height) <= raw_preview_dng.MAX_DIM
+    assert raw.raw_pattern.shape == (2, 2)   # still real, undemosaiced Bayer data
+    rgb = raw.postprocess(use_camera_wb=True)
+  assert 0 < rgb.mean() < 255   # not degenerate (all-black/all-white/NaN)
+
+
+@_skip
+def test_real_dng_preview_is_cached_not_regenerated(tmp_path, monkeypatch):
+  pictures = tmp_path / "pics"
+  os.makedirs(pictures)
+  shutil.copy(REAL_DNG, pictures / "a.dng")
+  thumbs_dir = str(tmp_path / "thumbs")
+
+  first = raw_preview_dng.ensure(thumbs_dir, str(pictures), "a.dng")
+  mtime = os.path.getmtime(first)
+
+  def boom(*a, **k):
+    raise AssertionError("should not regenerate an already-cached preview DNG")
+  monkeypatch.setattr(raw_preview_dng, "_generate", boom)
+
+  second = raw_preview_dng.ensure(thumbs_dir, str(pictures), "a.dng")
+  assert second == first and os.path.getmtime(second) == mtime

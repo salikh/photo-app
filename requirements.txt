@@ -6,4 +6,5 @@ absl-py
 pytest
 httpx
 rawpy
+tifffile
 playwright

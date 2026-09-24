@@ -200,6 +200,25 @@ def test_raw_settings_endpoint_sets_clears_cache_and_reports_current_settings(se
   assert r2.json()["settings"] == {c: None for c in body["settings"]}
 
 
+def test_raw_settings_endpoint_does_not_touch_the_preview_dng_cache(settings):
+  # Ticket 103/104: the preview DNG depends only on the original file, not raw_settings, so
+  # saving new settings (thumbs.clear, same as rerender_thumbs) must leave it alone -- unlike
+  # every one of thumbs.SIZES, which that call does clear (see the test above).
+  from photoapp import raw_preview_dng
+
+  c = app_with_pair(settings)
+  file_id = fid(c, "y/K1.DNG")
+  dest = raw_preview_dng.path_for(settings.thumbs_dir, "y/K1.DNG")
+  os.makedirs(os.path.dirname(dest), exist_ok=True)
+  with open(dest, "wb") as f:
+    f.write(b"already cached")
+
+  c.post(f"/api/files/{file_id}/raw_settings", json={"bright": 1.4})
+  assert os.path.exists(dest)
+  with open(dest, "rb") as f:
+    assert f.read() == b"already cached"   # untouched, not regenerated or deleted
+
+
 def test_raw_settings_endpoint_rejects_bad_input_and_unknown_file(settings):
   c = app_with_pair(settings)
   file_id = fid(c, "y/a.jpg")
@@ -277,6 +296,44 @@ def test_raw_preview_rejects_bad_settings_and_non_raw_files(settings):
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"size": "Enormous"}).status_code == 404
   assert c.get(f"/api/files/{jpg_id}/raw_preview").status_code == 400
   assert c.get("/api/files/99999/raw_preview").status_code == 404
+
+
+def test_raw_preview_dng_route_rejects_non_raw_and_unknown_and_serves_generated(
+    settings, monkeypatch):
+  # Ticket 104: the endpoint 105's client fetches the lossy tuning-preview DNG from -- generation
+  # itself is raw_preview_dng.py's own job (tested there against a real RAW), so here it's
+  # monkeypatched to check routing/error handling without paying for a real LibRaw render.
+  from photoapp import raw_preview_dng
+
+  c = app_with_pair(settings)
+  raw_id = fid(c, "y/K1.DNG")
+  jpg_id = fid(c, "y/a.jpg")
+  assert c.get(f"/api/files/{jpg_id}/raw_preview_dng").status_code == 400
+  assert c.get("/api/files/99999/raw_preview_dng").status_code == 404
+
+  def fake_ensure(thumbs_dir, pictures_dir, file_path):
+    dest = os.path.join(thumbs_dir, "PreviewDNG", file_path + ".preview.dng")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest, "wb") as f:
+      f.write(b"fake dng bytes")
+    return dest
+  monkeypatch.setattr(raw_preview_dng, "ensure", fake_ensure)
+
+  r = c.get(f"/api/files/{raw_id}/raw_preview_dng")
+  assert r.status_code == 200 and r.content == b"fake dng bytes"
+  assert r.headers["content-type"] == "image/x-adobe-dng"
+
+
+def test_raw_preview_dng_route_reports_unsupported_as_404(settings, monkeypatch):
+  from photoapp import raw_preview_dng
+
+  def fake_ensure(thumbs_dir, pictures_dir, file_path):
+    raise raw_preview_dng.Unsupported(f"{file_path}: no usable RAW data")
+  monkeypatch.setattr(raw_preview_dng, "ensure", fake_ensure)
+
+  c = app_with_pair(settings)
+  raw_id = fid(c, "y/K1.DNG")
+  assert c.get(f"/api/files/{raw_id}/raw_preview_dng").status_code == 404
 
 
 def test_seconds_until_next_hour():

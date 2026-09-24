@@ -72,9 +72,14 @@ All ten build-order epics are done.
       the sliders block or holding Shift, replacing 094's "shown by default" model; a second,
       independent hover (a non-representative file's row in the Files panel) previews that file's
       own thumbnail via a new overlay element (`ui.rowPreview`)
+- [x] [104](docs/tickets/104.md) Generate and cache a lossy, size-reduced tuning-preview DNG per
+      RAW file (`photoapp/raw_preview_dng.py`, `GET /api/files/{id}/raw_preview_dng`) — real,
+      undemosaiced Bayer data binned down to a size cap (103's answer), written via `tifffile`
+      (a new dependency: rawpy can't write DNG); verified against the real vendored LibRaw-Wasm
+      1.6.0 build (`photoapp/static/vendor/libraw-wasm/`), not just rawpy
 
-Still open: [102](docs/tickets/102.md) (epic, with question [103](docs/tickets/103.md) blocking
-104-106) — see `TODO.md`.
+Still open: [102](docs/tickets/102.md) (epic, with [105](docs/tickets/105.md)/[106](docs/tickets/106.md)
+left) — see `TODO.md`.
 
 ## Cross-cutting
 
@@ -110,6 +115,7 @@ question tickets are tracked in `TODO.md`, not here.
 - [x] [065](docs/tickets/065.md) How should ratings newer in the database be written to the sidecars? → on the next edit only (already correct); unblocked 021; a future batch sync is ticket 068
 - [x] [090](docs/tickets/090.md) Should 085's adjustable RAW settings affect only the background dcraw cache, or the on-demand rawpy path too? → neither as originally framed: merge the two renderers into one (rawpy/LibRaw for both), with a revised Thumb-size rule; unblocked 085, superseded the "not to be unified" framing in docs/design/thumbnails.md
 - [x] [097](docs/tickets/097.md) Merge an exported file into the original's Photo, or keep it as its own browseable Photo with a separate "jump to original" cross-reference? → Option B (own Photo + new `files.exported_from_file_id` column); unblocked 098-100 (epic 096)
+- [x] [103](docs/tickets/103.md) How should the lossy tuning-preview DNG (epic 102) actually be produced? → user leaned Option B pending a check of what LibRaw-Wasm supports; that check ruled B out (it needs real Bayer data, not a pre-demosaiced one) and settled on Option C: a downsampled, still-mosaiced DNG via rawpy + a new `tifffile` dependency; unblocked 104 (done) and 105
 
 Answered earlier: 053 (a single file's reject never rejects the pair while the other is picked; app rejects
 newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars), 042
