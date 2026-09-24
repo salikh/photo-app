@@ -109,3 +109,18 @@ preview at all**, which needs a full LibRaw demosaic. The route answers `404` wi
 runs, and the frontend already retries automatically (see [frontend-viewer.md](frontend-viewer.md)). This
 split — cheap paths inline, only the genuinely slow path queued — is why the job queue's concurrency
 (`job_workers`) rarely matters in practice: most requests never touch it.
+
+## Provisional tuning renders never touch this cache (ticket 094)
+
+`GET /api/files/{id}/raw_preview` (added for the tuning UI's live slider feedback) is deliberately
+outside every mechanism above: it renders straight from the original with whatever *pending*
+settings the frontend passes as query params, at half size for responsiveness, and returns the
+JPEG bytes directly — no `thumbs` table row, no file under `thumbs_dir`, no `files.raw_*` write.
+Committing (`POST .../raw_settings`, unchanged since 085) is still the only thing that reaches this
+cache. That split — preview vs. commit, provisional render vs. persisted one — is also the seam a
+future browser-local renderer would slot into: if adjusting brightness/white-balance/highlight in
+the browser (canvas or WASM, operating on an already-downloaded preview-quality image) turns out
+fast enough for some settings, it would replace `raw_preview`'s backend round trip for those
+settings without touching `set_raw_settings`/the commit path at all, since the frontend already
+treats "pending settings -> some preview image" as its own step, decoupled from persistence. Not
+implemented; noted here so the seam isn't accidentally welded shut later.

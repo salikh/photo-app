@@ -1,4 +1,5 @@
 import datetime
+import io
 import os
 import threading
 
@@ -7,7 +8,9 @@ from fastapi.testclient import TestClient
 from photoapp import api
 from photoapp import db
 from photoapp import jobs
+from photoapp import previews
 from photoapp import scan
+from photoapp import thumbs
 from tests.conftest import make_jpeg
 from tests.test_grouping import touch
 from tests.test_scan_sidecars import XMP, write
@@ -230,6 +233,50 @@ def test_tuning_raw_settings_switches_a_raw_file_from_the_embedded_shortcut_to_a
   c.post(f"/api/files/{file_id}/raw_settings", json={"bright": 1.5})
   assert c.get(f"/img/Thumb/{file_id}").status_code == 200
   assert calls == {"embedded": 1, "demosaic": 1}   # this time it demosaiced, not the free shortcut
+
+
+def test_raw_preview_renders_pending_settings_without_touching_files_or_thumbs(settings, monkeypatch):
+  # Ticket 094: a provisional render for the tuning UI -- never writes files.raw_* or the thumbs
+  # cache, however many times it's called with however many different pending values.
+  from PIL import Image
+  from photoapp import raw_settings
+
+  seen_settings = []
+
+  def render(path, settings=None, half_size=False):
+    seen_settings.append(settings)
+    return Image.new("RGB", (1600, 1200), (10, 20, 30))
+
+  monkeypatch.setattr(previews, "render", render)
+
+  c = app_with_pair(settings)
+  file_id = fid(c, "y/K1.DNG")
+  before = raw_settings.get(c.app.state.db, file_id)
+
+  r = c.get(f"/api/files/{file_id}/raw_preview", params={"bright": 1.8, "size": "Small"})
+  assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+  assert Image.open(io.BytesIO(r.content)).size == (1000, 750)
+  assert seen_settings[-1]["raw_bright"] == 1.8
+  assert seen_settings[-1]["raw_wb_mode"] is None   # only what was passed, nothing persisted
+
+  # nothing was written: the committed row is unchanged, and no size was cached
+  assert raw_settings.get(c.app.state.db, file_id) == before
+  assert thumbs.lookup(settings.thumbs_dir, "Small", "y/K1.DNG") is None
+
+  # a second call with different pending values renders again, independently
+  r2 = c.get(f"/api/files/{file_id}/raw_preview", params={"bright": 0.5, "size": "Small"})
+  assert r2.status_code == 200 and seen_settings[-1]["raw_bright"] == 0.5
+
+
+def test_raw_preview_rejects_bad_settings_and_non_raw_files(settings):
+  c = app_with_pair(settings)
+  raw_id = fid(c, "y/K1.DNG")
+  jpg_id = fid(c, "y/a.jpg")
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"wb_mode": "nope"}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"highlight": 99}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"size": "Enormous"}).status_code == 404
+  assert c.get(f"/api/files/{jpg_id}/raw_preview").status_code == 400
+  assert c.get("/api/files/99999/raw_preview").status_code == 404
 
 
 def test_seconds_until_next_hour():

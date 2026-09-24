@@ -61,6 +61,15 @@ button.on { border-color: var(--accent); color: var(--accent); }
 .danger:hover:not(:disabled) { background: var(--reject); color: var(--bg); text-decoration: none; }
 .danger:disabled { opacity: 0.4; cursor: default; }
 
+.primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; cursor: pointer; min-height: var(--touch); padding: 0 12px;
+  border: 1px solid var(--accent); border-radius: 6px;
+  background: var(--bg-raised); color: var(--accent);
+}
+.primary:hover:not(:disabled) { background: var(--accent); color: var(--bg); text-decoration: none; }
+.primary:disabled { opacity: 0.4; cursor: default; }
+
 /* ---------- layout ---------- */
 
 #app { padding-bottom: env(safe-area-inset-bottom); }
@@ -169,6 +178,16 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   transition: transform 0.18s ease-out; -webkit-user-drag: none; pointer-events: none;
 }
 .stage.dragging img.main { transition: none; }
+/* Ticket 094: the provisional-render overlay sits exactly on top of the committed image
+   (positioned by the stage's own bounds, not img.main's natural flex-centered size) so the
+   compare hotkey can hide/reveal it without any layout shift. Deliberately not img.main itself
+   (a distinct class, not an additional one) -- several tests and zoom/swipe selectors assume
+   `.stage img.main` resolves to exactly the one committed image. */
+.stage img.tuning {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  pointer-events: none; -webkit-user-drag: none; transition: none;
+}
+.stage img.tuning[hidden] { display: none; }
 /* zoomed: the photo is drawn at its original size and moved/scaled by a transform (zoom.js), so only the
    photo scales, never the page */
 .stage.zoomed { overflow: hidden; touch-action: none; cursor: grab; }

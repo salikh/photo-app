@@ -62,8 +62,12 @@ All ten build-order epics are done.
 - [x] [093](docs/tickets/093.md) A settings-tuned RAW's first thumbnail request demosaics once at
       Huge and every later request for a different size downscales from that cached Huge, instead
       of a separate full demosaic per size (follow-up to 085/090)
+- [x] [094](docs/tickets/094.md) RAW tuning controls only update local, pending state and request a
+      provisional preview (`GET /api/files/{id}/raw_preview`, never written to `files.raw_*`/the
+      thumbs cache); an explicit Save button commits (085's original behavior, unchanged); holding
+      'c' compares the provisional overlay against the committed rendering underneath
 
-Still open: [094](docs/tickets/094.md) — see `TODO.md`.
+Nothing open right now.
 
 ## Cross-cutting
 

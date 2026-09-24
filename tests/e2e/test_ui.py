@@ -295,9 +295,8 @@ def test_files_panel_shows_camera_metadata(page, server):
   expect(page.locator(".files-panel .file")).to_contain_text("2024:06:01 12:00:00")
 
 
-def test_raw_settings_controls_only_show_for_raw_files_and_apply(page, server):
-  # ticket 085: sliders/controls only appear for a RAW file (not the JPEG sibling), toggling
-  # white balance mode posts to the server and the choice survives reopening the panel.
+def test_raw_settings_controls_only_show_for_raw_files(page, server):
+  # ticket 085: sliders/controls only appear for a RAW file (not the JPEG sibling).
   open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
   server.app.state.scanner.start()
   server.app.state.scanner.wait()
@@ -311,26 +310,80 @@ def test_raw_settings_controls_only_show_for_raw_files_and_apply(page, server):
   jpg_row = page.locator(".files-panel .file", has_text="IMG_0001.jpg")
   expect(dng_row.locator(".raw-settings")).to_be_visible()
   expect(jpg_row.locator(".raw-settings")).to_have_count(0)
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
+def test_raw_settings_are_provisional_until_save(page, server):
+  # Ticket 094: a control only updates local, pending state and asks for a provisional preview --
+  # nothing is posted to the server (no toast, nothing persisted) until Save is actually clicked.
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+
+  save_btn = dng_row.get_by_role("button", name="Save", exact=True)
+  expect(save_btn).to_be_disabled()   # nothing pending yet
 
   dng_row.get_by_role("button", name="manual", exact=True).click()
-  expect(page.locator("#toast")).to_contain_text("applied")
-  expect(page.locator(".files-panel .file", has_text="IMG_0001.DNG")
-        .locator(".wb-multiplier")).to_have_count(3)          # R/G/B inputs appeared
+  expect(dng_row.locator(".wb-multiplier")).to_have_count(3)   # R/G/B inputs appeared locally
+  expect(save_btn).to_be_enabled()
+  expect(dng_row.get_by_role("button", name="Discard changes")).to_be_visible()
+  expect(page.locator("#toast")).not_to_have_class(re.compile("show"))   # nothing posted, no toast
 
-  page.keyboard.press("i")   # close
-  page.keyboard.press("i")   # reopen: the mode choice survived on the server
+  page.keyboard.press("i")   # close without saving
+  page.keyboard.press("i")   # reopen: the pending change did not survive (never persisted)
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  expect(dng_row.get_by_role("button", name="camera", exact=True)).to_have_class(ON)
+  expect(dng_row.get_by_role("button", name="Save", exact=True)).to_be_disabled()
+
+  dng_row.get_by_role("button", name="manual", exact=True).click()
+  dng_row.get_by_role("button", name="Save", exact=True).click()
+  expect(page.locator("#toast")).to_contain_text("saved")
+  page.keyboard.press("i")
+  page.keyboard.press("i")   # reopen: this time it did survive, because Save was clicked
   dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
   expect(dng_row.get_by_role("button", name="manual", exact=True)).to_have_class(ON)
   expect(dng_row.get_by_role("button", name="Reset to default")).to_be_visible()
 
+  # a pending change can also be discarded explicitly, without closing the panel
   dng_row.get_by_role("button", name="Reset to default").click()
-  expect(page.locator("#toast")).to_contain_text("applied")
-  page.keyboard.press("i")
+  expect(dng_row.get_by_role("button", name="Discard changes")).to_be_visible()
+  dng_row.get_by_role("button", name="Discard changes").click()
+  expect(dng_row.get_by_role("button", name="manual", exact=True)).to_have_class(ON)   # unchanged
+  expect(dng_row.get_by_role("button", name="Save", exact=True)).to_be_disabled()
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
+def test_compare_hotkey_toggles_the_provisional_overlay(page, server, monkeypatch):
+  # Ticket 094: tuning a setting shows a provisional render on top of the committed one; holding
+  # 'c' reveals the committed rendering underneath, releasing it restores the provisional one.
+  from photoapp import previews
+
+  monkeypatch.setattr(previews, "embedded_preview", lambda path: Image.new("RGB", (1600, 1200), "red"))
+  monkeypatch.setattr(previews, "render",
+                      lambda path, settings=None, half_size=False: Image.new("RGB", (1600, 1200), "blue"))
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
   page.keyboard.press("i")
   dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
-  expect(dng_row.get_by_role("button", name="camera", exact=True)).to_have_class(ON)
-  expect(dng_row.get_by_role("button", name="Reset to default")).to_have_count(0)
-  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+  tuning = page.locator(".stage img.tuning")
+  expect(tuning).to_be_hidden()
+  dng_row.get_by_role("button", name="manual", exact=True).click()
+  expect(tuning).to_be_visible()   # the debounced provisional render loaded
+
+  page.keyboard.down("c")
+  expect(tuning).to_be_hidden()
+  page.keyboard.up("c")
+  expect(tuning).to_be_visible()
 
 
 def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):

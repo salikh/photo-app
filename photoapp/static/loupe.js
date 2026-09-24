@@ -29,9 +29,11 @@ function build() {
   if (root) return;
   window.__preloadedUrls = preloader.urls;      // test hook: what is being held ahead of time
   ui.img = el('img', {class: 'main', alt: '', draggable: 'false'});
+  ui.tuning = el('img', {class: 'tuning', alt: '', draggable: 'false', hidden: true,
+                        onload: () => { ui.tuning.hidden = false; }});
   ui.preview = el('div', {class: 'rate-preview'});
   ui.stage = el('div', {class: 'stage'},
-    ui.img, ui.preview,
+    ui.img, ui.tuning, ui.preview,
     el('button', {class: 'nav-hint prev', 'aria-label': 'previous', text: '‹', onclick: (e) => { e.stopPropagation(); go(-1); }}),
     el('button', {class: 'nav-hint next', 'aria-label': 'next', text: '›', onclick: (e) => { e.stopPropagation(); go(1); }}));
   ui.strip = createFilmstrip((id) => {
@@ -99,6 +101,7 @@ export function open(photoId) {
   state.onPhotosChanged = () => { if (isOpen() && index >= 0) renderFilmstrip(); };
   document.body.style.overflow = 'hidden';
   document.addEventListener('keydown', onKey);
+  document.addEventListener('keyup', onKeyUp);
   show(i);
   return true;
 }
@@ -116,6 +119,7 @@ export function close() {
   preloader.clear();
   document.body.style.overflow = '';
   document.removeEventListener('keydown', onKey);
+  document.removeEventListener('keyup', onKeyUp);
   closeFiles();
   closeFilterPicker();
   closeDeleteModal();
@@ -134,6 +138,7 @@ function show(i) {
   ui.stage.classList.remove('zoomed');
   resetDrag();
   brokenFileId = null;
+  discardPending();   // ticket 094: never let a provisional render leak past navigating away
   ui.img.src = imgUrl('Medium', photo.file_id);
   ui.img.alt = photo.name;
   retryOnce(ui.img, photo);
@@ -217,6 +222,7 @@ function fullSize() {
 function enterZoom() {
   zoomed = true;
   ui.stage.classList.add('zoomed');
+  ui.tuning.hidden = true;   // ticket 094: the provisional overlay doesn't track the zoom transform
   const photo = current();
   const url = imgUrl('Huge', photo.file_id);
   const full = new Image();                          // swap in the full-size picture once it is there
@@ -239,6 +245,7 @@ function exitZoom() {
   ui.stage.classList.remove('zoomed');
   const photo = current();
   if (photo) ui.img.src = imgUrl('Medium', photo.file_id);
+  if (pending && ui.tuning.src) ui.tuning.hidden = false;   // ticket 094: restore the overlay
 }
 
 // Zoom needs the size of the picture on screen; if it has not loaded yet (a slow link), wait for it.
@@ -510,63 +517,140 @@ function cameraMetaText(f) {
   return parts.length ? parts.join('  ·  ') : null;
 }
 
-// ------------------------------------------- per-file RAW conversion settings (ticket 085) -----
+// ------------------------------------------- per-file RAW conversion settings (085, then 094) ---
 //
-// A control posts its own field plus every other field's *current* value (raw_settings.set
-// replaces the whole row, not a partial patch -- matches the server side). Each successful post
-// re-fetches the Files panel (openFiles), so the next control interaction always starts from
-// fresh values; no client-side staleness to track across changes.
+// Ticket 085's original shape had every slider tick immediately POST and clear the real thumbnail
+// cache -- as expensive and as permanent as a Save. Ticket 094 splits that in two: dragging a
+// slider only updates `pending` (this file's not-yet-committed values) and asks the server for a
+// cheap, never-cached provisional render (GET /api/files/{id}/raw_preview) to show in `ui.tuning`,
+// an overlay on top of the committed image; nothing touches files.raw_* or the thumbs cache until
+// Save actually calls set_raw_settings (still exactly what it always did). Holding 'c' hides the
+// overlay to compare against the committed rendering underneath.
+//
+// Because the provisional render never writes anywhere, there is nothing to clean up if the user
+// navigates away without saving (discardPending() below just stops asking for more of them and
+// hides the overlay -- see the calls from show()/closeFiles()).
 
 const WB_MODES = ['camera', 'auto', 'manual'];
 const DEFAULT_WB = {r: 2.0, g: 1.0, b: 1.5};
+const PREVIEW_DEBOUNCE_MS = 200;
 
-async function applyRawSettings(f, values) {
+let pending = null;   // {fileId, values} for whichever file's controls are currently open
+
+function committedValues(f) {
+  return {bright: f.raw_bright, wb_mode: f.raw_wb_mode, wb_r: f.raw_wb_r, wb_g: f.raw_wb_g,
+          wb_b: f.raw_wb_b, highlight: f.raw_highlight};
+}
+
+function isDirty(values, committed) {
+  return Object.keys(values).some((k) => values[k] !== committed[k]);
+}
+
+function discardPending() {
+  if (pending) clearTimeout(pending.timer);
+  pending = null;
+  if (ui.tuning) { ui.tuning.hidden = true; ui.tuning.src = ''; }
+}
+
+function schedulePreview(f) {
+  clearTimeout(pending.timer);
+  pending.timer = setTimeout(() => requestPreview(f), PREVIEW_DEBOUNCE_MS);
+}
+
+function requestPreview(f) {
+  if (!pending || pending.fileId !== f.id) return;   // superseded by a discard/navigation
+  const qs = new URLSearchParams({size: 'Medium'});
+  for (const [k, v] of Object.entries(pending.values)) if (v != null) qs.set(k, v);
+  ui.tuning.src = `/api/files/${f.id}/raw_preview?${qs}`;
+}
+
+async function saveRawSettings(f) {
+  const values = pending.values;
   try {
     await post(`/api/files/${f.id}/raw_settings`, values);
-    toast('applied; thumbnails will regenerate on next view');
-    if (current().file_id === f.id) {
-      ui.img.src = imgUrl('Medium', f.id) + '?r=' + Date.now();
-      retryOnce(ui.img, current());
-    }
-    if (filesOpen) openFiles();
-  } catch (e) { /* post() already showed a toast for a server error */ }
+    toast('saved; thumbnails will regenerate on next view');
+  } catch (e) { return; }   // post() already showed a toast for a server error
+  discardPending();
+  if (current().file_id === f.id) {
+    ui.img.src = imgUrl('Medium', f.id) + '?r=' + Date.now();
+    retryOnce(ui.img, current());
+  }
+  if (filesOpen) openFiles();
 }
 
 function rawSettingsControls(f) {
-  const patch = (changed) => applyRawSettings(f, {
-    bright: f.raw_bright, wb_mode: f.raw_wb_mode, wb_r: f.raw_wb_r, wb_g: f.raw_wb_g,
-    wb_b: f.raw_wb_b, highlight: f.raw_highlight, ...changed,
-  });
-  const wbMode = f.raw_wb_mode || 'camera';
-  const bright = f.raw_bright ?? 1.0;
-  const highlight = f.raw_highlight ?? 0;
-  const isDefault = f.raw_bright == null && f.raw_wb_mode == null && f.raw_highlight == null;
-  return el('div', {class: 'raw-settings'},
+  if (!pending || pending.fileId !== f.id) {
+    pending = {fileId: f.id, values: committedValues(f), timer: null};
+  }
+  const container = el('div', {class: 'raw-settings'});
+  renderRawSettingsBody(f, container);
+  return container;
+}
+
+function renderRawSettingsBody(f, container) {
+  const values = pending.values;
+  const committed = committedValues(f);
+  const wbMode = values.wb_mode || 'camera';
+  const bright = values.bright ?? 1.0;
+  const highlight = values.highlight ?? 0;
+  const brightLabel = el('span', {class: 'meta', text: bright.toFixed(2)});
+  const highlightLabel = el('span', {class: 'meta', text: String(highlight)});
+  const saveBtn = el('button', {class: 'primary', text: 'Save', onclick: () => saveRawSettings(f)});
+  const discardBtn = el('button', {text: 'Discard changes', onclick: () => {
+    discardPending();
+    pending = {fileId: f.id, values: committedValues(f), timer: null};
+    renderRawSettingsBody(f, container);
+  }});
+  const syncButtons = () => {
+    const dirty = isDirty(values, committed);
+    saveBtn.disabled = !dirty;
+    discardBtn.hidden = !dirty;
+  };
+  syncButtons();
+  const onTick = (key, label, fmt) => (e) => {
+    values[key] = Number(e.target.value);
+    label.textContent = fmt(values[key]);
+    syncButtons();
+    schedulePreview(f);
+  };
+  return setChildren(container,
     el('div', {class: 'row'},
       el('label', {text: 'Brightness'}),
       el('input', {type: 'range', min: '0.25', max: '3', step: '0.05', value: bright,
-                   'aria-label': 'brightness', onchange: (e) => patch({bright: Number(e.target.value)})}),
-      el('span', {class: 'meta', text: bright.toFixed(2)})),
+                   'aria-label': 'brightness', oninput: onTick('bright', brightLabel, (v) => v.toFixed(2))}),
+      brightLabel),
     el('div', {class: 'row'},
       el('label', {text: 'Highlight recovery'}),
       el('input', {type: 'range', min: '0', max: '9', step: '1', value: highlight,
-                   'aria-label': 'highlight recovery', onchange: (e) => patch({highlight: Number(e.target.value)})}),
-      el('span', {class: 'meta', text: String(highlight)})),
+                   'aria-label': 'highlight recovery', oninput: onTick('highlight', highlightLabel, String)}),
+      highlightLabel),
     el('div', {class: 'row'},
       el('label', {text: 'White balance'}),
       WB_MODES.map((m) => el('button', {
         class: wbMode === m ? 'on' : '', text: m,
-        onclick: () => patch(m === 'manual'
-          ? {wb_mode: m, wb_r: f.raw_wb_r ?? DEFAULT_WB.r, wb_g: f.raw_wb_g ?? DEFAULT_WB.g,
-             wb_b: f.raw_wb_b ?? DEFAULT_WB.b}
-          : {wb_mode: m, wb_r: null, wb_g: null, wb_b: null}),
+        onclick: () => {
+          Object.assign(values, m === 'manual'
+            ? {wb_mode: m, wb_r: values.wb_r ?? DEFAULT_WB.r, wb_g: values.wb_g ?? DEFAULT_WB.g,
+               wb_b: values.wb_b ?? DEFAULT_WB.b}
+            : {wb_mode: m, wb_r: null, wb_g: null, wb_b: null});
+          schedulePreview(f);
+          renderRawSettingsBody(f, container);
+        },
       }))),
     wbMode === 'manual' ? el('div', {class: 'row'},
       ['r', 'g', 'b'].map((c) => el('input', {
         type: 'number', step: '0.1', min: '0.1', class: 'wb-multiplier',
-        value: f[`raw_wb_${c}`] ?? DEFAULT_WB[c], 'aria-label': `white balance ${c}`,
-        onchange: (e) => patch({[`wb_${c}`]: Number(e.target.value)})}))) : null,
-    isDefault ? null : el('button', {text: 'Reset to default', onclick: () => applyRawSettings(f, {})}));
+        value: values[`wb_${c}`] ?? DEFAULT_WB[c], 'aria-label': `white balance ${c}`,
+        onchange: (e) => { values[`wb_${c}`] = Number(e.target.value); syncButtons(); schedulePreview(f); }}))) : null,
+    el('div', {class: 'row'}, saveBtn, discardBtn,
+      Object.values(values).every((v) => v == null) ? null : el('button', {
+        text: 'Reset to default', onclick: () => {
+          Object.assign(values, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null});
+          syncButtons();
+          schedulePreview(f);
+          renderRawSettingsBody(f, container);
+        },
+      })));
 }
 
 async function openFiles() {
@@ -610,6 +694,7 @@ function closePanelOnly() {
 
 function closeFiles() {
   filesOpen = false;
+  discardPending();   // ticket 094: closing the panel without Save drops any provisional tuning
   closePanelOnly();
   if (root && !root.hidden) renderHud();
 }
@@ -760,6 +845,12 @@ function onKey(e) {
   else if (key === 'g' || key === 'G') cycleRepresentative();
   else if (key === 'u' || key === 'U') undo();
   else if (key === 'i' || key === 'I') filesOpen ? closeFiles() : openFiles();
+  else if (key === 'c' || key === 'C') {
+    // Ticket 094: hold to compare the committed rendering (hide the provisional overlay);
+    // onKeyUp below restores it. A no-op with nothing pending -- ui.tuning is already hidden.
+    if (e.repeat) return;
+    ui.tuning.hidden = true;
+  }
   else if (key === 'Escape') {
     if (filterPanelOpen) closeFilterPicker();
     else if (filesOpen) closeFiles();
@@ -767,4 +858,10 @@ function onKey(e) {
   }
   else return;
   e.preventDefault();
+}
+
+function onKeyUp(e) {
+  // Ticket 094: releasing the compare hotkey restores the provisional overlay, if there still
+  // is one (the user may have hit Save/Discard, or navigated away, while 'c' was held).
+  if ((e.key === 'c' || e.key === 'C') && pending && ui.tuning.src) ui.tuning.hidden = false;
 }

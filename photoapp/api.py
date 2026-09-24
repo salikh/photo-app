@@ -2,6 +2,7 @@
 
 import dataclasses
 import functools
+import io
 import os
 import sqlite3
 import threading
@@ -16,6 +17,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 import pydantic
 from absl import logging
+from PIL import Image
 
 from photoapp import curation
 from photoapp import db as db_lib
@@ -25,6 +27,7 @@ from photoapp import grouping
 from photoapp import jobs
 from photoapp import library
 from photoapp import manual_links
+from photoapp import previews
 from photoapp import recovery
 from photoapp import scan as scan_lib
 from photoapp import raw_settings
@@ -599,6 +602,44 @@ def create_app(conn, settings):
                       row["path"], size, file_id)
       raise HTTPException(404, "no thumbnail available yet")
     return FileResponse(path, headers=cache)
+
+  @app.get("/api/files/{file_id}/raw_preview")
+  async def raw_preview(file_id: int, size: str = "Medium", bright: float | None = None,
+                        wb_mode: str | None = None, wb_r: float | None = None,
+                        wb_g: float | None = None, wb_b: float | None = None,
+                        highlight: int | None = None):
+    """Ticket 094: a provisional render of file_id with these *pending* settings, for the tuning
+    UI to preview before committing anything. Unlike set_raw_settings, this never writes to
+    files.raw_* or the thumbs cache -- rendered fresh into memory and returned directly, so there
+    is nothing to discard if the user navigates away without saving; the pending values simply
+    stop being requested. half_size (previews.render): the interactive tuning loop favors
+    responsiveness over the full-resolution quality set_raw_settings' committed render gets."""
+    if size not in thumbs.SIZES:
+      raise HTTPException(404, "unknown size")
+    row = file_row(file_id)
+    if not fileinfo.is_raw(row["path"]):
+      raise HTTPException(400, "raw_preview is only for RAW files")
+    try:
+      raw_settings.validate(wb_mode, highlight)
+    except raw_settings.SettingsError as e:
+      raise HTTPException(400, str(e))
+    pending = raw_settings.to_columns(bright, wb_mode, wb_r, wb_g, wb_b, highlight)
+    full_path = os.path.join(settings.pictures_dir, row["path"])
+
+    def render():
+      with render_slots:
+        return previews.render(full_path, pending, half_size=True)
+    img = await run_in_threadpool(render)
+    if img is None:
+      raise HTTPException(404, "could not render a preview with these settings")
+    long_edge = thumbs.LONG_EDGE[size]
+    if long_edge:
+      img = img.copy()
+      img.thumbnail((long_edge, long_edge), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=thumbs.JPEG_QUALITY)
+    return Response(content=buf.getvalue(), media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
 
   app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

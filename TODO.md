@@ -9,14 +9,7 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, and every cross-cutting ticket are done (see
-`STATUS.md`). What's left:
-
-- [ ] [094](docs/tickets/094.md) Plan a new tuning architecture: provisional (not global) thumbnail
-      regen while adjusting RAW settings, a hotkey to compare current vs. new rendering, room for
-      future browser-local rendering, and an explicit Save button that commits + triggers the real
-      backend regen
-094 is the one open follow-up filed after 085 (2026-09-23/24), not yet built. 093 and 095-101
-(epic 096 and its children 097-100) are done — see `STATUS.md`. 085-089, 091 and 092 are done too.
+`STATUS.md`). Every ticket filed so far is done — see `STATUS.md`. Nothing open right now.
 
 ## Question tickets (waiting on the user)
 
