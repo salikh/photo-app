@@ -9,7 +9,10 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, and epic 102 (103-107) are
-done (see `STATUS.md`). Nothing open right now.
+done (see `STATUS.md`). What's left:
+
+- [ ] [108](docs/tickets/108.md) Busy indicator while LibRaw-Wasm renders the RAW tuning preview
+      (user request 2026-09-25)
 
 ## Question tickets (waiting on the user)
 
