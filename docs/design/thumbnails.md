@@ -124,3 +124,11 @@ fast enough for some settings, it would replace `raw_preview`'s backend round tr
 settings without touching `set_raw_settings`/the commit path at all, since the frontend already
 treats "pending settings -> some preview image" as its own step, decoupled from persistence. Not
 implemented; noted here so the seam isn't accidentally welded shut later.
+
+Filed as [ticket 102](../tickets/102.md) (epic, 2026-09-24): LibRaw-Wasm in the browser, fed a
+lossy/size-reduced DNG rather than an "already-downloaded preview-quality image" as guessed above
+(a plain preview image would already be demosaiced, losing the ability to tune white
+balance/highlight recovery against real Bayer data) — see [103](../tickets/103.md) (open question:
+how to actually produce that lossy DNG, since rawpy has no DNG-writing API) through
+[106](../tickets/106.md). Not implemented; this paragraph is the seam described, that ticket is
+the plan for actually building it.

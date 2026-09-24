@@ -67,7 +67,8 @@ All ten build-order epics are done.
       thumbs cache); an explicit Save button commits (085's original behavior, unchanged); holding
       'c' compares the provisional overlay against the committed rendering underneath
 
-Nothing open right now.
+Still open: [102](docs/tickets/102.md) (epic, with question [103](docs/tickets/103.md) blocking
+104-106) and [107](docs/tickets/107.md) — see `TODO.md`.
 
 ## Cross-cutting
 
