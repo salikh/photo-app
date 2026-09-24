@@ -19,9 +19,6 @@ All ten build-order epics, v1 filtering, and every cross-cutting ticket are done
   - [ ] [104](docs/tickets/104.md) blocked by 103
   - [ ] [105](docs/tickets/105.md) blocked by 104
   - [ ] [106](docs/tickets/106.md) blocked by 105
-- [ ] [107](docs/tickets/107.md) Fix the RAW-tuning compare hotkey (unusable while a slider has
-      focus) and add hover-based comparison: sliders block -> tuned, elsewhere -> committed,
-      hovering a sibling file's row -> that file's own thumbnail (user request 2026-09-24)
 
 ## Question tickets (waiting on the user)
 

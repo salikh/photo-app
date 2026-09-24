@@ -269,10 +269,15 @@ def test_files_panel_and_representative_for_pair(page, server, tmp_path):
   expect(page.locator(".hud .name")).to_contain_text("+1 files")
   page.keyboard.press("i")
   expect(page.locator(".files-panel .file")).to_have_count(2)
+  # Ticket 107: moving the mouse to click "Show this" (in the DNG's non-representative row)
+  # hovers that row on the way, which now also asks for the DNG's own thumbnail as a row
+  # preview -- a second legitimate 404 alongside the actual render triggered by the click
+  # itself, both async, so give them a moment to land before clearing.
   page.locator(".files-panel").get_by_role("button", name="Show this").click()
   expect(page.locator(".hud .name")).to_contain_text("IMG_0001.DNG")
   page.keyboard.press("g")                          # cycle back to the JPEG
   expect(page.locator(".hud .name")).to_contain_text("IMG_0001.jpg")
+  page.wait_for_timeout(600)
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
 
 
@@ -358,9 +363,12 @@ def test_raw_settings_are_provisional_until_save(page, server):
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
 
 
-def test_compare_hotkey_toggles_the_provisional_overlay(page, server, monkeypatch):
-  # Ticket 094: tuning a setting shows a provisional render on top of the committed one; holding
-  # 'c' reveals the committed rendering underneath, releasing it restores the provisional one.
+def test_compare_hover_and_shift_reveal_the_provisional_overlay(page, server, monkeypatch):
+  # Ticket 107: the tuned overlay is hidden by default (the committed rendering is what's shown);
+  # it only appears while the user is actively asking to compare -- hovering the sliders block, or
+  # holding Shift as a keyboard/touch fallback that keeps working even with a slider focused (the
+  # exact case that was broken when the hotkey was the bare letter 'c', ticket 094's original
+  # shape, since a focused <input type="range"> made isTyping() swallow the key).
   from photoapp import previews
 
   monkeypatch.setattr(previews, "embedded_preview", lambda path: Image.new("RGB", (1600, 1200), "red"))
@@ -375,15 +383,53 @@ def test_compare_hotkey_toggles_the_provisional_overlay(page, server, monkeypatc
   page.keyboard.press("i")
   dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
 
-  tuning = page.locator(".stage img.tuning")
+  tuning = page.locator(".stage img.tuning:not(.row-preview)")
   expect(tuning).to_be_hidden()
-  dng_row.get_by_role("button", name="manual", exact=True).click()
-  expect(tuning).to_be_visible()   # the debounced provisional render loaded
+  slider = dng_row.locator(".raw-settings input[type=range]").first
+  slider.focus()
+  slider.press("ArrowRight")   # dirty the pending value (and leave the slider focused) so a
+                                # provisional render is requested
+  expect(tuning).to_have_attribute("src", re.compile(r"/api/files/\d+/raw_preview"))   # loaded...
+  expect(tuning).to_be_hidden()   # ...but stays hidden: neither hover nor Shift is active yet
 
-  page.keyboard.down("c")
-  expect(tuning).to_be_hidden()
-  page.keyboard.up("c")
+  # Shift works even with the slider itself focused -- the bug ticket 107 fixes.
+  page.keyboard.down("Shift")
   expect(tuning).to_be_visible()
+  page.keyboard.up("Shift")
+  expect(tuning).to_be_hidden()
+
+  # Hovering the sliders block shows it too, without any key held.
+  dng_row.locator(".raw-settings").hover()
+  expect(tuning).to_be_visible()
+  page.locator(".hud").hover()   # move the mouse elsewhere in the viewer
+  expect(tuning).to_be_hidden()
+
+
+def test_hovering_a_sibling_file_row_previews_its_own_thumbnail(page, server, monkeypatch):
+  # Ticket 107: hovering a non-representative file's row in the Files panel swaps in that file's
+  # own thumbnail via a distinct overlay -- independent of, and not affected by, the RAW-tuning
+  # compare overlay above. The camera JPEG is the representative by default (grouping.py's
+  # fix_representatives/set_representative), so it's the DNG row -- the non-representative one
+  # here -- that's hovered.
+  from photoapp import previews
+
+  monkeypatch.setattr(previews, "embedded_preview", lambda path: Image.new("RGB", (1600, 1200), "red"))
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+
+  row_preview = page.locator(".stage img.row-preview")
+  expect(row_preview).to_be_hidden()
+  dng_row.hover()
+  expect(row_preview).to_be_visible()
+  expect(row_preview).to_have_attribute("src", re.compile(r"/img/Medium/"))
+  page.locator(".hud").hover()
+  expect(row_preview).to_be_hidden()
 
 
 def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):

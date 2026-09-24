@@ -30,10 +30,16 @@ function build() {
   window.__preloadedUrls = preloader.urls;      // test hook: what is being held ahead of time
   ui.img = el('img', {class: 'main', alt: '', draggable: 'false'});
   ui.tuning = el('img', {class: 'tuning', alt: '', draggable: 'false', hidden: true,
-                        onload: () => { ui.tuning.hidden = false; }});
+                        onload: syncTuningVisible});
+  // Ticket 107: a second, independent overlay for hovering a sibling file's row in the Files
+  // panel (shows that file's own thumbnail) -- deliberately a separate element from ui.tuning
+  // rather than a shared one, so the two hover mechanics never fight over one element's src.
+  // Appended after ui.tuning so it paints on top if both were somehow active at once.
+  ui.rowPreview = el('img', {class: 'tuning row-preview', alt: '', draggable: 'false', hidden: true,
+                             onload: () => { if (hoverFile) ui.rowPreview.hidden = false; }});
   ui.preview = el('div', {class: 'rate-preview'});
   ui.stage = el('div', {class: 'stage'},
-    ui.img, ui.tuning, ui.preview,
+    ui.img, ui.tuning, ui.rowPreview, ui.preview,
     el('button', {class: 'nav-hint prev', 'aria-label': 'previous', text: '‹', onclick: (e) => { e.stopPropagation(); go(-1); }}),
     el('button', {class: 'nav-hint next', 'aria-label': 'next', text: '›', onclick: (e) => { e.stopPropagation(); go(1); }}));
   ui.strip = createFilmstrip((id) => {
@@ -245,7 +251,7 @@ function exitZoom() {
   ui.stage.classList.remove('zoomed');
   const photo = current();
   if (photo) ui.img.src = imgUrl('Medium', photo.file_id);
-  if (pending && ui.tuning.src) ui.tuning.hidden = false;   // ticket 094: restore the overlay
+  syncTuningVisible();   // ticket 094/107: restore the overlay if hover/Shift still calls for it
 }
 
 // Zoom needs the size of the picture on screen; if it has not loaded yet (a slow link), wait for it.
@@ -524,8 +530,14 @@ function cameraMetaText(f) {
 // slider only updates `pending` (this file's not-yet-committed values) and asks the server for a
 // cheap, never-cached provisional render (GET /api/files/{id}/raw_preview) to show in `ui.tuning`,
 // an overlay on top of the committed image; nothing touches files.raw_* or the thumbs cache until
-// Save actually calls set_raw_settings (still exactly what it always did). Holding 'c' hides the
-// overlay to compare against the committed rendering underneath.
+// Save actually calls set_raw_settings (still exactly what it always did).
+//
+// Ticket 107 replaces 094's "shown by default, hide while comparing" model with the reverse: the
+// committed image (ui.img) is the default, and the tuned overlay only appears while the user is
+// actively asking to see it -- hovering the sliders block, or holding Shift as a keyboard/touch
+// fallback (see syncTuningVisible, onKey/onKeyUp). A third, independent hover state swaps in a
+// sibling file's own thumbnail when hovering its row in the Files panel (see ui.rowPreview,
+// showRowPreview/hideRowPreview).
 //
 // Because the provisional render never writes anywhere, there is nothing to clean up if the user
 // navigates away without saving (discardPending() below just stops asking for more of them and
@@ -535,7 +547,10 @@ const WB_MODES = ['camera', 'auto', 'manual'];
 const DEFAULT_WB = {r: 2.0, g: 1.0, b: 1.5};
 const PREVIEW_DEBOUNCE_MS = 200;
 
-let pending = null;   // {fileId, values} for whichever file's controls are currently open
+let pending = null;      // {fileId, values} for whichever file's controls are currently open
+let sliderHover = false; // mouse is over the raw-settings sliders block (ticket 107)
+let shiftHeld = false;   // Shift is held as the compare modifier (ticket 107)
+let hoverFile = null;    // a sibling file whose own thumbnail ui.rowPreview is showing (ticket 107)
 
 function committedValues(f) {
   return {bright: f.raw_bright, wb_mode: f.raw_wb_mode, wb_r: f.raw_wb_r, wb_g: f.raw_wb_g,
@@ -546,9 +561,28 @@ function isDirty(values, committed) {
   return Object.keys(values).some((k) => values[k] !== committed[k]);
 }
 
+// Ticket 107: the tuned overlay shows only while the user is asking to compare (hovering the
+// sliders, or holding the Shift fallback) -- never merely because a provisional render loaded.
+function syncTuningVisible() {
+  ui.tuning.hidden = !(pending && ui.tuning.src && (sliderHover || shiftHeld));
+}
+
+function showRowPreview(f) {
+  hoverFile = f;
+  ui.rowPreview.hidden = true;   // wait for load, same as ui.tuning, to avoid a broken-image flash
+  ui.rowPreview.src = imgUrl('Medium', f.id);
+}
+
+function hideRowPreview() {
+  hoverFile = null;
+  ui.rowPreview.hidden = true;
+  ui.rowPreview.src = '';
+}
+
 function discardPending() {
   if (pending) clearTimeout(pending.timer);
   pending = null;
+  sliderHover = false;
   if (ui.tuning) { ui.tuning.hidden = true; ui.tuning.src = ''; }
 }
 
@@ -561,7 +595,7 @@ function requestPreview(f) {
   if (!pending || pending.fileId !== f.id) return;   // superseded by a discard/navigation
   const qs = new URLSearchParams({size: 'Medium'});
   for (const [k, v] of Object.entries(pending.values)) if (v != null) qs.set(k, v);
-  ui.tuning.src = `/api/files/${f.id}/raw_preview?${qs}`;
+  ui.tuning.src = `/api/files/${f.id}/raw_preview?${qs}`;   // onload -> syncTuningVisible
 }
 
 async function saveRawSettings(f) {
@@ -582,7 +616,14 @@ function rawSettingsControls(f) {
   if (!pending || pending.fileId !== f.id) {
     pending = {fileId: f.id, values: committedValues(f), timer: null};
   }
-  const container = el('div', {class: 'raw-settings'});
+  // Ticket 107: hovering the sliders block is one of the two ways to reveal the tuned overlay
+  // (the other is holding Shift). Attached to this outer container, which renderRawSettingsBody
+  // repopulates in place via setChildren -- so the listener survives every slider tick's re-render.
+  const container = el('div', {
+    class: 'raw-settings',
+    onmouseenter: () => { sliderHover = true; syncTuningVisible(); },
+    onmouseleave: () => { sliderHover = false; syncTuningVisible(); },
+  });
   renderRawSettingsBody(f, container);
   return container;
 }
@@ -660,12 +701,20 @@ async function openFiles() {
   try { detail = await get('/api/photos/' + photo.id); } catch (e) { toast(e.message, true); return; }
   if (!filesOpen || current() !== photo) return;
   closePanelOnly();
+  hideRowPreview();   // ticket 107: drop any hover state from the panel being replaced
   ui.panel = el('div', {class: 'files-panel', onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation()},
     el('h3', {text: `Files (${detail.files.length})`}),
     el('div', {class: 'meta', text: `rating ${label(detail.rating)}` + (detail.conflict ? ' — sidecars disagree' : '')}),
     detail.sidecars.map((s) => el('div', {class: 'meta', text: `${s.path}: ${s.rating ?? 'no rating'}${s.fav ? ' ♥' : ''}`})),
     el('p'),
-    detail.files.map((f) => el('div', {class: 'file' + (f.id === detail.representative_file_id ? ' rep' : '')},
+    // Ticket 107: hovering a sibling (non-representative) file's row previews that file's own
+    // thumbnail via ui.rowPreview -- the representative row is already what's on screen, so it's
+    // excluded rather than swapping an image in for itself.
+    detail.files.map((f) => el('div', {
+      class: 'file' + (f.id === detail.representative_file_id ? ' rep' : ''),
+      onmouseenter: f.id === detail.representative_file_id ? null : () => showRowPreview(f),
+      onmouseleave: f.id === detail.representative_file_id ? null : hideRowPreview,
+    },
       el('div', {text: f.path.split('/').pop() + '  ·  ' + f.role + (f.link_source === 'manual' ? ' (manual)' : '')}),
       el('div', {class: 'meta', text: `${f.width || '?'}×${f.height || '?'}  ${f.path}` + (f.missing ? '  MISSING' : '')}),
       // Ticket 099: a file exported (096/097) from another photo links back to it -- own Photo,
@@ -695,6 +744,7 @@ function closePanelOnly() {
 function closeFiles() {
   filesOpen = false;
   discardPending();   // ticket 094: closing the panel without Save drops any provisional tuning
+  hideRowPreview();   // ticket 107
   closePanelOnly();
   if (root && !root.hidden) renderHud();
 }
@@ -828,6 +878,14 @@ async function deleteFile(file) {
 
 function onKey(e) {
   if (ui.deleteModal) { if (e.key === 'Escape') closeDeleteModal(); return; }
+  // Ticket 107: Shift is the compare modifier -- checked before isTyping's guard because a bare
+  // modifier key never types a character into a focused input (unlike a letter hotkey), so it
+  // must keep working even while a raw-settings slider has focus, which is exactly when comparing
+  // is most wanted.
+  if (e.key === 'Shift') {
+    if (!e.repeat) { shiftHeld = true; syncTuningVisible(); }
+    return;
+  }
   if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   const key = e.key;
   if (key === 'ArrowRight' || key === ' ') go(1);
@@ -845,12 +903,6 @@ function onKey(e) {
   else if (key === 'g' || key === 'G') cycleRepresentative();
   else if (key === 'u' || key === 'U') undo();
   else if (key === 'i' || key === 'I') filesOpen ? closeFiles() : openFiles();
-  else if (key === 'c' || key === 'C') {
-    // Ticket 094: hold to compare the committed rendering (hide the provisional overlay);
-    // onKeyUp below restores it. A no-op with nothing pending -- ui.tuning is already hidden.
-    if (e.repeat) return;
-    ui.tuning.hidden = true;
-  }
   else if (key === 'Escape') {
     if (filterPanelOpen) closeFilterPicker();
     else if (filesOpen) closeFiles();
@@ -861,7 +913,7 @@ function onKey(e) {
 }
 
 function onKeyUp(e) {
-  // Ticket 094: releasing the compare hotkey restores the provisional overlay, if there still
-  // is one (the user may have hit Save/Discard, or navigated away, while 'c' was held).
-  if ((e.key === 'c' || e.key === 'C') && pending && ui.tuning.src) ui.tuning.hidden = false;
+  // Ticket 107: releasing Shift drops the keyboard vote for showing the tuned overlay; it stays
+  // visible if the mouse is still hovering the sliders block.
+  if (e.key === 'Shift') { shiftHeld = false; syncTuningVisible(); }
 }

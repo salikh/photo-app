@@ -66,9 +66,15 @@ All ten build-order epics are done.
       provisional preview (`GET /api/files/{id}/raw_preview`, never written to `files.raw_*`/the
       thumbs cache); an explicit Save button commits (085's original behavior, unchanged); holding
       'c' compares the provisional overlay against the committed rendering underneath
+- [x] [107](docs/tickets/107.md) Compare hotkey switched from plain 'c' (silently swallowed while
+      a slider has focus) to Shift, checked ahead of `isTyping`'s guard since a bare modifier never
+      types a character; the tuned overlay is now hidden by default and shown only while hovering
+      the sliders block or holding Shift, replacing 094's "shown by default" model; a second,
+      independent hover (a non-representative file's row in the Files panel) previews that file's
+      own thumbnail via a new overlay element (`ui.rowPreview`)
 
 Still open: [102](docs/tickets/102.md) (epic, with question [103](docs/tickets/103.md) blocking
-104-106) and [107](docs/tickets/107.md) — see `TODO.md`.
+104-106) — see `TODO.md`.
 
 ## Cross-cutting
 
