@@ -17,6 +17,8 @@ All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (1
       filter selector in loupe mode.
 - [ ] [119](docs/tickets/119.md) Bug — tuned RAW rendering sometimes is not applied when switching images.
 - [ ] [120](docs/tickets/120.md) Bug — deletion confirmation page does not support "this folder and subfolders" mode.
+- [ ] [121](docs/tickets/121.md) Enhancement — recenter loupe image when files/tuning panel is open so it
+      is not obstructed by the side panel.
 
 ## Restart notes
 
