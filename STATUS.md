@@ -117,6 +117,10 @@ All ten build-order epics are done.
       `user_sat` (a white-point override, not saturation) and native gamma were tested and
       rejected — the vendor's libraw-wasm 1.6.0 build silently ignores its documented `gamm`
       setting, so exact parity wasn't achievable that way. Verified on the real K-5 DNG.
+- [x] [118](docs/tickets/118.md) Bug fix: initial client-side RAW rendering image was displayed with
+      incorrect orientation because `raw_preview_dng.py` omitted tag 274 (`Orientation`) in the
+      generated preview DNG, defaulting LibRaw-Wasm's flip to 0 (landscape). Now preserves EXIF
+      orientation tag (falling back to LibRaw's `sizes.flip`), so client renders in matching orientation.
 
 Still open (see `TODO.md` for where to resume): [111](docs/tickets/111.md) (full-scan `index.json`
 / per-file JSON metadata cache, not started).
@@ -156,6 +160,7 @@ question tickets are tracked in `TODO.md`, not here.
 - [x] [090](docs/tickets/090.md) Should 085's adjustable RAW settings affect only the background dcraw cache, or the on-demand rawpy path too? → neither as originally framed: merge the two renderers into one (rawpy/LibRaw for both), with a revised Thumb-size rule; unblocked 085, superseded the "not to be unified" framing in docs/design/thumbnails.md
 - [x] [097](docs/tickets/097.md) Merge an exported file into the original's Photo, or keep it as its own browseable Photo with a separate "jump to original" cross-reference? → Option B (own Photo + new `files.exported_from_file_id` column); unblocked 098-100 (epic 096)
 - [x] [103](docs/tickets/103.md) How should the lossy tuning-preview DNG (epic 102) actually be produced? → user leaned Option B pending a check of what LibRaw-Wasm supports; that check ruled B out (it needs real Bayer data, not a pre-demosaiced one) and settled on Option C: a downsampled, still-mosaiced DNG via rawpy + a new `tifffile` dependency; unblocked 104 (done) and 105
+- [x] [116](docs/tickets/116.md) How should non-destructive crop interact with thumbnail generation and exports? → Thumb size cropped only to selected rectangle; Medium/Huge in loupe shows full image with cropped-out areas shaded dark; Small in grid cropped, or shaded if single image. Unblocks 115.
 
 Answered earlier: 053 (a single file's reject never rejects the pair while the other is picked; app rejects
 newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars), 042

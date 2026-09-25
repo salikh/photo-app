@@ -9,7 +9,7 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-110 and 112 are done (see `STATUS.md`). What's left, in the order to pick it up:
+108-110, 112, and 118 are done (see `STATUS.md`). What's left, in the order to pick it up:
 
 - [ ] [111](docs/tickets/111.md) Not started — full-scan metadata cache: per-directory
       `index.json` + per-file `<name>.json`, plus new EXIF fields (focal length, camera make;
@@ -20,12 +20,10 @@ All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (1
       and busy task detail).
 - [ ] [114](docs/tickets/114.md) Not started — recent job activity reporting columns on the "Jobs" page
       (queued, running, done/failed across time windows: all time, 1d, 1h, 1m).
-- [ ] [115](docs/tickets/115.md) **Blocked by [116](docs/tickets/116.md)** — non-destructive crop mode
-      in photo editing.
+- [ ] [115](docs/tickets/115.md) Ready to start (unblocked by [116](docs/tickets/116.md) answer) — non-destructive
+      crop mode in photo editing.
 - [ ] [117](docs/tickets/117.md) Not started — multi-state filter buttons cycling =, >=, <= and 3-column
       filter selector in loupe mode.
-- [ ] [118](docs/tickets/118.md) Bug — initial client-side RAW rendering image is displayed with incorrect
-      orientation.
 - [ ] [119](docs/tickets/119.md) Bug — tuned RAW rendering sometimes is not applied when switching images.
 - [ ] [120](docs/tickets/120.md) Bug — deletion confirmation page does not support "this folder and subfolders" mode.
 
@@ -59,10 +57,9 @@ context, the question, options if any, and an empty **Answer** section). The que
 closed and the blocked ticket continues (and its pointer moves to `STATUS.md`). A ticket is "actionable"
 when it has no open blocker.
 
-- [*] [116](docs/tickets/116.md) **Open** — how should non-destructive crop interact with
-      thumbnail generation and exports? Blocks [115](docs/tickets/115.md).
+*No open question tickets right now.*
 
-103 was answered 2026-09-24 (Option C, a downsampled still-mosaiced DNG via rawpy+tifffile, refined
+116 was answered 2026-09-25 (Thumb cropped to selected rect; loupe Medium/Huge full with dark shading; Small cropped in grid / shaded single; see `STATUS.md`) and unblocked 115. 103 was answered 2026-09-24 (Option C, a downsampled still-mosaiced DNG via rawpy+tifffile, refined
 from the user's initial Option B lean after checking what LibRaw-Wasm actually supports; see
 `STATUS.md`) and unblocked 104 (done) and 105. 097 was answered 2026-09-24 (Option B; see
 `STATUS.md`) and unblocked 098-100. 090 was answered 2026-09-23 (see `STATUS.md`) and unblocked 085.
