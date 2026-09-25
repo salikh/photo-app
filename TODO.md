@@ -12,11 +12,9 @@ All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (1
 108 and 110 are done (see `STATUS.md`). What's left, in the order to pick it up:
 
 - [ ] [109](docs/tickets/109.md) **In progress** — exposure and shadow-pull as tunable RAW
-      conversion parameters (user request 2026-09-25). The backend half is written and committed
-      as WIP (migration, `raw_settings.py`, `previews.py`); still to do: `api.py`, `rawTuning.js`
-      (+ verifying `expShift`/`noAutoBright` in the real LibRaw-Wasm build), the two `loupe.js`
-      sliders, updating/adding tests, docs. **Two existing tests fail until the tests are updated**
-      (`tests/test_raw_settings.py`, `tests/test_more_api.py` assert the exact 6-column dict).
+      conversion parameters (user request 2026-09-25). Backend half and API plumbing are written;
+      still to do: `rawTuning.js` (+ verifying `expShift`/`noAutoBright` in the real LibRaw-Wasm
+      build), the two `loupe.js` sliders, updating/adding tests.
       Technique decisions are already made and verified on a real DNG — see the ticket's "Decisions
       made" and "Progress" sections; do not redo the toe-slope experiment (it was rejected).
 - [ ] [111](docs/tickets/111.md) Not started — full-scan metadata cache: per-directory
@@ -24,6 +22,20 @@ All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (1
       exif date/shutter/aperture/ISO already exist). The `index.json` machinery to reuse is in
       `file_metadata.py`, not `image_metadata.py`. Opt-in flag, scanner must ignore the new JSON
       files, directory-mtime fixup after writing.
+- [ ] [112](docs/tickets/112.md) Not started — add sliders for additional raw parameters (most important
+      visible immediately, advanced under a zipper).
+- [ ] [113](docs/tickets/113.md) Not started — active job reporting on the "Jobs" page (worker status
+      and busy task detail).
+- [ ] [114](docs/tickets/114.md) Not started — recent job activity reporting columns on the "Jobs" page
+      (queued, running, done/failed across time windows: all time, 1d, 1h, 1m).
+- [ ] [115](docs/tickets/115.md) **Blocked by [116](docs/tickets/116.md)** — non-destructive crop mode
+      in photo editing.
+- [ ] [117](docs/tickets/117.md) Not started — multi-state filter buttons cycling =, >=, <= and 3-column
+      filter selector in loupe mode.
+- [ ] [118](docs/tickets/118.md) Bug — initial client-side RAW rendering image is displayed with incorrect
+      orientation.
+- [ ] [119](docs/tickets/119.md) Bug — tuned RAW rendering sometimes is not applied when switching images.
+- [ ] [120](docs/tickets/120.md) Bug — deletion confirmation page does not support "this folder and subfolders" mode.
 
 ## Restart notes
 
@@ -55,7 +67,8 @@ context, the question, options if any, and an empty **Answer** section). The que
 closed and the blocked ticket continues (and its pointer moves to `STATUS.md`). A ticket is "actionable"
 when it has no open blocker.
 
-None open right now.
+- [ ] [116](docs/tickets/116.md) **Open** — how should non-destructive crop interact with
+      thumbnail generation and exports? Blocks [115](docs/tickets/115.md).
 
 103 was answered 2026-09-24 (Option C, a downsampled still-mosaiced DNG via rawpy+tifffile, refined
 from the user's initial Option B lean after checking what LibRaw-Wasm actually supports; see
