@@ -76,7 +76,25 @@ def _postprocess_kwargs(settings):
     kwargs["bright"] = settings["raw_bright"]
   if settings.get("raw_highlight") is not None:
     kwargs["highlight_mode"] = settings["raw_highlight"]
+  if settings.get("raw_exposure") is not None:
+    # Ticket 109: verified empirically that exp_shift is almost invisible unless LibRaw's own
+    # auto-brightness is disabled for this render -- it otherwise renormalizes the output back
+    # toward roughly the same overall brightness regardless of exp_shift. Only disabled here, so
+    # every file that hasn't touched exposure renders exactly as before this ticket.
+    kwargs["exp_shift"] = settings["raw_exposure"]
+    kwargs["no_auto_bright"] = True
   return kwargs
+
+
+def _lift_shadows(rgb, amount):
+  """Post-decode shadow lift (ticket 109): v' = v + amount*(1-v)^2 per channel, applied to an
+  8-bit RGB array. Not a native LibRaw parameter on either rawpy or LibRaw-Wasm -- this exact
+  formula is also what photoapp/static/rawTuning.js applies client-side, so the two agree.
+  Verified empirically monotonic (no tone reversal) and highlight-neutral only for amount <= 0.5
+  (raw_settings.SHADOW_RANGE enforces that bound before a value ever reaches here)."""
+  v = rgb.astype(np.float64) / 255.0
+  v = np.clip(v + amount * (1.0 - v) ** 2, 0.0, 1.0)
+  return np.round(v * 255.0).astype(np.uint8)
 
 
 def render(path, settings=None, half_size=False):
@@ -91,6 +109,9 @@ def render(path, settings=None, half_size=False):
   except (rawpy.LibRawError, OSError, ValueError) as e:
     logging.vlog(3, "%s: LibRaw render failed: %s", path, e)
     return None
+  shadow = (settings or {}).get("raw_shadow")
+  if shadow is not None:
+    rgb = _lift_shadows(rgb, shadow)
   img = Image.fromarray(rgb)
   logging.vlog(7, "%s: LibRaw render (%dx%d)%s", path, *img.size,
               "" if half_size else " (full size)")

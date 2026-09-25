@@ -186,6 +186,25 @@ MIGRATIONS = [
     -- (reserved, never used) would have. NULL for every file that isn't itself an export.
     ALTER TABLE files ADD COLUMN exported_from_file_id INTEGER REFERENCES files(id);
     """,
+    """
+    -- Ticket 109: two more per-file RAW conversion settings, alongside 085's four. NULL means
+    -- "no correction", same convention as the others.
+    -- raw_exposure: LibRaw exp_shift, a linear multiplier in [0.25, 8.0] (LibRaw's own valid
+    -- range) applied before highlight recovery -- distinct from raw_bright, which is a multiplier
+    -- LibRaw applies *after* its own auto-brightness scaling. Verified empirically (rendering a
+    -- real RAW file both ways) that exp_shift has almost no visible effect unless auto-brightness
+    -- is disabled for that render, since LibRaw's auto-bright otherwise renormalizes the result
+    -- back toward roughly the same overall brightness regardless of exp_shift -- so a render only
+    -- disables auto-brightness (LibRaw's no_auto_bright/noAutoBright) when raw_exposure is set,
+    -- leaving every already-tuned or untouched file's rendering exactly as before this ticket.
+    -- raw_shadow: not a native LibRaw parameter on either rawpy or LibRaw-Wasm (LibRaw has no
+    -- shadow-recovery algorithm) -- a post-decode lift applied to the final RGB output on both
+    -- sides identically: v' = v + raw_shadow * (1-v)^2 per channel (v, v' in [0,1]), verified
+    -- empirically to be monotonic (no tone reversal) and highlight-neutral only for raw_shadow in
+    -- [0, 0.5], which is the range this column's values are validated against.
+    ALTER TABLE files ADD COLUMN raw_exposure REAL;
+    ALTER TABLE files ADD COLUMN raw_shadow REAL;
+    """,
 ]
 
 
