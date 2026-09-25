@@ -1,6 +1,6 @@
 // Folder view: breadcrumb-independent folder chips, the photo grid, selection.
 
-import {get, post, imgUrl} from './api.js';
+import {get, post, imgUrl, seedRevisions} from './api.js';
 import {el, toast, retryImage, enqueue, setChildren} from './util.js';
 import {href, hrefPage} from './route.js';
 import {label, REJECT, display, choices} from './rating.js';
@@ -27,6 +27,7 @@ export async function loadFolder(route) {
   state.total = first.total;
   state.loaded = first.photos.length;
   state.removed = 0;
+  seedRevisions(first.photos);   // ticket 119: know each file's revision before building cells
   return first;
 }
 
@@ -51,6 +52,7 @@ export function loadRest(route, onPage = () => {}) {
       const fresh = page.photos.filter((p) => !known.has(p.id));
       state.loaded += page.photos.length;
       state.photos.push(...fresh);
+      seedRevisions(fresh);
       onPage(fresh);
       if (state.onPhotosChanged) state.onPhotosChanged();
     }
@@ -76,16 +78,14 @@ export function updateCell(photo) {
   setChildren(cell.querySelector('.badges'), badges(photo));
 }
 
-// Ticket 110: the file_id (hence the /img/Thumb/{file_id} URL) does not change when a
-// RAW's tuning settings are saved, only the bytes that URL serves -- unlike setRepresentative's
-// own cell-image refresh below, which naturally gets a fresh URL because the file_id itself
-// changes. Without a cache-busting param, a grid cell whose image already loaded once keeps
-// showing the pre-edit thumbnail (the DOM node's src never changes, so no request is even made
-// to notice the server-side thumbnail changed) even across a full page reload, if the browser's
-// HTTP cache still holds the old response (Cache-Control: max-age=3600 on /img/*).
+// Ticket 110/119: the file_id (hence the /img/Thumb/{file_id} URL) does not change when a RAW's
+// tuning settings are saved, only the bytes that URL serves. imgUrl() carries the file's revision
+// (ticket 119), so after a save this produces a fresh URL; a plain node whose src never changes
+// would otherwise keep showing the pre-edit thumbnail even across a full page reload while the
+// browser's HTTP cache (Cache-Control: max-age=3600 on /img/*) still holds the old response.
 export function refreshCellThumb(photoId, fileId) {
   const img = document.querySelector(`.cell[data-id="${photoId}"] img`);
-  if (img) img.src = imgUrl('Thumb', fileId) + '?r=' + Date.now();
+  if (img) img.src = imgUrl('Thumb', fileId);
 }
 
 export function makeCell(photo) {

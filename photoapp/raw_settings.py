@@ -80,7 +80,8 @@ def set(conn, file_id, bright=None, wb_mode=None, wb_r=None, wb_g=None, wb_b=Non
   conn.execute(
       "UPDATE files SET raw_bright = ?, raw_wb_mode = ?, raw_wb_r = ?, raw_wb_g = ?, "
       "raw_wb_b = ?, raw_highlight = ?, raw_exposure = ?, raw_shadow = ?, raw_saturation = ?, "
-      "raw_contrast = ?, raw_noise = ?, raw_demosaic = ? WHERE id = ?",
+      "raw_contrast = ?, raw_noise = ?, raw_demosaic = ?, thumb_rev = thumb_rev + 1 "
+      "WHERE id = ?",
       (bright, wb_mode, wb_r, wb_g, wb_b, highlight, exposure, shadow, saturation, contrast, noise,
        demosaic, file_id))
   conn.commit()

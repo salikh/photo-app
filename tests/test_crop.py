@@ -86,6 +86,7 @@ def test_crop_endpoint_saves_clears_and_rejects(settings):
 
   r = client.post(f"/api/files/{fid}/crop", json={"x": 0.25, "y": 0.25, "w": 0.5, "h": 0.5})
   assert r.status_code == 200 and r.json()["crop"]["crop_w"] == 0.5
+  assert r.json()["rev"] == 1          # ticket 119: a render change bumps the file's revision
   assert thumbs.lookup(settings.thumbs_dir, "Thumb", "a.jpg") is None   # cache cleared
   img = Image.open(io.BytesIO(client.get(f"/img/Thumb/{fid}").content))
   assert img.size == (50, 25)   # Thumb served cropped
@@ -109,6 +110,8 @@ def test_list_photos_and_detail_carry_the_crop(settings):
 
   page = library.list_photos(conn, ".")
   assert page["photos"][0]["crop"] == {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
+  assert page["photos"][0]["rev"] == 1   # ticket 119: the client uses this to cache-bust /img URLs
   detail = library.photo_detail(conn, page["photos"][0]["id"])
   assert detail["files"][0]["crop_x"] == 0.1
+  assert detail["files"][0]["thumb_rev"] == 1
   conn.close()

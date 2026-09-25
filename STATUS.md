@@ -154,8 +154,15 @@ All ten build-order epics are done.
       label/count following the state, and a 3-column `≤ N`/`= N`/`≥ N` grid per star value in the
       loupe filter picker.
 
-Still open (see `TODO.md` for where to resume): [119](docs/tickets/119.md),
-[120](docs/tickets/120.md).
+- [x] [119](docs/tickets/119.md) Bug fix: a tuned file's thumbnails were re-served from the
+      browser cache (max-age 3600) when navigating away and back, because the `file_id` URL never
+      changed. New `files.thumb_rev` (bumped by raw_settings/crop saves) is returned in photo
+      payloads and save responses; `api.js` keeps a per-file revision map (seeded on every load,
+      updated on save) and `imgUrl` appends `?r=<rev>`, so every image URL (loupe, zoom, preload,
+      grid, filmstrip) fetches the fresh render.
+
+Still open (see `TODO.md` for where to resume): [120](docs/tickets/120.md), [122](docs/tickets/122.md),
+[123](docs/tickets/123.md).
 
 ## Cross-cutting
 

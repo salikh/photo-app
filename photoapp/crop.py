@@ -78,6 +78,7 @@ def set(conn, file_id, x, y, w, h):
   if x <= _EPS and y <= _EPS and w >= 1 - _EPS and h >= 1 - _EPS:
     x = y = w = h = None
   conn.execute(
-      "UPDATE files SET crop_x = ?, crop_y = ?, crop_w = ?, crop_h = ? WHERE id = ?",
+      "UPDATE files SET crop_x = ?, crop_y = ?, crop_w = ?, crop_h = ?,"
+      " thumb_rev = thumb_rev + 1 WHERE id = ?",
       (x, y, w, h, file_id))
   conn.commit()

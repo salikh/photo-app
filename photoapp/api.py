@@ -460,7 +460,9 @@ def create_app(conn, settings):
         raise HTTPException(400, str(e))
       cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
       current = raw_settings.get(app.state.db, file_id)
-    return {"file_id": file_id, "cleared": cleared, "settings": current}
+      rev = app.state.db.execute(
+          "SELECT thumb_rev FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+    return {"file_id": file_id, "cleared": cleared, "settings": current, "rev": rev}
 
   @app.post("/api/files/{file_id}/crop")
   @db_route
@@ -476,7 +478,9 @@ def create_app(conn, settings):
         raise HTTPException(400, str(e))
       cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
       current = crop_lib.get(app.state.db, file_id)
-    return {"file_id": file_id, "cleared": cleared, "crop": current}
+      rev = app.state.db.execute(
+          "SELECT thumb_rev FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+    return {"file_id": file_id, "cleared": cleared, "crop": current, "rev": rev}
 
   @app.get("/api/thumbs/usage")
   @db_route

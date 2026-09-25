@@ -357,6 +357,30 @@ def test_crop_mode_saves_and_shades(page, server):
   expect(page.locator(".crop-shade:not([hidden])")).to_have_count(1)
 
 
+def test_saved_render_bumps_the_image_url_revision(page, server):
+  # ticket 119: after a render-changing save, navigating away and back must request the image with
+  # the file's new revision, not the browser-cached pre-save URL. Crop and raw_settings share this
+  # client path (setRevision -> imgUrl); the raw_settings revision bump is unit-tested separately.
+  ids = open_loupe(page, server)
+  fid = server.app.state.db.execute(
+      "SELECT representative_file_id FROM photos WHERE id = ?", (ids[0],)).fetchone()[0]
+  page.get_by_role("button", name="crop").click()
+  expect(page.locator(".crop-editing")).to_be_visible()
+  handle = page.locator(".crop-handle.se").bounding_box()
+  page.mouse.move(handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2)
+  page.mouse.down()
+  page.mouse.move(handle["x"] - 80, handle["y"] - 60, steps=8)
+  page.mouse.up()
+  page.get_by_role("button", name="Save crop").click()
+  expect(page.locator("#toast")).to_contain_text("crop saved")   # the revision is set before this
+  rev = wait_for(lambda: server.app.state.db.execute(
+      "SELECT thumb_rev FROM files WHERE id = ?", (fid,)).fetchone()[0])
+  assert rev >= 1
+  page.keyboard.press("ArrowRight")
+  page.keyboard.press("ArrowLeft")
+  expect(page.locator(".stage img.main")).to_have_attribute("src", re.compile(rf"\?r={rev}\b"))
+
+
 def test_raw_settings_controls_only_show_for_raw_files(page, server):
   # ticket 085: sliders/controls only appear for a RAW file (not the JPEG sibling).
   open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
@@ -761,7 +785,9 @@ def test_saving_raw_settings_cache_busts_the_grid_cell_and_filmstrip_thumb(page,
 
   page.keyboard.press("Escape")   # back to the grid, same folder -- the cell is not rebuilt
   after = cell_img.get_attribute("src")
-  assert after != before and after.startswith(before + "?r=") and re.search(r"\?r=\d+$", after)
+  # ticket 110/119: the save bumped the file's revision, so the cell's URL moved from the plain
+  # (rev 0) URL to ?r=1.
+  assert "?r=" not in before and after == before + "?r=1"
   page.wait_for_timeout(500)
   page.errors.clear()   # the fake one-byte DNG legitimately has no image (404): ui.img's, the
                         # grid cell's and the filmstrip's cache-busted refreshes all hit it
@@ -1753,7 +1779,8 @@ def test_holding_an_arrow_key_does_not_leave_a_pile_of_preloads(page, server):
   assert {f for _, f in now} <= {fids[0], fids[1], fids[2]}, now         # (plus the current photo's own entries)
   assert len(now) <= 6
   page.keyboard.press("Escape")
-  assert page.evaluate("window.__preloadedUrls()") == []                  # closing the viewer releases everything
+  expect(page.locator(".loupe")).to_be_hidden()                           # hashchange closes it...
+  assert page.evaluate("window.__preloadedUrls()") == []                  # ...which releases everything
 
 
 def test_zoom_uses_the_preloaded_full_size_image_without_a_new_request(page, server):

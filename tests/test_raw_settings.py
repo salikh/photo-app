@@ -34,6 +34,17 @@ def test_set_then_get_round_trips(settings, conn):
   assert not raw_settings.is_default(s)
 
 
+def test_set_bumps_the_thumb_revision(settings, conn):
+  # ticket 119: saving settings changes the rendered bytes, so the file's revision must move.
+  fid = scanned(settings, conn)
+  rev = lambda: conn.execute("SELECT thumb_rev FROM files WHERE id = ?", (fid,)).fetchone()[0]
+  assert rev() == 0
+  raw_settings.set(conn, fid, bright=1.2)
+  assert rev() == 1
+  raw_settings.set(conn, fid)   # back to default also changes the render
+  assert rev() == 2
+
+
 def test_set_with_no_args_clears_back_to_default(settings, conn):
   fid = scanned(settings, conn)
   raw_settings.set(conn, fid, bright=1.2)

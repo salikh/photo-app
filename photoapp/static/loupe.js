@@ -1,7 +1,7 @@
 // Full-window viewer: keyboard culling, swipe navigation and rating, filmstrip,
 // preloading, tunings panel. The list of photos is state.photos.
 
-import {get, post, imgUrl} from './api.js';
+import {get, post, imgUrl, setRevision, seedRevisions} from './api.js';
 import {el, toast, isTyping, enqueue, retryImage, setChildren} from './util.js';
 import {href} from './route.js';
 import {afterKey, step, label, REJECT, display, choices} from './rating.js';
@@ -25,6 +25,12 @@ let filterPanelOpen = false;   // ticket 092: the filter-switcher panel opened f
 let brokenFileId = null;   // set when the main image fails to load after every retry (ticket 079)
 
 const current = () => state.photos[index];
+
+// Ticket 119: a forced re-fetch of an image whose URL may already carry imgUrl's ?r=revision.
+function forceUrl(size, fileId, tag) {
+  const url = imgUrl(size, fileId);
+  return url + (url.includes('?') ? '&' : '?') + 'n=' + (tag ?? Date.now());
+}
 
 function build() {
   if (root) return;
@@ -185,7 +191,7 @@ function retryOnce(img, photo) {
       return;
     }
     n++;
-    setTimeout(() => { if (current() === photo) img.src = imgUrl('Medium', photo.file_id) + '?r=' + n; }, 1500 * n);
+    setTimeout(() => { if (current() === photo) img.src = forceUrl('Medium', photo.file_id, n); }, 1500 * n);
   };
 }
 
@@ -197,7 +203,7 @@ async function rerenderThumbs() {
   try {
     await post(`/api/files/${photo.file_id}/rerender_thumbs`);
     brokenFileId = null;
-    ui.img.src = imgUrl('Medium', photo.file_id) + '?r=' + Date.now();
+    ui.img.src = forceUrl('Medium', photo.file_id);
     retryOnce(ui.img, photo);
     toast('re-rendering thumbnails…');
   } catch (e) { /* post() already showed a toast for a server error */ }
@@ -668,15 +674,18 @@ function requestPreviewNetwork(f) {
 
 async function saveRawSettings(f) {
   const values = pending.values;
+  let res;
   try {
-    await post(`/api/files/${f.id}/raw_settings`, values);
+    res = await post(`/api/files/${f.id}/raw_settings`, values);
     toast('saved; thumbnails will regenerate on next view');
   } catch (e) { return; }   // post() already showed a toast for a server error
+  setRevision(f.id, res.rev);   // ticket 119: future imgUrl() calls fetch the fresh render
+  if (current().file_id === f.id) current().rev = res.rev;
   discardPending();
   if (current().file_id === f.id) {
-    ui.img.src = imgUrl('Medium', f.id) + '?r=' + Date.now();
+    ui.img.src = imgUrl('Medium', f.id);
     retryOnce(ui.img, current());
-    // Ticket 110: the grid cell and filmstrip node for this photo, if already in the DOM, would
+    // Ticket 110/119: the grid cell and filmstrip node for this photo, if already in the DOM, would
     // otherwise never notice the Thumb they're showing just went stale server-side.
     refreshCellThumb(current().id, f.id);
     ui.strip.refreshThumb(current().id, f.id);
@@ -963,6 +972,8 @@ async function saveCrop() {
   try {
     const res = await post(`/api/files/${photo.file_id}/crop`, rect);
     photo.crop = cropFromColumns(res.crop);
+    photo.rev = res.rev;
+    setRevision(photo.file_id, res.rev);   // ticket 119: Thumb/Small were cleared server-side
     toast('crop saved; thumbnails will regenerate on next view');
   } catch (e) { return; }   // post() already toasted the server error
   exitCropMode();
@@ -985,6 +996,7 @@ async function openFiles() {
   let detail;
   try { detail = await get('/api/photos/' + photo.id); } catch (e) { toast(e.message, true); closeFiles(); return; }
   if (!filesOpen || current() !== photo) return;
+  seedRevisions(detail.files);   // ticket 119: sibling files' revisions for row previews
   closePanelOnly();
   hideRowPreview();   // ticket 107: drop any hover state from the panel being replaced
   ui.panel = el('div', {class: 'files-panel', onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation()},
@@ -1119,6 +1131,7 @@ async function setRepresentative(detail, fileId) {
   const photo = current();
   try {
     const d = await post(`/api/photos/${photo.id}/representative`, {file_id: fileId});
+    seedRevisions(d.files);   // ticket 119: the new representative's revision
     photo.file_id = d.representative_file_id;
     const rep = d.files.find((f) => f.id === d.representative_file_id);
     if (rep) { photo.path = rep.path; photo.name = rep.path.split('/').pop(); }

@@ -253,6 +253,13 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN crop_w REAL;
     ALTER TABLE files ADD COLUMN crop_h REAL;
     """,
+    """
+    -- Ticket 119: a per-file revision bumped whenever the file's rendering changes (raw_settings
+    -- or crop saved). The client puts it in the /img/{size}/{id}?r=... URL so a browser that has
+    -- the old response cached (Cache-Control: max-age=3600) fetches the fresh thumbnail when it
+    -- navigates back to a tuned photo, instead of serving the pre-tune bytes for an unchanged URL.
+    ALTER TABLE files ADD COLUMN thumb_rev INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 
