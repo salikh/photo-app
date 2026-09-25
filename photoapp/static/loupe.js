@@ -691,12 +691,12 @@ function renderRawSettingsBody(f, container) {
     el('div', {class: 'row'},
       el('label', {text: 'Brightness'}),
       el('input', {type: 'range', min: '0.25', max: '3', step: '0.05', value: bright,
-                   'aria-label': 'brightness', oninput: onTick('bright', brightLabel, (v) => v.toFixed(2))}),
+                 'aria-label': 'brightness', oninput: onTick('bright', brightLabel, (v) => v.toFixed(2))}),
       brightLabel),
     el('div', {class: 'row'},
       el('label', {text: 'Highlight recovery'}),
       el('input', {type: 'range', min: '0', max: '9', step: '1', value: highlight,
-                   'aria-label': 'highlight recovery', oninput: onTick('highlight', highlightLabel, String)}),
+                 'aria-label': 'highlight recovery', oninput: onTick('highlight', highlightLabel, String)}),
       highlightLabel),
     el('div', {class: 'row'},
       el('label', {text: 'White balance'}),
@@ -716,10 +716,20 @@ function renderRawSettingsBody(f, container) {
         type: 'number', step: '0.1', min: '0.1', class: 'wb-multiplier',
         value: values[`wb_${c}`] ?? DEFAULT_WB[c], 'aria-label': `white balance ${c}`,
         onchange: (e) => { values[`wb_${c}`] = Number(e.target.value); syncButtons(); schedulePreview(f); }}))) : null,
+    el('div', {class: 'row'},
+      el('label', {text: 'Exposure'}),
+      el('input', {type: 'range', min: '0.25', max: '8.0', step: '0.05', value: values.raw_exposure ?? 1.0,
+                 'aria-label': 'exposure', oninput: onTick('raw_exposure', el('span', {class: 'meta', text: ''}), (v) => v.toFixed(2))}),
+      el('span', {class: 'meta', text: values.raw_exposure?.toFixed(2) || '1.0'})),
+    el('div', {class: 'row'},
+      el('label', {text: 'Shadow pull'}),
+      el('input', {type: 'range', min: '0.0', max: '0.5', step: '0.01', value: values.raw_shadow ?? 0.0,
+                 'aria-label': 'shadow pull', oninput: onTick('raw_shadow', el('span', {class: 'meta', text: ''}), (v) => v.toFixed(2))}),
+      el('span', {class: 'meta', text: values.raw_shadow?.toFixed(2) || '0.0'})),
     el('div', {class: 'row'}, saveBtn, discardBtn,
       Object.values(values).every((v) => v == null) ? null : el('button', {
         text: 'Reset to default', onclick: () => {
-          Object.assign(values, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null});
+          Object.assign(values, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null, exposure: null, shadow: null});
           syncButtons();
           schedulePreview(f);
           renderRawSettingsBody(f, container);

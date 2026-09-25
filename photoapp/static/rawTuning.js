@@ -29,6 +29,11 @@ function mapSettings(values) {
   }
   if (values.raw_bright != null) settings.bright = values.raw_bright;
   if (values.raw_highlight != null) settings.highlight = values.raw_highlight;
+  if (values.raw_exposure != null) {
+    settings.expShift = values.raw_exposure;
+    settings.expCorrec = true;
+    settings.noAutoBright = true;
+  }
   return settings;
 }
 
