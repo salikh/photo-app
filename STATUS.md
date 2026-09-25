@@ -139,8 +139,18 @@ All ten build-order epics are done.
       replaces the old summary line with a grouped-header table (Queued, Running, Done/Failed per
       window).
 
-Still open (see `TODO.md` for where to resume): [115](docs/tickets/115.md),
-[117](docs/tickets/117.md), [119](docs/tickets/119.md), [120](docs/tickets/120.md).
+- [x] [121](docs/tickets/121.md) Enhancement: recenter loupe image and flip/tuning overlay when
+      files/tuning panel is open so neither the main photo nor comparison previews are obstructed
+      by the side panel. Also shifts the next button and busy spinner into the unobstructed area.
+
+- [x] [115](docs/tickets/115.md) Non-destructive crop mode (JPEG and RAW): normalized
+      `files.crop_x/y/w/h`, `photoapp/crop.py`, `POST /api/files/{id}/crop` (clears cached
+      thumbnails), Thumb/Small rendered cropped while Medium/Huge stay full with the cropped-out
+      area shaded in the loupe, plus an interactive crop rectangle with drag handles and
+      Save/Discard.
+
+Still open (see `TODO.md` for where to resume): [117](docs/tickets/117.md),
+[119](docs/tickets/119.md), [120](docs/tickets/120.md).
 
 ## Cross-cutting
 

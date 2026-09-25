@@ -9,16 +9,12 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-114, and 118 are done (see `STATUS.md`). What's left, in the order to pick it up:
+108-115, and 118 are done (see `STATUS.md`). What's left, in the order to pick it up:
 
-- [ ] [115](docs/tickets/115.md) Ready to start (unblocked by [116](docs/tickets/116.md) answer) — non-destructive
-      crop mode in photo editing.
 - [ ] [117](docs/tickets/117.md) Not started — multi-state filter buttons cycling =, >=, <= and 3-column
       filter selector in loupe mode.
 - [ ] [119](docs/tickets/119.md) Bug — tuned RAW rendering sometimes is not applied when switching images.
 - [ ] [120](docs/tickets/120.md) Bug — deletion confirmation page does not support "this folder and subfolders" mode.
-- [ ] [121](docs/tickets/121.md) Enhancement — recenter loupe image when files/tuning panel is open so it
-      is not obstructed by the side panel.
 
 ## Restart notes
 
