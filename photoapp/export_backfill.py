@@ -28,6 +28,7 @@ import re
 from absl import app
 from absl import flags
 from absl import logging
+import logging as py_logging
 from PIL import Image
 
 from photoapp import config  # noqa: F401  (defines the shared flags)
@@ -187,6 +188,9 @@ def run(conn, pictures_dir, thumbs_dir, distance_threshold=10, old_export_root=N
 def main(argv):
   if len(argv) != 1:
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
+  for module in ["TiffImagePlugin.py"]:
+    # Set the noisy module to WARNING or higher to silence its DEBUG/INFO logs
+    py_logging.getLogger(module.strip()).setLevel(logging.WARNING)
   settings = config.Settings.from_flags()
   conn = db.open_state(settings.state_dir, busy_timeout=120.0)
   run(conn, settings.pictures_dir, settings.thumbs_dir, FLAGS.dhash_distance)

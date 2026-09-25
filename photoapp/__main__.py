@@ -4,6 +4,7 @@ import uvicorn
 from absl import app
 from absl import flags
 from absl import logging
+import logging as py_logging
 
 from photoapp import api
 from photoapp import config
@@ -18,6 +19,9 @@ FLAGS = flags.FLAGS
 def main(argv):
   if len(argv) != 1:
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
+  for module in ["TiffImagePlugin.py"]:
+    # Set the noisy module to WARNING or higher to silence its DEBUG/INFO logs
+    py_logging.getLogger(module.strip()).setLevel(logging.WARNING)
   conn = db.open_state(FLAGS.state_dir)
   restored = manual_links.restore_if_empty(conn, FLAGS.state_dir)
   if restored:
