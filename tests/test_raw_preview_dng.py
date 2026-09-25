@@ -80,3 +80,25 @@ def test_real_dng_preview_is_cached_not_regenerated(tmp_path, monkeypatch):
 
   second = raw_preview_dng.ensure(thumbs_dir, str(pictures), "a.dng")
   assert second == first and os.path.getmtime(second) == mtime
+
+
+@_skip
+def test_real_dng_preview_preserves_orientation(tmp_path):
+  # Ticket 118: preview DNG must preserve orientation (tag 274 / sizes.flip)
+  # so LibRaw-Wasm on the client renders the preview in the correct orientation.
+  pictures = tmp_path / "pics"
+  os.makedirs(pictures)
+  shutil.copy(REAL_DNG, pictures / "a.dng")
+  thumbs_dir = str(tmp_path / "thumbs")
+  dest = raw_preview_dng.ensure(thumbs_dir, str(pictures), "a.dng")
+
+  with rawpy.imread(dest) as preview:
+    preview_flip = preview.sizes.flip
+    preview_shape = preview.postprocess(use_camera_wb=True).shape
+  with rawpy.imread(REAL_DNG) as original:
+    original_flip = original.sizes.flip
+    original_shape = original.postprocess(use_camera_wb=True).shape
+
+  assert preview_flip == original_flip
+  assert (preview_shape[0] > preview_shape[1]) == (original_shape[0] > original_shape[1])
+

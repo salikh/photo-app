@@ -55,6 +55,37 @@ def _make_model(source_path):
     return None, None
 
 
+FLIP_TO_ORIENTATION = {
+    0: 1,  # 0 deg
+    1: 2,  # flip H
+    2: 4,  # flip V
+    3: 3,  # 180 deg
+    4: 5,  # transpose
+    5: 8,  # 270 CW (90 CCW)
+    6: 6,  # 90 CW
+    7: 7,  # transverse
+}
+
+
+def _source_exif(source_path, raw):
+  """(Make, Model, Orientation) from the source's own EXIF (IFD0), with rawpy fallback."""
+  make = model = orient = None
+  try:
+    with Image.open(source_path) as img:
+      exif = img.getexif()
+      make, model = exif.get(271), exif.get(272)
+      o = exif.get(274)
+      if o in range(1, 9):
+        orient = o
+  except Exception as e:
+    logging.vlog(3, "%s: could not read EXIF: %s", source_path, e)
+
+  if orient is None:
+    orient = FLIP_TO_ORIENTATION.get(raw.sizes.flip, 1)
+
+  return make, model, orient
+
+
 def _bin_mosaic(img, factor):
   """Downsample a Bayer mosaic by factor, averaging same-CFA-position pixels together so the
   2x2 pattern stays intact and periodic (each of the 4 phases is binned independently)."""
@@ -115,10 +146,11 @@ def _generate(source_path, dest_path, max_dim=MAX_DIM):
           out.extend((round(v * denom), denom))
       return tuple(out)
 
-    make, model = _make_model(source_path)
+    make, model, orient = _source_exif(source_path, raw)
 
     extratags = [
         (254, "I", 1, (0,), False),                                    # NewSubfileType: main image
+        (274, "H", 1, (int(orient),), False),                           # Orientation (ticket 118)
         (33421, "H", 2, (2, 2), False),                                # CFARepeatPatternDim
         (33422, "B", 4, cfa_bytes, False),                             # CFAPattern
         (50706, "B", 4, (1, 4, 0, 0), False),                          # DNGVersion 1.4.0.0

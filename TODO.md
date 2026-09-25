@@ -59,7 +59,7 @@ context, the question, options if any, and an empty **Answer** section). The que
 closed and the blocked ticket continues (and its pointer moves to `STATUS.md`). A ticket is "actionable"
 when it has no open blocker.
 
-- [ ] [116](docs/tickets/116.md) **Open** — how should non-destructive crop interact with
+- [*] [116](docs/tickets/116.md) **Open** — how should non-destructive crop interact with
       thumbnail generation and exports? Blocks [115](docs/tickets/115.md).
 
 103 was answered 2026-09-24 (Option C, a downsampled still-mosaiced DNG via rawpy+tifffile, refined
@@ -69,3 +69,7 @@ from the user's initial Option B lean after checking what LibRaw-Wasm actually s
 
 To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want 1 star hidden), then open
 `http://<this machine>:8080/` on the phone or tablet.
+
+## Feature requests (to file new tickets)
+
+* When filter is to search by tag, and the tag starts with a dot ('.'), during scanning of the matching files include the dot-starting hidden directories. In other words, tags starting with a dot unhide the hidden directories. Also, for the files in a hidden directory, assume they are tagged with the tag equal to the hidden directory name, even if the tag is not written directly into the metadata.
