@@ -9,13 +9,8 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-110, 112, and 118 are done (see `STATUS.md`). What's left, in the order to pick it up:
+108-112, and 118 are done (see `STATUS.md`). What's left, in the order to pick it up:
 
-- [ ] [111](docs/tickets/111.md) Not started — full-scan metadata cache: per-directory
-      `index.json` + per-file `<name>.json`, plus new EXIF fields (focal length, camera make;
-      exif date/shutter/aperture/ISO already exist). The `index.json` machinery to reuse is in
-      `file_metadata.py`, not `image_metadata.py`. Opt-in flag, scanner must ignore the new JSON
-      files, directory-mtime fixup after writing.
 - [ ] [113](docs/tickets/113.md) Not started — active job reporting on the "Jobs" page (worker status
       and busy task detail).
 - [ ] [114](docs/tickets/114.md) Not started — recent job activity reporting columns on the "Jobs" page

@@ -520,9 +520,26 @@ function formatShutterSpeed(s) {
   return s >= 1 ? (Math.round(s * 10) / 10) + 's' : '1/' + Math.round(1 / s) + 's';
 }
 
-// Ticket 084: aperture/shutter speed/ISO/exif_date, one line, omitting whatever's absent.
+function formatFocalLength(mm) {
+  if (mm == null) return null;
+  const r = Math.round(mm);
+  return r + 'mm';
+}
+
+// Camera make + model, without repeating the make when the model already starts with it
+// (many cameras' Model is e.g. "PENTAX K-5", their Make "PENTAX").
+function formatCamera(make, model) {
+  make = make ? make.trim() : null; model = model ? model.trim() : null;
+  if (!model) return make;
+  if (make && !model.toLowerCase().startsWith(make.toLowerCase())) return make + ' ' + model;
+  return model;
+}
+
+// Tickets 084/111: camera (make/model), focal length, aperture/shutter speed/ISO and exif_date,
+// one line, omitting whatever's absent.
 function cameraMetaText(f) {
-  const parts = [formatAperture(f.aperture), formatShutterSpeed(f.shutter_speed),
+  const parts = [formatCamera(f.camera_make, f.camera_model), formatFocalLength(f.focal_length),
+                  formatAperture(f.aperture), formatShutterSpeed(f.shutter_speed),
                   f.iso != null ? 'ISO ' + Math.round(f.iso) : null, f.exif_date]
       .filter((p) => p != null);
   return parts.length ? parts.join('  ·  ') : null;

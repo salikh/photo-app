@@ -35,7 +35,8 @@ def test_undecodable_raw_yields_no_size_no_preview_and_unsupported(tmp_path):
   assert previews.render(raw) is None
   with pytest.raises(thumbs.Unsupported):
     thumbs.render(raw, str(tmp_path / "o.jpg"), 300)
-  mime, w, h, date, aperture, shutter_speed, iso = fileinfo.read_image_metadata(raw)
+  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model = \
+      fileinfo.read_image_metadata(raw)
   assert (w, h) == (None, None) or (w, h) == (w, h)   # never raises
 
 
@@ -58,15 +59,31 @@ def test_camera_metadata_extracted_from_exif(tmp_path):
   sub[0x829A] = (1, 250)       # ExposureTime
   sub[0x8827] = 400            # ISOSpeedRatings
   img.save(jpg, exif=exif)
-  mime, w, h, date, aperture, shutter_speed, iso = fileinfo.read_image_metadata(jpg)
+  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model = \
+      fileinfo.read_image_metadata(jpg)
   assert aperture == 2.8 and shutter_speed == 0.004 and iso == 400
+
+
+def test_lens_metadata_extracted_from_exif(tmp_path):
+  # ticket 111: FocalLength (Exif sub-IFD) and Make/Model (IFD0).
+  jpg = str(tmp_path / "a.jpg")
+  img = Image.new("RGB", (30, 20))
+  exif = img.getexif()
+  exif[0x010F] = "PENTAX"          # Make
+  exif[0x0110] = "PENTAX K-5"      # Model
+  sub = exif.get_ifd(0x8769)
+  sub[0x920A] = (50, 1)            # FocalLength
+  img.save(jpg, exif=exif)
+  *_, focal, make, model = fileinfo.read_image_metadata(jpg)
+  assert focal == 50.0 and make == "PENTAX" and model == "PENTAX K-5"
 
 
 def test_camera_metadata_absent_without_exif(tmp_path):
   jpg = str(tmp_path / "a.jpg")
   make_jpeg(jpg, size=(30, 20))   # no EXIF at all
-  *_, aperture, shutter_speed, iso = fileinfo.read_image_metadata(jpg)
+  *_, aperture, shutter_speed, iso, focal, make, model = fileinfo.read_image_metadata(jpg)
   assert (aperture, shutter_speed, iso) == (None, None, None)
+  assert (focal, make, model) == (None, None, None)
 
 
 REAL_DNG = os.environ.get("REAL_DNG")
@@ -88,10 +105,14 @@ def test_real_dng_camera_metadata(tmp_path):
   # representation _exif_rational_to_float needs to handle (see test_camera_metadata_extracted...
   # above for that one). A real RAW is expected to have at least ISO; aperture/shutter_speed
   # depend on the specific file, so only check the extraction does not raise and ISO is present.
-  *_, aperture, shutter_speed, iso = fileinfo.read_image_metadata(REAL_DNG)
+  *_, aperture, shutter_speed, iso, focal, make, model = fileinfo.read_image_metadata(REAL_DNG)
   assert iso is None or isinstance(iso, int)
   assert aperture is None or isinstance(aperture, float)
   assert shutter_speed is None or isinstance(shutter_speed, float)
+  # ticket 111: a real RAW's Make/Model and (usually) focal length come from the same EXIF parse.
+  assert focal is None or isinstance(focal, float)
+  assert make is None or isinstance(make, str)
+  assert model is None or isinstance(model, str)
 
 
 def test_migration_forces_reread_of_raw_rows(tmp_path):

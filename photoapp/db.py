@@ -228,6 +228,15 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN raw_noise INTEGER;
     ALTER TABLE files ADD COLUMN raw_demosaic INTEGER;
     """,
+    """
+    -- Ticket 111: focal length and camera make/model, alongside ticket 083's aperture/shutter/ISO.
+    -- focal_length is in millimetres (the EXIF FocalLength rational); camera_make/model are the
+    -- stripped IFD0 Make/Model strings. NULL when the file has no EXIF, or lacks that tag. Existing
+    -- rows are backfilled by a scan (or the metadata JSON cache) re-reading the file's EXIF.
+    ALTER TABLE files ADD COLUMN focal_length REAL;
+    ALTER TABLE files ADD COLUMN camera_make TEXT;
+    ALTER TABLE files ADD COLUMN camera_model TEXT;
+    """,
 ]
 
 

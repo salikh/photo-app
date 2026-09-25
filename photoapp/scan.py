@@ -21,6 +21,7 @@ from photoapp import db
 from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import manual_links
+from photoapp import metacache
 from photoapp import paths
 from photoapp import ratings
 from photoapp import thumbs
@@ -50,34 +51,40 @@ def _rel(pictures_dir, path):
 def _upsert_file(conn, rel_path, record):
   conn.execute(
       "INSERT INTO files (path, hash, mime_type, width, height, bytesize,"
-      " mtime, exif_date, aperture, shutter_speed, iso, missing) VALUES"
-      " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
+      " mtime, exif_date, aperture, shutter_speed, iso, focal_length,"
+      " camera_make, camera_model, missing) VALUES"
+      " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
       "ON CONFLICT(path) DO UPDATE SET hash = excluded.hash,"
       " mime_type = excluded.mime_type, width = excluded.width,"
       " height = excluded.height, bytesize = excluded.bytesize,"
       " mtime = excluded.mtime, exif_date = excluded.exif_date,"
       " aperture = excluded.aperture, shutter_speed = excluded.shutter_speed,"
-      " iso = excluded.iso, missing = 0",
+      " iso = excluded.iso, focal_length = excluded.focal_length,"
+      " camera_make = excluded.camera_make, camera_model = excluded.camera_model,"
+      " missing = 0",
       (rel_path, record["hash"], record["mime_type"], record["width"],
        record["height"], record["bytesize"], record["mtime"],
        record["exif_date"], record["aperture"], record["shutter_speed"],
-       record["iso"]))
+       record["iso"], record["focal_length"], record["camera_make"],
+       record["camera_model"]))
 
 
 def import_single_file(conn, pictures_dir, rel_path, hashes=None):
   """Read and upsert one already-on-disk file into `files` outside of a directory walk (ticket
-  099: a just-written export, known by path rather than discovered by os.walk) -- the same
+   099: a just-written export, known by path rather than discovered by os.walk) -- the same
   metadata extraction _scan_files does per file, without its directory-level batching. Returns
   the file's id. Does not group it into a Photo; call grouping.regroup afterwards for that."""
   full = os.path.join(pictures_dir, rel_path)
   st = os.stat(full)
-  mime_type, width, height, exif_date, aperture, shutter_speed, iso = (
-      fileinfo.read_image_metadata(full))
+  (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
+   focal_length, camera_make, camera_model) = fileinfo.read_image_metadata(full)
   file_hash = fileinfo.get_or_compute_hash(full, rel_path, st.st_mtime, hashes)
   _upsert_file(conn, rel_path, {
       "hash": file_hash, "mime_type": mime_type, "width": width, "height": height,
       "bytesize": st.st_size, "mtime": st.st_mtime, "exif_date": exif_date,
-      "aperture": aperture, "shutter_speed": shutter_speed, "iso": iso})
+      "aperture": aperture, "shutter_speed": shutter_speed, "iso": iso,
+      "focal_length": focal_length, "camera_make": camera_make,
+      "camera_model": camera_model})
   return conn.execute("SELECT id FROM files WHERE path = ?", (rel_path,)).fetchone()["id"]
 
 
@@ -100,14 +107,23 @@ def _lookup_files(conn, rel_dir, names, columns="id, path, mtime, bytesize, miss
 
 
 def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
-                progress, pool):
+                progress, pool, metadata_cache=False):
   """Read new or changed image files of one directory.
 
   The pool runs the per-file work (stat, decode, hash), which is dominated by
   network file system latency; database writes stay on this thread.
+
+  With metadata_cache (ticket 111), a file with a complete, still-valid record
+  in the directory's on-disk index.json is reused instead of decoded: only its
+  database row is refreshed from the record. A record that is still valid but
+  lacks a key added later (e.g. focal_length) is backfilled by re-reading just
+  that file's metadata, keeping its cached hash. Returns (changed, records):
+  records is {name: record} for every current image file (used to write the new
+  index.json), or {} when the cache is off.
   """
   changed = False
   known = _lookup_files(conn, rel_dir, filenames)
+  existing = metacache.load_records(dirpath) if metadata_cache else {}
 
   def work(name):
     filepath = os.path.join(dirpath, name)
@@ -120,27 +136,61 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
       return None
     rel_path = name if rel_dir == "." else f"{rel_dir}/{name}"
     old = known.get(rel_path)
+
+    if metadata_cache:
+      cached = existing.get(name)
+      cache_valid = (cached is not None and cached.get("mtime") == st.st_mtime
+                     and cached.get("bytesize") == st.st_size)
+      if cache_valid and metacache.has_all_keys(cached):
+        return name, rel_path, dict(cached), False
+      # Valid but incomplete (a key added later), or no usable record: re-read the metadata.
+      (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
+       focal_length, camera_make, camera_model) = fileinfo.read_image_metadata(filepath)
+      file_hash = None
+      if cache_valid and cached.get("hash") is not None:
+        file_hash = cached["hash"]
+      elif (old is not None and old["mtime"] == st.st_mtime
+            and old["bytesize"] == st.st_size and not old["missing"]):
+        file_hash = old["hash"]
+      if file_hash is None:
+        file_hash = fileinfo.get_or_compute_hash(
+            filepath, rel_path, st.st_mtime, hashes)
+      logging.vlog(7, "scanned %s (%s, %dx%d)", rel_path, mime_type, width, height)
+      return name, rel_path, {
+          "hash": file_hash, "mime_type": mime_type, "width": width,
+          "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
+          "exif_date": exif_date, "aperture": aperture,
+          "shutter_speed": shutter_speed, "iso": iso,
+          "focal_length": focal_length, "camera_make": camera_make,
+          "camera_model": camera_model}, True
+
     if (old is not None and old["mtime"] == st.st_mtime
         and old["bytesize"] == st.st_size and not old["missing"]):
       return None
-    mime_type, width, height, exif_date, aperture, shutter_speed, iso = (
-        fileinfo.read_image_metadata(filepath))
+    (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
+     focal_length, camera_make, camera_model) = fileinfo.read_image_metadata(filepath)
     file_hash = fileinfo.get_or_compute_hash(
         filepath, rel_path, st.st_mtime, hashes)
     logging.vlog(7, "scanned %s (%s, %dx%d)", rel_path, mime_type, width, height)
-    return rel_path, {
+    return name, rel_path, {
         "hash": file_hash, "mime_type": mime_type, "width": width,
         "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
         "exif_date": exif_date, "aperture": aperture,
-        "shutter_speed": shutter_speed, "iso": iso}
+        "shutter_speed": shutter_speed, "iso": iso,
+        "focal_length": focal_length, "camera_make": camera_make,
+        "camera_model": camera_model}, True
 
+  records = {}
   for result in pool.map(work, filenames):
     if result is None:
       continue
-    _upsert_file(conn, *result)
-    progress.files_processed += 1
-    changed = True
-  return changed
+    name, rel_path, record, was_read = result
+    records[name] = record
+    _upsert_file(conn, rel_path, record)
+    if was_read:
+      progress.files_processed += 1
+      changed = True
+  return changed, records
 
 
 def _sidecar_owners(image_names, sidecar_names):
@@ -239,7 +289,7 @@ def _load_known_sidecars(conn, rel_scan, recursive=True):
 
 
 def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
-                  thumbs_dir, on_done, pool):
+                  thumbs_dir, on_done, pool, metadata_cache=False):
   """One complete unit of work: read a subtree, then make it visible.
 
   Everything after the walk (grouping, ratings, thumbnails, missing files)
@@ -276,16 +326,25 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
     row = conn.execute(
         "SELECT mtime FROM dir_mtimes WHERE dirpath = ?",
         (rel_dir,)).fetchone()
-    if row is not None and row["mtime"] == mtime:
+    # Ticket 111: an unchanged directory still needs reprocessing when its metadata cache lacks a
+    # key added since it was written (e.g. focal_length), so that record can be backfilled.
+    if (row is not None and row["mtime"] == mtime
+        and not (metadata_cache and metacache.index_lacks_keys(dirpath, images))):
       progress.dirs_skipped += 1
       logging.vlog(7, "%s: unchanged, skipping (%d files)", rel_dir, len(images))
       sync_sidecars()
       continue
 
     logging.vlog(3, "scanning %s (%d files)", rel_dir, len(images))
-    if _scan_files(conn, pictures_dir, dirpath, rel_dir, images, hashes,
-                   progress, pool):
+    changed_files, records = _scan_files(
+        conn, pictures_dir, dirpath, rel_dir, images, hashes, progress, pool,
+        metadata_cache)
+    if changed_files:
       changed_dirs.add(rel_dir)
+    if metadata_cache:
+      # Writing the cache changes dirpath's mtime; write_index re-reads it after the write so the
+      # dir_mtimes row below records the directory's true final mtime and the next scan skips it.
+      mtime = metacache.write_dir(dirpath, mtime, records)
     sync_sidecars()
     conn.execute(
         "INSERT INTO dir_mtimes (dirpath, mtime) VALUES (?, ?) "
@@ -337,18 +396,21 @@ def _apply_grouping_rule_version(conn, rel_scan, recursive, whole_library):
 
 
 def scan(conn, pictures_dir, scan_dir=None, hashes=None, progress=None,
-         thumbs_dir=None, on_done=None, workers=8, recursive=True):
+         thumbs_dir=None, on_done=None, workers=8, recursive=True,
+         metadata_cache=False):
   """Scan scan_dir (default: pictures_dir) into conn. Returns the Progress.
 
   With thumbs_dir, thumbnails that already exist for new files are recorded.
   recursive=False reads only the files directly in scan_dir.
+  With metadata_cache (ticket 111), read and write the on-disk index.json /
+  per-file JSON cache described in photoapp/metacache.py.
   """
   progress = progress or Progress()
   progress.running = True
   pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, workers))
   try:
     _scan_subtree(conn, pictures_dir, scan_dir or pictures_dir, recursive,
-                  hashes, progress, thumbs_dir, on_done, pool)
+                  hashes, progress, thumbs_dir, on_done, pool, metadata_cache)
   except Exception as e:
     logging.exception("scan failed")
     progress.error = str(e)
@@ -373,7 +435,7 @@ def top_level_steps(pictures_dir):
 
 
 def scan_all(conn, pictures_dir, dirs=None, hashes=None, progress=None,
-             thumbs_dir=None, on_done=None, workers=8):
+             thumbs_dir=None, on_done=None, workers=8, metadata_cache=False):
   """Scan the library one top-level directory at a time.
 
   Each step is complete on its own (see _scan_subtree), so an interrupted
@@ -398,7 +460,7 @@ def scan_all(conn, pictures_dir, dirs=None, hashes=None, progress=None,
         logging.warning("skipping %s: not a directory", target)
       else:
         _scan_subtree(conn, pictures_dir, target, recursive, hashes, progress,
-                      thumbs_dir, on_done, pool)
+                      thumbs_dir, on_done, pool, metadata_cache)
       progress.steps_done += 1
       logging.info("done %s (%d/%d): %d files seen, %d read, %d sidecars, "
                    "peak memory %d MB", progress.current_dir, progress.steps_done,
@@ -449,13 +511,14 @@ class ScanManager:
   """Runs at most one scan at a time in a background thread."""
 
   def __init__(self, db_path, pictures_dir, hashes=None, thumbs_dir=None,
-               on_done=None, workers=8):
+               on_done=None, workers=8, metadata_cache=False):
     self._db_path = db_path
     self._pictures_dir = pictures_dir
     self._hashes = hashes
     self._thumbs_dir = thumbs_dir
     self._on_done = on_done
     self._workers = workers
+    self._metadata_cache = metadata_cache
     self._lock = threading.Lock()
     self._thread = None
     self.progress = Progress()
@@ -481,10 +544,12 @@ class ScanManager:
     try:
       if scan_dir == self._pictures_dir:
         scan_all(conn, self._pictures_dir, None, self._hashes, progress,
-                 self._thumbs_dir, self._on_done, self._workers)
+                 self._thumbs_dir, self._on_done, self._workers,
+                 self._metadata_cache)
       else:
         scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
-             self._thumbs_dir, self._on_done, self._workers)
+             self._thumbs_dir, self._on_done, self._workers,
+             metadata_cache=self._metadata_cache)
     finally:
       conn.close()
 

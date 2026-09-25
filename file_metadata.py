@@ -51,7 +51,6 @@ Usage:
         --hashes_db ~/zoo.db
 """
 
-import json
 import os
 import sqlite3
 
@@ -59,6 +58,7 @@ from absl import app
 from absl import flags
 from absl import logging
 
+from photoapp import metacache
 from photoapp.fileinfo import (
     IMAGE_EXTENSIONS, get_or_compute_hash, is_image, load_precomputed_hashes,
     read_exif_date_from_path, read_image_metadata)
@@ -81,8 +81,6 @@ flags.DEFINE_string(
     "matches the file's current mtime.")
 flags.mark_flag_as_required("db")
 flags.mark_flag_as_required("root_dir")
-
-_INDEX_JSON_NAME = "index.json"
 
 
 def create_tables(conn):
@@ -115,17 +113,6 @@ def get_cached_dir_mtime(conn, dirpath):
   return row[0] if row else None
 
 
-def load_existing_index(dirpath):
-  """Return {name: record} from dirpath's existing index.json, if any."""
-  index_path = os.path.join(dirpath, _INDEX_JSON_NAME)
-  try:
-    with open(index_path) as f:
-      data = json.load(f)
-  except (OSError, ValueError):
-    return {}
-  return data.get("files", {})
-
-
 def upsert_image_metadata(conn, rel_path, record):
   conn.execute(
       "INSERT INTO image_metadata "
@@ -151,7 +138,7 @@ def process_directory(conn, root_dir, dirpath, filenames, precomputed_hashes):
   index.json written for it.
   """
   rel_dir = os.path.relpath(dirpath, root_dir)
-  existing_index = load_existing_index(dirpath)
+  existing_index = metacache.load_records(dirpath)
   file_records = {}
 
   for name in filenames:
@@ -180,7 +167,7 @@ def process_directory(conn, root_dir, dirpath, filenames, precomputed_hashes):
       upsert_image_metadata(conn, rel_path, cached)
       continue
 
-    mime_type, width, height, exif_date = read_image_metadata(filepath)
+    mime_type, width, height, exif_date = read_image_metadata(filepath)[:4]
     file_hash = get_or_compute_hash(
         filepath, rel_path, file_mtime, precomputed_hashes)
 
@@ -220,30 +207,6 @@ def process_directory(conn, root_dir, dirpath, filenames, precomputed_hashes):
   return file_records
 
 
-def write_index_json(dirpath, dir_mtime, file_records):
-  """Write dirpath's index.json and return the directory's final mtime.
-
-  Writing the file can itself change dirpath's mtime (a new index.json
-  creates a new directory entry; overwriting an existing one usually
-  doesn't). The directory is re-stat-ed after writing, and if that
-  differs from dir_mtime, index.json is rewritten once more with the
-  corrected value, so the file and the caller's dir_mtimes cache both
-  end up agreeing with the directory's true final mtime.
-  """
-  index_path = os.path.join(dirpath, _INDEX_JSON_NAME)
-  data = {"mtime": dir_mtime, "files": file_records}
-  with open(index_path, "w") as f:
-    json.dump(data, f, indent=2, sort_keys=True)
-
-  final_mtime = os.stat(dirpath).st_mtime
-  if final_mtime != dir_mtime:
-    data["mtime"] = final_mtime
-    with open(index_path, "w") as f:
-      json.dump(data, f, indent=2, sort_keys=True)
-
-  return final_mtime
-
-
 def index_lacks_exif_date(dirpath, filenames):
   """True if dirpath's index.json has an image without an 'exif_date' key.
 
@@ -254,10 +217,7 @@ def index_lacks_exif_date(dirpath, filenames):
   image_names = [
       n for n in filenames
       if is_image(n) and os.path.isfile(os.path.join(dirpath, n))]
-  if not image_names:
-    return False
-  existing_index = load_existing_index(dirpath)
-  return any("exif_date" not in existing_index.get(n, {}) for n in image_names)
+  return metacache.index_lacks_keys(dirpath, image_names, ("exif_date",))
 
 
 def collect_metadata(conn, root_dir, scan_dir, precomputed_hashes):
@@ -273,7 +233,7 @@ def collect_metadata(conn, root_dir, scan_dir, precomputed_hashes):
     file_records = process_directory(
         conn, root_dir, dirpath, filenames, precomputed_hashes)
 
-    final_mtime = write_index_json(dirpath, current_mtime, file_records)
+    final_mtime = metacache.write_index(dirpath, current_mtime, file_records)
 
     conn.execute(
         "INSERT INTO dir_mtimes (dirpath, mtime) VALUES (?, ?) "

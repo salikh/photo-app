@@ -1,0 +1,134 @@
+"""On-disk metadata cache for the full scan (ticket 111).
+
+When enabled (``--write_metadata_json``), a scan writes into each directory:
+
+* ``index.json`` -- the directory's own mtime plus one record per image file
+  directly in it, and
+* ``<name>.json`` next to each image (``a.DNG`` -> ``a.DNG.json``) -- that one
+  file's record.
+
+A later scan of an unchanged directory or file can then answer from these files
+instead of decoding the image (and, when the database no longer has the row,
+instead of re-hashing it either). The database stays the source of truth: this
+is a cache the scan trusts and rebuilds, not something the app answers requests
+from.
+
+The validity rule is the same one the in-database ``dir_mtimes`` cache uses: a
+record is reused only when its recorded mtime *and* bytesize match the file on
+disk. A record from an older cache that lacks a key added later (for example
+``focal_length``) is backfilled by re-reading that file's EXIF; the directory is
+then reprocessed even though its own mtime is unchanged (see
+``index_lacks_keys``).
+
+Writing ``index.json`` (or a per-file JSON) changes the directory's mtime, which
+would make the next scan think the directory changed. ``write_index`` re-stats
+the directory after writing and, if the mtime moved, rewrites ``index.json``
+with the corrected value, so the file and the caller's ``dir_mtimes`` cache agree
+on the directory's true final mtime. This is lifted from the ``file_metadata.py``
+standalone tool, which has used exactly this scheme for hashes/size/dimensions.
+"""
+
+import json
+import os
+
+INDEX_JSON_NAME = "index.json"
+
+# Keys of a complete per-file cache record. ``mtime`` is the cache-validity key
+# itself; the rest are the metadata a scan stores in ``files``.
+REQUIRED_KEYS = (
+    "mime_type", "width", "height", "hash", "bytesize", "exif_date",
+    "aperture", "shutter_speed", "iso", "focal_length", "camera_make",
+    "camera_model",
+)
+RECORD_KEYS = REQUIRED_KEYS + ("mtime",)
+
+
+def index_path(dirpath):
+  return os.path.join(dirpath, INDEX_JSON_NAME)
+
+
+def record_path(dirpath, name):
+  return os.path.join(dirpath, name + ".json")
+
+
+def load_index(dirpath):
+  """The parsed index.json for dirpath as {'mtime': float, 'files': {...}}, or {}.
+
+  A missing or unreadable/malformed file is treated as no cache at all.
+  """
+  try:
+    with open(index_path(dirpath)) as f:
+      data = json.load(f)
+  except (OSError, ValueError):
+    return {}
+  return data if isinstance(data, dict) else {}
+
+
+def load_records(dirpath):
+  """{name: record} from dirpath's index.json, or {} if there is none."""
+  files = load_index(dirpath).get("files")
+  return files if isinstance(files, dict) else {}
+
+
+def has_all_keys(record, required_keys=REQUIRED_KEYS):
+  """True if record has every required key (a present None counts as present)."""
+  return all(k in record for k in required_keys)
+
+
+def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
+  """True if any of names lacks a complete record in dirpath's index.json.
+
+  A directory with no image names returns False (nothing to cache). If it has
+  image names but no index.json at all, every one of them "lacks" a record, so
+  this returns True and the directory is reprocessed.
+  """
+  names = list(names)
+  if not names:
+    return False
+  records = load_records(dirpath)
+  return any(not has_all_keys(records.get(n, {}), required_keys) for n in names)
+
+
+def write_record(dirpath, name, record):
+  """Write one file's per-file <name>.json."""
+  with open(record_path(dirpath, name), "w") as f:
+    json.dump(record, f, indent=2, sort_keys=True)
+
+
+def write_index(dirpath, dir_mtime, records):
+  """Write dirpath's index.json and return the directory's final mtime.
+
+  Writing the file can itself change dirpath's mtime (a new index.json creates a
+  new directory entry; overwriting an existing one usually doesn't). The
+  directory is re-stat-ed after writing and, if that differs from dir_mtime,
+  index.json is rewritten once more with the corrected value.
+  """
+  data = {"mtime": dir_mtime, "files": records}
+  with open(index_path(dirpath), "w") as f:
+    json.dump(data, f, indent=2, sort_keys=True)
+
+  final_mtime = os.stat(dirpath).st_mtime
+  if final_mtime != dir_mtime:
+    data["mtime"] = final_mtime
+    with open(index_path(dirpath), "w") as f:
+      json.dump(data, f, indent=2, sort_keys=True)
+  return final_mtime
+
+
+def write_dir(dirpath, dir_mtime, records):
+  """Write per-file JSONs plus index.json; return the directory's final mtime.
+
+  Per-file <name>.json files for images that are no longer in the directory are
+  removed (a stale cache file is harmless, but leaving it around is untidy and
+  would otherwise accumulate forever).
+  """
+  previous = load_records(dirpath)
+  for name, record in records.items():
+    write_record(dirpath, name, record)
+  for name in previous:
+    if name not in records:
+      try:
+        os.remove(record_path(dirpath, name))
+      except OSError:
+        pass
+  return write_index(dirpath, dir_mtime, records)

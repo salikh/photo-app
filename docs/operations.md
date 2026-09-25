@@ -17,6 +17,7 @@
 | `--job_workers` | 2 | background RAW render threads |
 | `--busy_retry_seconds` | 60 | how long the web app keeps retrying when another writer (a running scan) holds the database, before answering "database busy" |
 | `--scan_workers` | 8 | threads reading files during a scan (storage I/O is latency bound — `/zoo` is a local ZFS mirror on spinning disks, not a NAS despite earlier notes; see scanning.md) |
+| `--write_metadata_json` | off | scans write a per-directory `index.json` and a per-file `<name>.json` metadata cache into the library and reuse it, so an unchanged directory or file need not be decoded again (ticket 111). It **writes into the picture directories**; off by default |
 | `--port`, `--host` | 8080, 0.0.0.0 | LAN only, no authentication |
 | `--load_worker_enabled` | on | run the background thumbnail worker automatically when the machine is idle (ticket 073) |
 | `--load_check_seconds` | 30 | how often the load-adaptive worker samples CPU/memory load |
@@ -52,6 +53,23 @@ The same nightly enqueue also queues a `prune_jobs` job (ticket 075): it deletes
 than a week and `failed` jobs older than a year (failures are kept longer since one might still be
 worth a human noticing), keeping the Jobs page's history from growing forever. A job that succeeds
 also immediately deletes its own earlier failed attempts, rather than waiting for the next prune.
+
+## On-disk scan metadata cache (ticket 111)
+
+As of ticket 111, `--write_metadata_json` makes scans keep a metadata cache on disk next to the
+photos: a per-directory `index.json` (the directory's mtime plus one record per image directly in
+it) and a per-file `<name>.json` (for example `a.DNG.json`). The record holds what a scan would
+otherwise re-read: mime type, size, hash, mtime, and the EXIF date, aperture, shutter speed, ISO,
+focal length and camera make/model. A later scan of an unchanged directory or file then answers
+from the cache instead of decoding the image — useful after a database rebuild, when the database's
+own `dir_mtimes` no longer says the directory is current.
+
+It is **off by default because it writes into the picture directories** (`/zoo/Pictures`), which
+are otherwise read-only except sidecars and the Delete flow. The cache files are ignored by the
+scanner (never imported as photos or mistaken for sidecars), and writing one changes its
+directory's mtime, which the scan corrects for so an untouched directory is still skipped next
+time. The database stays the source of truth: deleting the JSON files (or turning the flag off
+again) loses only the shortcut, never data.
 
 ## A busy database
 

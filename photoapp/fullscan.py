@@ -59,7 +59,8 @@ def main(argv):
   scan.scan_all(conn, settings.pictures_dir, dirs=FLAGS.scan_dirs or None,
                 hashes=hashes, progress=progress, thumbs_dir=settings.thumbs_dir,
                 on_done=lambda c: recovery.recover(c, settings),
-                workers=settings.scan_workers)
+                workers=settings.scan_workers,
+                metadata_cache=settings.write_metadata_json)
   done.set()
   logging.info("finished: %s", progress)
   for table in ("files", "photos", "xmp_sidecars", "tags"):

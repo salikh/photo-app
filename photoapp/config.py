@@ -31,6 +31,11 @@ flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).
 flags.DEFINE_integer("nightly_scan_hour", 3, "Local hour (0-23) of the nightly rescan; -1 disables it.")
 flags.DEFINE_integer("scan_workers", 8, "Threads reading files during a scan (network file systems are latency bound).")
 flags.DEFINE_boolean(
+    "write_metadata_json", False,
+    "Scans write a per-directory index.json and a per-file <name>.json metadata cache into the "
+    "library and reuse them on later scans, so an unchanged directory or file need not be "
+    "decoded again (ticket 111). Off by default: it writes into the picture directories.")
+flags.DEFINE_boolean(
     "one_star_is_unrated", False,
     "Display-only: treat a 1-star rating as unrated (darktable's default on import "
     "is 1 star, 76% of this library's sidecars). Hides the 1-star badge, makes "
@@ -78,6 +83,7 @@ class Settings:
   job_workers: int = 2
   nightly_scan_hour: int = -1
   scan_workers: int = 8
+  write_metadata_json: bool = False
   busy_retry_seconds: float = 60.0
   one_star_is_unrated: bool = False
   load_worker_enabled: bool = True
@@ -101,6 +107,7 @@ class Settings:
         xmp_dry_run=f.xmp_dry_run, new_raw_sidecar_style=f.new_raw_sidecar_style,
         job_workers=f.job_workers, nightly_scan_hour=f.nightly_scan_hour,
         scan_workers=f.scan_workers, busy_retry_seconds=f.busy_retry_seconds,
+        write_metadata_json=f.write_metadata_json,
         one_star_is_unrated=f.one_star_is_unrated,
         load_worker_enabled=f.load_worker_enabled,
         load_check_seconds=f.load_check_seconds,

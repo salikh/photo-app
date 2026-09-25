@@ -129,7 +129,8 @@ def create_app(conn, settings):
   on_scan_done = lambda conn: recovery.recover(conn, settings)
   app.state.scanner = scan_lib.ScanManager(
       settings.db_path, settings.pictures_dir, hashes, settings.thumbs_dir,
-      on_done=on_scan_done, workers=settings.scan_workers)
+      on_done=on_scan_done, workers=settings.scan_workers,
+      metadata_cache=settings.write_metadata_json)
 
   def raw_render(conn, job):
     row = conn.execute("SELECT id, path FROM files WHERE id = ?",

@@ -122,8 +122,15 @@ All ten build-order epics are done.
       generated preview DNG, defaulting LibRaw-Wasm's flip to 0 (landscape). Now preserves EXIF
       orientation tag (falling back to LibRaw's `sizes.flip`), so client renders in matching orientation.
 
-Still open (see `TODO.md` for where to resume): [111](docs/tickets/111.md) (full-scan `index.json`
-/ per-file JSON metadata cache, not started).
+- [x] [111](docs/tickets/111.md) Full-scan metadata cache: opt-in `--write_metadata_json` writes a
+      per-directory `index.json` and per-file `<name>.json` next to each image, reused on a later
+      scan (even after the database is rebuilt); new EXIF fields focal length and camera make/model
+      (three new `files` columns) shown in the Files panel. Machinery lifted into
+      `photoapp/metacache.py` (shared with `file_metadata.py`), scanner ignores the JSON files, and
+      the directory mtime is corrected after writing so an untouched directory still skips.
+
+Still open (see `TODO.md` for where to resume): [113](docs/tickets/113.md)-[115](docs/tickets/115.md),
+[117](docs/tickets/117.md), [119](docs/tickets/119.md), [120](docs/tickets/120.md).
 
 ## Cross-cutting
 
