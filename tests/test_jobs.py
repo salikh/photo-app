@@ -173,6 +173,55 @@ def test_queue_can_be_restarted_after_stop(settings):
   assert seen == [1, 2]
 
 
+def test_active_reports_the_running_job_and_its_duration(settings):
+  # ticket 113.
+  db.open_state(settings.state_dir).close()
+  started, release = threading.Event(), threading.Event()
+
+  def blocking(conn, job):
+    started.set()
+    assert release.wait(10)
+
+  q = jobs.JobQueue(settings.db_path, {"block": blocking}, workers=1)
+  q.enqueue("block", 5)
+  assert q.active() == {"busy": False, "running": []}   # queued: no worker is busy yet
+  q.start()
+  try:
+    assert started.wait(5)
+    a = q.active()
+    assert a["busy"] and len(a["running"]) == 1
+    r = a["running"][0]
+    assert r["kind"] == "block" and r["file_id"] == 5 and r["target"] is None
+    assert r["started_at"] and r["duration_seconds"] is not None
+  finally:
+    release.set()
+    assert q.wait_idle(10)
+    q.stop()
+  assert q.active() == {"busy": False, "running": []}
+  done = {j_["kind"]: j_ for j_ in q.list()}["block"]
+  assert done["started_at"] and done["finished_at"]
+
+
+def test_active_resolves_a_jobs_file_path(settings):
+  conn = db.open_state(settings.state_dir)
+  conn.execute("INSERT INTO files (id, path, mtime) VALUES (9, '2020/a.jpg', 1)")
+  conn.commit()
+  q = jobs.JobQueue(settings.db_path, {"render": lambda c, j: None}, workers=1)
+  q.enqueue("render", 9)
+  conn.execute("UPDATE jobs SET state = 'running', started_at = '2000-01-01T00:00:00'")
+  conn.commit()
+  a = q.active()
+  assert a["running"][0]["path"] == "2020/a.jpg" and a["running"][0]["duration_seconds"] > 0
+
+
+def test_api_jobs_reports_active_state(settings):
+  conn = db.open_state(settings.state_dir)
+  app = api.create_app(conn, settings)
+  client = TestClient(app)
+  data = client.get("/api/jobs").json()
+  assert data["active"] == {"busy": False, "running": []}
+
+
 def test_progress_buckets_by_finished_at(settings):
   import datetime
 

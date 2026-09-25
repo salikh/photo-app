@@ -237,6 +237,12 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN camera_make TEXT;
     ALTER TABLE files ADD COLUMN camera_model TEXT;
     """,
+    """
+    -- Ticket 113: when a worker claimed the job (running), so the Jobs page can show what the
+    -- worker is busy with and for how long. NULL for queued/done/failed jobs and for rows that
+    -- predate this column (their duration falls back to created_at until they run again).
+    ALTER TABLE jobs ADD COLUMN started_at TEXT;
+    """,
 ]
 
 

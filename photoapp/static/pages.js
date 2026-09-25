@@ -68,12 +68,31 @@ function completedLine(label, text, completed) {
   return `${text}: ${c.done} done, ${c.failed} failed`;
 }
 
+function fmtDuration(seconds) {
+  if (seconds == null) return null;
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+// ticket 113: one line saying whether a worker is busy, and what it is working on.
+function workerStatusText(active) {
+  if (!active || !active.busy) return 'Worker: Idle';
+  const items = active.running.map((r) => {
+    const what = r.path || (r.target ? `folder ${r.target}` : null) || `file #${r.file_id}`;
+    const since = fmtDuration(r.duration_seconds);
+    return `${r.kind} ${what}${since ? ` (${since})` : ''}`;
+  });
+  return `Worker: Active — ${items.join('; ')}`;
+}
+
 export async function jobsPage(main) {
   const j = await get('/api/jobs');
   const p = j.progress;
   const kinds = Object.keys(p.by_kind).sort();
   main.replaceChildren(
     el('h2', {text: 'Background jobs'}),
+    el('p', {class: 'status ' + (j.active && j.active.busy ? 'ok' : ''), text: workerStatusText(j.active)}),
     el('p', {class: 'status', text:
       `Total: ${p.total} (all time so far)   Incomplete: ${p.incomplete}`}),
     el('p', {class: 'status', text: [

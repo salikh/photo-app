@@ -129,7 +129,12 @@ All ten build-order epics are done.
       `photoapp/metacache.py` (shared with `file_metadata.py`), scanner ignores the JSON files, and
       the directory mtime is corrected after writing so an untouched directory still skips.
 
-Still open (see `TODO.md` for where to resume): [113](docs/tickets/113.md)-[115](docs/tickets/115.md),
+- [x] [113](docs/tickets/113.md) Active job reporting on the Jobs page: nullable `jobs.started_at`
+      set when a worker claims a job (cleared when a restart requeues it), `JobQueue.active()`
+      returning busy state plus every running job's kind/path/start/duration, exposed on
+      `/api/jobs`, and a `Worker: Idle` / `Worker: Active — …` status line on the Jobs page.
+
+Still open (see `TODO.md` for where to resume): [114](docs/tickets/114.md)-[115](docs/tickets/115.md),
 [117](docs/tickets/117.md), [119](docs/tickets/119.md), [120](docs/tickets/120.md).
 
 ## Cross-cutting

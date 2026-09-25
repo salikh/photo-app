@@ -218,6 +218,7 @@ def create_app(conn, settings):
   @db_route
   def list_jobs(limit: int = 100):
     return {"counts": app.state.jobs.counts(),
+            "active": app.state.jobs.active(),
             "progress": app.state.jobs.progress(),
             "jobs": app.state.jobs.list(min(limit, 500))}
 

@@ -108,6 +108,33 @@ class JobQueue:
   # Time buckets for progress(); (label, seconds) pairs, ticket 074.
   _COMPLETED_WINDOWS = (("last_minute", 60), ("last_hour", 3600), ("last_day", 86400))
 
+  def active(self):
+    """What the workers are busy with right now (ticket 113), across every kind in the shared
+    table: {'busy': bool, 'running': [{id, kind, file_id, target, path, created_at, started_at,
+    duration_seconds}]}. duration_seconds is measured from started_at (created_at for a row that
+    predates that column), or None if neither parses."""
+    now = datetime.datetime.now()
+    with self._conn_lock:
+      rows = list(self._conn.execute(
+          "SELECT j.id, j.kind, j.file_id, j.target, j.created_at, j.started_at,"
+          " f.path AS file_path FROM jobs j LEFT JOIN files f ON f.id = j.file_id"
+          " WHERE j.state = 'running' ORDER BY j.id"))
+    running = []
+    for r in rows:
+      started = r["started_at"] or r["created_at"]
+      duration = None
+      if started:
+        try:
+          duration = max(0.0, (now - datetime.datetime.fromisoformat(started)).total_seconds())
+        except ValueError:
+          duration = None
+      running.append({
+          "id": r["id"], "kind": r["kind"], "file_id": r["file_id"],
+          "target": r["target"], "path": r["file_path"],
+          "created_at": r["created_at"], "started_at": r["started_at"],
+          "duration_seconds": round(duration, 1) if duration is not None else None})
+    return {"busy": bool(running), "running": running}
+
   def progress(self):
     """A summary for the Jobs page (ticket 074): total, incomplete, a per-kind breakdown of
     every state, and how many done/failed jobs finished in the last minute/hour/day. Spans every
@@ -144,7 +171,7 @@ class JobQueue:
     # over the life of one process, unlike every other caller, which starts it once.
     self._stop.clear()
     with self._conn_lock:
-      self._conn.execute("UPDATE jobs SET state = 'queued' "
+      self._conn.execute("UPDATE jobs SET state = 'queued', started_at = NULL "
                          "WHERE state = 'running'")
       self._conn.commit()
     for i in range(self._workers):
@@ -174,8 +201,8 @@ class JobQueue:
         f"SELECT * FROM jobs WHERE state = 'queued' AND kind IN "
         f"({placeholders}) ORDER BY {order} LIMIT 1", kinds).fetchone()
     if row:
-      conn.execute("UPDATE jobs SET state = 'running' WHERE id = ?",
-                   (row["id"],))
+      conn.execute("UPDATE jobs SET state = 'running', started_at = ? WHERE id = ?",
+                   (_now(), row["id"]))
     conn.commit()
     return row
 
