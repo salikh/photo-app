@@ -103,6 +103,10 @@ All ten build-order epics are done.
       same way `saveRawSettings` already did for the loupe's own main image (user bug report
       2026-09-25)
 
+Still open (see `TODO.md` for where to resume): [109](docs/tickets/109.md) (exposure and
+shadow-pull RAW parameters — backend half committed as WIP, API/client/tests remain) and
+[111](docs/tickets/111.md) (full-scan `index.json` / per-file JSON metadata cache, not started).
+
 ## Cross-cutting
 
 - [x] [040](docs/tickets/040.md) Test infrastructure and fixtures

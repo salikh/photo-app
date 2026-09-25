@@ -8,11 +8,44 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-All ten build-order epics, v1 filtering, every cross-cutting ticket, and epic 102 (103-107) are
-done (see `STATUS.md`). What's left:
+All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
+108 and 110 are done (see `STATUS.md`). What's left, in the order to pick it up:
 
-- [ ] [109](docs/tickets/109.md) Exposure and shadow-pull correction as tunable RAW conversion
-      parameters (user request 2026-09-25) — filed only, not yet implemented
+- [ ] [109](docs/tickets/109.md) **In progress** — exposure and shadow-pull as tunable RAW
+      conversion parameters (user request 2026-09-25). The backend half is written and committed
+      as WIP (migration, `raw_settings.py`, `previews.py`); still to do: `api.py`, `rawTuning.js`
+      (+ verifying `expShift`/`noAutoBright` in the real LibRaw-Wasm build), the two `loupe.js`
+      sliders, updating/adding tests, docs. **Two existing tests fail until the tests are updated**
+      (`tests/test_raw_settings.py`, `tests/test_more_api.py` assert the exact 6-column dict).
+      Technique decisions are already made and verified on a real DNG — see the ticket's "Decisions
+      made" and "Progress" sections; do not redo the toe-slope experiment (it was rejected).
+- [ ] [111](docs/tickets/111.md) Not started — full-scan metadata cache: per-directory
+      `index.json` + per-file `<name>.json`, plus new EXIF fields (focal length, camera make;
+      exif date/shutter/aperture/ISO already exist). The `index.json` machinery to reuse is in
+      `file_metadata.py`, not `image_metadata.py`. Opt-in flag, scanner must ignore the new JSON
+      files, directory-mtime fixup after writing.
+
+## Restart notes
+
+- Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
+  <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
+  `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
+- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 300 tests, ~30 s) and
+  `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
+  (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
+  never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing.
+- The machine is often under memory pressure (a `./start.sh` instance of the app runs alongside).
+  Known-flaky e2e tests, not regressions: `test_delete_this_file_button_shows_modal_and_moves_to_trash`
+  and `test_delete_this_file_modal_cancel_leaves_file_untouched` (30 s click-stability timeout), and
+  occasionally the first test of a small `-k` selection (e.g. `test_raw_settings_are_provisional_
+  until_save`); rerun to confirm before chasing. Full-size `rawpy.postprocess()` on the real DNG can
+  take minutes under load — use `half_size=True` for quick checks.
+- RAW tuning architecture (epic 102, done): `raw_preview_dng.py` generates a downsampled mosaiced
+  preview DNG (needs the source's real Make/Model and a `BlackLevelRepeatDim` tag, see its
+  comments); `static/rawTuning.js` renders it locally with the vendored LibRaw-Wasm; `previews.py`
+  renders the committed thumbnails server-side. Any new tuning parameter must be added to **both**
+  `previews._postprocess_kwargs` and `rawTuning.mapSettings` and verified against a real RAW file
+  (that is how the two DNG bugs in 106 were found).
 
 ## Question tickets (waiting on the user)
 
