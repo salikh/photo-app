@@ -1049,6 +1049,47 @@ def test_filter_buttons_show_the_right_photos_and_keep_state(page, server):
   assert "filter=picked" in page.url
 
 
+def test_star_button_cycles_exactly_at_least_at_most(page, server):
+  # ticket 117: a star button cycles = -> >= -> <= -> =; a different star starts at exactly N.
+  ids = photo_ids(server)
+  for pid, r in ((ids[3], 2), (ids[4], 4)):
+    urllib.request.urlopen(urllib.request.Request(
+        f"{server.url}/api/photos/{pid}/rating", data=json.dumps({"rating": r}).encode(),
+        headers={"Content-Type": "application/json"}))
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  star4 = page.locator(".filters button").nth(6)      # 0 all, 1 rejected, 2 unrated, 3..7 ★1..★5
+  star4.click()                                        # =4
+  expect(star4).to_have_class(ON)
+  expect(page.locator(".cell")).to_have_count(2)       # IMG_0002 and IMG_0005
+  assert "filter=rating%3A4" in page.url
+  star4.click()                                        # >=4
+  assert "filter=rating%3E%3D4" in page.url
+  expect(page.locator(".cell")).to_have_count(2)
+  star4.click()                                        # <=4
+  assert "filter=rating%3C%3D4" in page.url
+  expect(page.locator(".cell")).to_have_count(3)       # the 2- and 4-star photos, not rejected/unrated
+  star4.click()                                        # back to =4
+  assert "filter=rating%3A4" in page.url
+  page.locator(".filters button").nth(5).click()       # a different star: exactly 3
+  assert "filter=rating%3A3" in page.url
+  expect(page.locator(".cell")).to_have_count(0)
+
+
+def test_loupe_filter_picker_star_grid(page, server):
+  # ticket 117: the loupe picker shows <= N / = N / >= N for each star value.
+  open_loupe(page, server, 1)                          # IMG_0002, 4 stars
+  page.locator(".hud .filter-tag").click()
+  expect(page.locator(".filter-picker .filter-star-row")).to_have_count(5)
+  for f in ("rating<=3", "rating:3", "rating>=3"):
+    expect(page.locator(f'.filter-picker .filter-option[data-filter="{f}"]')).to_be_visible()
+  expect(page.locator('.filter-picker .filter-option[data-filter="rating>=5"]')).to_be_disabled()
+  page.locator('.filter-picker .filter-option[data-filter="rating>=2"]').click()
+  assert "filter=rating%3E%3D2" in page.url
+  expect(page.locator(".hud .filter-tag")).to_contain_text("★≥2")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0002")
+
+
 def add_tag(page, server, index, tag):
   ids = open_loupe(page, server, index)
   page.keyboard.press("t")
@@ -2276,7 +2317,7 @@ def test_switch_filter_from_loupe_keeps_the_same_photo_and_updates_context(page,
 
   page.locator(".hud .filter-tag").click()
   expect(page.locator(".filter-picker")).to_be_visible()
-  expect(page.locator(".filter-picker .filter-option", has_text="★5")).to_be_disabled()   # doesn't match
+  expect(page.locator('.filter-picker .filter-option[data-filter="rating>=5"]')).to_be_disabled()   # doesn't match
 
   page.locator(".filter-picker .filter-option", has_text="Unrated").click()
   expect(page.locator(".filter-picker")).to_have_count(0)       # closes after picking
@@ -2291,7 +2332,7 @@ def test_filter_switcher_disabled_option_does_nothing_and_escape_closes_the_pane
   open_loupe(page, server, 0)                                   # IMG_0001, unrated
   page.locator(".hud .filter-tag").click()
   expect(page.locator(".filter-picker")).to_be_visible()
-  page.locator(".filter-picker .filter-option", has_text="★5").click(force=True)
+  page.locator('.filter-picker .filter-option[data-filter="rating>=5"]').click(force=True)
   expect(page.locator(".filter-picker")).to_be_visible()        # disabled: nothing happened
   expect(page.locator(".hud .pos")).to_have_text("1/6")          # still unfiltered
   page.keyboard.press("Escape")

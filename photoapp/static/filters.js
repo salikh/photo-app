@@ -29,10 +29,41 @@ export function primary() {
 
 export function more() { return MORE; }
 
+// Ticket 117: the star values that get a button/row (1 is skipped when 1 star counts as unrated).
+export function starValues() {
+  const values = [];
+  for (let n = 1; n <= 5; n++) {
+    if (n === 1 && isOneStarUnrated()) continue;
+    values.push(n);
+  }
+  return values;
+}
+
+// The state a star button shows for the current filter: the active comparator (or the plain
+// exactly-N state when this star isn't the active one).
+export function starButtonState(current, n) {
+  for (const [prefix, label] of [['rating>=', `★≥${n}`], ['rating<=', `★≤${n}`], ['rating:', `★${n}`]]) {
+    if (current === prefix + n) return {filter: current, active: true, label};
+  }
+  return {filter: `rating:${n}`, active: false, label: `★${n}`};
+}
+
+// The next state when the same star button is clicked again: = -> >= -> <= -> = (ticket 117).
+export function nextStarFilter(current, n) {
+  if (current === `rating:${n}`) return `rating>=${n}`;
+  if (current === `rating>=${n}`) return `rating<=${n}`;
+  if (current === `rating<=${n}`) return `rating:${n}`;
+  return `rating:${n}`;   // any other filter (or a different star): start at exactly N
+}
+
 // Short text for the current filter (loupe HUD, status line).
 export function label(filter) {
   const found = primary().find((b) => b[0] === filter) || MORE.find((m) => m[0] === filter);
   if (found) return found[1];
+  const ge = /^rating>=([1-5])$/.exec(filter || '');
+  if (ge) return `★≥${ge[1]}`;
+  const le = /^rating<=([1-5])$/.exec(filter || '');
+  if (le) return `★≤${le[1]}`;
   const t = /^tag:(.+)$/.exec(filter || '');
   return t ? `tag: ${t[1]}` : filter;
 }
@@ -51,8 +82,12 @@ export function matches(photo, filter) {
     case 'fav': return !!photo.fav;
     case 'conflict': return !!photo.conflict;
     default: {
-      const m = /^rating:([1-5])$/.exec(filter || '');
-      if (m) return r === Number(m[1]);
+      const eq = /^rating:([1-5])$/.exec(filter || '');
+      if (eq) return r === Number(eq[1]);
+      const ge = /^rating>=([1-5])$/.exec(filter || '');
+      if (ge) return r >= Number(ge[1]);
+      const le = /^rating<=([1-5])$/.exec(filter || '');
+      if (le) return r >= 1 && r <= Number(le[1]);
       const t = /^tag:(.+)$/.exec(filter || '');
       return !!t && (photo.tags || []).includes(t[1]);
     }

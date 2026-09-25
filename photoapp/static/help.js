@@ -7,7 +7,7 @@ import {el} from './util.js';
 
 const BROWSE = [
   ['Shift+A', 'filter: All'], ['Shift+X', 'filter: Rejected'], ['Shift+0', 'filter: Unrated'],
-  ['Shift+1..5', 'filter: exactly N stars'],
+  ['Shift+1..5', 'filter: exactly N stars (click a star button again to cycle ≥ / ≤)'],
   ['U', 'undo'], ['Esc', 'clear selection'],
 ];
 const VIEWER = [

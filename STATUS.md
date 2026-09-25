@@ -149,8 +149,13 @@ All ten build-order epics are done.
       area shaded in the loupe, plus an interactive crop rectangle with drag handles and
       Save/Discard.
 
-Still open (see `TODO.md` for where to resume): [117](docs/tickets/117.md),
-[119](docs/tickets/119.md), [120](docs/tickets/120.md).
+- [x] [117](docs/tickets/117.md) Multi-state star filters: `rating>=N`/`rating<=N` over the 1..5
+      star scale (server + `filters.matches`), grid star buttons cycling `=`/`≥`/`≤` with the
+      label/count following the state, and a 3-column `≤ N`/`= N`/`≥ N` grid per star value in the
+      loupe filter picker.
+
+Still open (see `TODO.md` for where to resume): [119](docs/tickets/119.md),
+[120](docs/tickets/120.md).
 
 ## Cross-cutting
 

@@ -7,7 +7,7 @@ import {href} from './route.js';
 import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {attachSwipe} from './gestures.js';
-import {label as filterLabel, primary as filterPrimary} from './filters.js';
+import {label as filterLabel, primary as filterPrimary, starValues} from './filters.js';
 import * as preloader from './preload.js';
 import {createFilmstrip} from './filmstrip.js';
 import {createZoom} from './zoom.js';
@@ -1053,18 +1053,27 @@ function closeFiles() {
 
 function renderFilterPanel() {
   const photo = current();
+  const option = (value, text) => {
+    const active = state.route.filter === value;
+    const ok = matches(photo, value);
+    const count = state.counts ? state.counts[value] : null;
+    return el('button', {
+      class: 'filter-option' + (active ? ' on' : ''),
+      dataset: {filter: value},
+      disabled: !ok,
+      title: ok ? null : 'this photo does not match this filter',
+      onclick: ok ? () => switchFilterTo(value) : null,
+    }, el('span', {class: 'lbl', text}), count != null ? el('span', {class: 'n', text: String(count)}) : null);
+  };
   ui.filterPanel = el('div', {class: 'filter-picker', onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation()},
-    filterPrimary().map(([value, text]) => {
-      const active = state.route.filter === value;
-      const ok = matches(photo, value);
-      const count = state.counts ? state.counts[value] : null;
-      return el('button', {
-        class: 'filter-option' + (active ? ' on' : ''),
-        disabled: !ok,
-        title: ok ? null : 'this photo does not match this filter',
-        onclick: ok ? () => switchFilterTo(value) : null,
-      }, el('span', {class: 'lbl', text}), count != null ? el('span', {class: 'n', text: String(count)}) : null);
-    }));
+    el('div', {class: 'filter-row'},
+      filterPrimary().filter(([value]) => !/^rating:/.test(value))
+        .map(([value, text]) => option(value, text))),
+    // Ticket 117: a 3-column grid per star value -- <= N, = N, >= N (ticket 092's panel, extended).
+    el('div', {class: 'filter-grid'},
+      starValues().map((n) => el('div', {class: 'filter-star-row'},
+        el('span', {class: 'star-lbl', text: `★${n}`}),
+        option(`rating<=${n}`, '≤'), option(`rating:${n}`, '='), option(`rating>=${n}`, '≥')))));
   ui.stage.append(ui.filterPanel);
 }
 

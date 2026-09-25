@@ -10,7 +10,9 @@ from photoapp import paths
 from photoapp import raw_settings
 
 FILTERS = ("all", "unrated", "rejected", "picked", "rated", "fav", "conflict")
-RATING_FILTER_RE = re.compile(r"^rating:([1-5])$")   # exactly N stars
+RATING_FILTER_RE = re.compile(r"^rating:([1-5])$")    # exactly N stars
+RATING_GE_RE = re.compile(r"^rating>=([1-5])$")       # N stars or more
+RATING_LE_RE = re.compile(r"^rating<=([1-5])$")       # N stars or fewer
 TAG_FILTER_RE = re.compile(r"^tag:(.+)$")            # exactly one tag, e.g. "tag:vacation"
 SORTS = ("date", "name")
 
@@ -36,12 +38,14 @@ _FILTER_SQL_ONE_STAR_UNRATED = dict(
 def filter_condition(name, one_star_is_unrated=False):
   """(sql, params) condition (on photos p) for a filter name; ValueError if unknown.
 
-  Names: FILTERS, 'rating:N' for exactly N stars (N in 1..5), and 'tag:NAME' for
-  exactly one tag (ticket 087). With one_star_is_unrated there is no 'rating:1'
-  (1 star counts as unrated). A tag name is arbitrary free text (docs/design/
-  databases.md's tags table has no controlled vocabulary), so it comes back as a
-  '?' placeholder + param rather than embedded in the SQL string, unlike the
-  fixed/rating conditions -- those never carry attacker-controlled text.
+  Names: FILTERS, 'rating:N' for exactly N stars, 'rating>=N' for N or more and
+  'rating<=N' for N or fewer (N in 1..5; the comparators are over the 1..5 star
+  scale, so they exclude unrated (0) and rejected (-1), which have their own
+  filters -- ticket 117), and 'tag:NAME' for exactly one tag (ticket 087). With
+  one_star_is_unrated there is no 'rating:1'. A tag name is arbitrary free text
+  (docs/design/databases.md's tags table has no controlled vocabulary), so it
+  comes back as a '?' placeholder + param rather than embedded in the SQL string,
+  unlike the fixed/rating conditions -- those never carry attacker-controlled text.
   """
   filters = _FILTER_SQL_ONE_STAR_UNRATED if one_star_is_unrated else _FILTER_SQL
   if name in filters:
@@ -49,10 +53,17 @@ def filter_condition(name, one_star_is_unrated=False):
   m = RATING_FILTER_RE.match(name or "")
   if m and not (one_star_is_unrated and m.group(1) == "1"):
     return f"p.rating = {int(m.group(1))}", ()
+  m = RATING_GE_RE.match(name or "")
+  if m:
+    return f"p.rating >= {int(m.group(1))}", ()
+  m = RATING_LE_RE.match(name or "")
+  if m:
+    return f"p.rating >= 1 AND p.rating <= {int(m.group(1))}", ()
   m = TAG_FILTER_RE.match(name or "")
   if m:
     return "EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?)", (m.group(1),)
-  raise ValueError(f"filter must be one of {FILTERS}, rating:1..5, or tag:NAME")
+  raise ValueError(
+      f"filter must be one of {FILTERS}, rating:1..5, rating>=1..5, rating<=1..5, or tag:NAME")
 
 
 def _prefix_range(rel_dir):
@@ -173,7 +184,9 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
 
 
 COUNT_FILTERS = ("all", "unrated", "rejected", "rating:1", "rating:2", "rating:3", "rating:4",
-                 "rating:5", "picked", "rated", "fav", "conflict")
+                 "rating:5", "rating>=1", "rating>=2", "rating>=3", "rating>=4", "rating>=5",
+                 "rating<=1", "rating<=2", "rating<=3", "rating<=4", "rating<=5",
+                 "picked", "rated", "fav", "conflict")
 
 
 def filter_counts(conn, rel_dir=".", one_star_is_unrated=False, recursive=False):

@@ -47,10 +47,25 @@ function filterRow(route) {
   const extra = filters.more();
   const inMore = extra.some(([v]) => v === route.filter);
   return el('div', {class: 'filters', role: 'group', 'aria-label': 'filter'},
-    filters.primary().map(([value, text, title]) => el('button', {
-      title, class: route.filter === value ? 'on' : '', 'aria-pressed': route.filter === value,
-      dataset: {filter: value}, onclick: () => go(value),
-    }, el('span', {class: 'lbl', text}), el('span', {class: 'n'}))),
+    filters.primary().map(([value, text, title]) => {
+      const m = /^rating:([1-5])$/.exec(value);
+      if (!m) {
+        return el('button', {
+          title, class: route.filter === value ? 'on' : '', 'aria-pressed': route.filter === value,
+          dataset: {filter: value}, onclick: () => go(value),
+        }, el('span', {class: 'lbl', text}), el('span', {class: 'n'}));
+      }
+      // Ticket 117: a star button cycles = -> >= -> <= -> = when clicked again; clicking a
+      // different star (or any other filter) starts at exactly N.
+      const n = Number(m[1]);
+      const s = filters.starButtonState(route.filter, n);
+      return el('button', {
+        title: `click to cycle exactly / at least / at most ${n} star${n > 1 ? 's' : ''} ` +
+               `(Shift+${n} for exactly ${n})`,
+        class: s.active ? 'on' : '', 'aria-pressed': s.active,
+        dataset: {filter: s.filter}, onclick: () => go(filters.nextStarFilter(route.filter, n)),
+      }, el('span', {class: 'lbl', text: s.label}), el('span', {class: 'n'}));
+    }),
     el('select', {'aria-label': 'more filters', class: inMore ? 'on' : '', onchange: (e) => e.target.value && go(e.target.value)},
       el('option', {value: '', text: 'more\u2026'}),
       extra.map(([v, text]) => el('option', {value: v, text, selected: v === route.filter}))),

@@ -278,6 +278,38 @@ def test_rating_n_filter_means_exactly_n_stars(settings):
   assert names(on, "rating:2") == ["1.jpg", "2.jpg"]
 
 
+def test_rating_comparator_filters_are_over_the_star_scale(settings):
+  # ticket 117: rating>=N / rating<=N are ranges over the 1..5 star scale, so they exclude
+  # unrated (0) and rejected (-1), which have their own filters.
+  import dataclasses
+  d = settings.pictures_dir
+  for i, r in enumerate((1, 2, 2, 3, 0, -1)):
+    make_jpeg(os.path.join(d, "s", f"{i}.jpg"))
+    if r:
+      write(os.path.join(d, "s", f"{i}.jpg.xmp"), XMP % (r, ""), mtime=1_000_000)
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  c = TestClient(api.create_app(conn, settings))
+
+  def names(f):
+    r = c.get("/api/photos", params={"dir": "s", "filter": f, "sort": "name"})
+    assert r.status_code == 200, (f, r.text)
+    return [p["name"] for p in r.json()["photos"]]
+
+  assert names("rating>=2") == ["1.jpg", "2.jpg", "3.jpg"]
+  assert names("rating<=2") == ["0.jpg", "1.jpg", "2.jpg"]
+  assert names("rating>=1") == ["0.jpg", "1.jpg", "2.jpg", "3.jpg"]     # rated only
+  assert names("rating<=1") == ["0.jpg"]
+  assert names("rating>=5") == [] and names("rating<=5") == \
+      ["0.jpg", "1.jpg", "2.jpg", "3.jpg"]
+  for bad in ("rating>=0", "rating>=6", "rating<=0", "rating<=6", "rating>2", "rating<2"):
+    assert c.get("/api/photos", params={"dir": "s", "filter": bad}).status_code == 400, bad
+  # the counts endpoint includes the comparator filters and agrees with what they list
+  counts = c.get("/api/photos/counts", params={"dir": "s"}).json()["counts"]
+  for f in ("rating>=2", "rating<=2", "rating>=1", "rating<=5"):
+    assert counts[f] == len(names(f)), f
+
+
 def test_tag_filter_and_tags_in_view_endpoint(settings):
   # Ticket 087: filter=tag:NAME (one tag at a time), and /api/photos/tags for the dropdown --
   # scoped to the current dir/subtree like filter_counts, not the whole library.
