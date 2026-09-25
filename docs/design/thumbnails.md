@@ -46,7 +46,7 @@ recovery all have direct LibRaw equivalents).
 
 A RAW file's embedded preview (the camera's own already-baked JPEG, extracted via
 `previews.embedded_preview`) is not demosaiced at all — a per-file setting (`raw_settings.py`:
-brightness, white balance mode, highlight recovery) can only have a visible effect on a render that
+brightness, white balance mode, highlight recovery, exposure, shadow) can only have a visible effect on a render that
 actually ran LibRaw's `postprocess()`. So the rule `thumbs._open`/`make` follow, for **every** size,
 not just `Thumb`:
 
@@ -118,7 +118,7 @@ settings the frontend passes as query params, at half size for responsiveness, a
 JPEG bytes directly — no `thumbs` table row, no file under `thumbs_dir`, no `files.raw_*` write.
 Committing (`POST .../raw_settings`, unchanged since 085) is still the only thing that reaches this
 cache. That split — preview vs. commit, provisional render vs. persisted one — is also the seam a
-future browser-local renderer would slot into: if adjusting brightness/white-balance/highlight in
+future browser-local renderer would slot into: if adjusting brightness/white-balance/highlight/exposure/shadow in
 the browser (canvas or WASM, operating on an already-downloaded preview-quality image) turns out
 fast enough for some settings, it would replace `raw_preview`'s backend round trip for those
 settings without touching `set_raw_settings`/the commit path at all, since the frontend already

@@ -27,7 +27,7 @@ def test_set_then_get_round_trips(settings, conn):
   raw_settings.set(conn, fid, bright=1.5, wb_mode="manual", wb_r=2.1, wb_g=1.0, wb_b=1.8, highlight=2)
   s = raw_settings.get(conn, fid)
   assert s == {"raw_bright": 1.5, "raw_wb_mode": "manual", "raw_wb_r": 2.1, "raw_wb_g": 1.0,
-              "raw_wb_b": 1.8, "raw_highlight": 2}
+              "raw_wb_b": 1.8, "raw_highlight": 2, "raw_exposure": None, "raw_shadow": None}
   assert not raw_settings.is_default(s)
 
 

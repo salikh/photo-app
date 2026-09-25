@@ -192,7 +192,8 @@ def test_raw_settings_endpoint_sets_clears_cache_and_reports_current_settings(se
   body = r.json()
   assert body["file_id"] == file_id and body["cleared"] == ["Thumb"]
   assert body["settings"] == {"raw_bright": 1.4, "raw_wb_mode": None, "raw_wb_r": None,
-                              "raw_wb_g": None, "raw_wb_b": None, "raw_highlight": 2}
+                              "raw_wb_g": None, "raw_wb_b": None, "raw_highlight": 2,
+                              "raw_exposure": None, "raw_shadow": None}
   assert c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"] == 0
 
   # posting again (e.g. clearing back to default) replaces wholesale, not a partial patch
