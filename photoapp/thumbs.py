@@ -12,6 +12,7 @@ from absl import logging
 from PIL import Image
 from PIL import ImageOps
 
+from photoapp import crop as crop_lib
 from photoapp import fileinfo
 from photoapp import paths
 from photoapp import previews
@@ -21,6 +22,9 @@ from photoapp import raw_settings
 SIZES = ("Thumb", "Small", "Medium", "Huge")
 LONG_EDGE = {"Thumb": 300, "Small": 1000, "Medium": 2000, "Huge": None}
 JPEG_QUALITY = 85
+# Ticket 115/116: these sizes are rendered cropped when a file has a crop; Medium/Huge stay
+# full-frame and the client shades the cropped-out area instead.
+CROPPED_SIZES = ("Thumb", "Small")
 
 
 class Unsupported(Exception):
@@ -58,8 +62,16 @@ def best_available(thumbs_dir, size, file_path):
   return None
 
 
-def _open(source, settings=None):
-  """Decode source to an RGB PIL image.
+def _apply_crop(img, crop):
+  """Crop img (RGB PIL image) to crop's normalized rectangle, if it has one."""
+  if crop_lib.is_default(crop):
+    return img
+  left, top, box_w, box_h = crop_lib.pixel_box(crop, *img.size)
+  return img.crop((left, top, left + box_w, top + box_h))
+
+
+def _open(source, settings=None, crop=None):
+  """Decode source to an RGB PIL image, cropped to crop (ticket 115) if it has one.
 
   RAW files normally use their embedded preview -- fast, no demosaic (Pillow would "succeed" on
   a DNG but only return its tiny IFD0 thumbnail, which is why this doesn't just use Pillow
@@ -72,14 +84,14 @@ def _open(source, settings=None):
       img = previews.render(source, settings)
       if img is None:
         raise Unsupported(f"{source}: LibRaw could not decode with the given settings")
-      return img.convert("RGB")
+      return _apply_crop(img.convert("RGB"), crop)
     preview = previews.embedded_preview(source)
     if preview is None:
       raise Unsupported(f"{source}: no usable embedded preview")
-    return preview.convert("RGB")
+    return _apply_crop(preview.convert("RGB"), crop)
   try:
     with Image.open(source) as img:
-      return ImageOps.exif_transpose(img).convert("RGB")
+      return _apply_crop(ImageOps.exif_transpose(img).convert("RGB"), crop)
   except Exception as e:  # Pillow raises many kinds of errors
     raise Unsupported(f"{source}: {e}")
 
@@ -102,33 +114,38 @@ def save(img, dest, long_edge):
   return dest
 
 
-def render(source, dest, long_edge, settings=None):
+def render(source, dest, long_edge, settings=None, crop=None):
   """Write a JPEG of source, at most long_edge on its long side, to dest.
 
   settings: the source file's raw_settings.get()-shaped dict (ticket 085), or None -- ignored
-  for a non-RAW source. Never upscales. long_edge None keeps the full size. The write is atomic.
-  Raises Unsupported if source cannot be decoded (a RAW file without a usable embedded preview,
-  at default settings, needs render_raw_sizes()).
+  for a non-RAW source. crop: the source file's crop.get()-shaped dict (ticket 115), or None.
+  Never upscales. long_edge None keeps the full size. The write is atomic. Raises Unsupported if
+  source cannot be decoded (a RAW file without a usable embedded preview, at default settings,
+  needs render_raw_sizes()).
   """
-  return save(_open(source, settings), dest, long_edge)
+  return save(_open(source, settings, crop), dest, long_edge)
 
 
-def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None):
-  """Demosaic a RAW and write Thumb/Small/Medium. Returns {size: path}.
+def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=None):
+  """Demosaic a RAW and write Thumb/Small (cropped) and Medium (full). Returns {size: path}.
 
   Slow (about a second); used by the background job when a RAW has no usable embedded preview
   (regardless of settings -- there is no faster path available for this file at all). Half size:
   plenty for these three, and this path never populates Huge (a RAW with no usable embedded
   preview and no tuned settings has no fast way to get a full-size Huge either -- left to the
   next on-demand request, same as before this ticket). Returns {} if the file cannot be decoded.
+  Ticket 115: the demosaic is of the full frame; Thumb/Small are cropped from it, Medium is not.
   """
   img = previews.render(os.path.join(pictures_dir, file_path), settings, half_size=True)
   if img is None:
     logging.vlog(3, "%s: LibRaw could not decode this RAW", file_path)
     return {}
-  made = {size: save(img, thumb_path(thumbs_dir, size, file_path),
-                     LONG_EDGE[size])
-          for size in SIZES if LONG_EDGE[size]}
+  made = {}
+  for size in SIZES:
+    if LONG_EDGE[size] is None:
+      continue
+    source = _apply_crop(img, crop) if size in CROPPED_SIZES else img
+    made[size] = save(source, thumb_path(thumbs_dir, size, file_path), LONG_EDGE[size])
   logging.vlog(5, "%s: full-decode rendered %s", file_path, ", ".join(made))
   return made
 
@@ -163,7 +180,7 @@ def _record(conn, file_id, size, path, source):
       (file_id, size, path, os.path.getsize(path), source))
 
 
-def make(pictures_dir, thumbs_dir, file_path, size, settings=None):
+def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None):
   """Return (path, source) of a thumbnail of exactly this size, making it if
   needed, or None if that is not possible without a RAW converter.
 
@@ -176,6 +193,11 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None):
   it needs no further settings-awareness here. Callers that change a file's settings are
   responsible for clearing every cached size first (thumbs.clear) so a stale, differently-tuned
   cache is never downscaled from by mistake.
+
+  Ticket 115: crop is file_path's crop.get()-shaped dict. Thumb/Small (CROPPED_SIZES) are
+  rendered cropped -- always straight from the original, since every larger cached size is
+  full-frame and must not be downscaled from. Medium/Huge ignore crop (full frame; the loupe
+  shades the cropped-out area).
 
   Ticket 093: a settings-tuned RAW demosaics through previews.render() (slow, ~1s) rather than
   the fast embedded-preview path, and would otherwise pay that cost again for every distinct size
@@ -192,6 +214,16 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None):
   if path:
     logging.vlog(7, "%s: %s already cached", file_path, size)
     return path, "existing"
+  if size in CROPPED_SIZES and not crop_lib.is_default(crop):
+    original = os.path.join(pictures_dir, file_path)
+    dest = thumb_path(thumbs_dir, size, file_path)
+    try:
+      render(original, dest, LONG_EDGE[size], settings=settings, crop=crop)
+    except Unsupported as e:
+      logging.vlog(3, "cannot render cropped %s from %s: %s", size, original, e)
+      return None
+    logging.vlog(5, "%s: rendered cropped %s from %s", file_path, size, original)
+    return dest, "pillow"
   dest = thumb_path(thumbs_dir, size, file_path)
   sources = [lookup(thumbs_dir, s, file_path)
              for s in SIZES[SIZES.index(size) + 1:]]
@@ -229,7 +261,9 @@ def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
   file row and settings together in one round trip before calling make() directly).
   """
   settings = raw_settings.get(conn, file_id)
-  made = make(pictures_dir, thumbs_dir, file_path, size, settings=settings)
+  file_crop = crop_lib.get(conn, file_id)
+  made = make(pictures_dir, thumbs_dir, file_path, size, settings=settings,
+              crop=file_crop)
   if made is None:
     return None
   path, source = made

@@ -20,6 +20,7 @@ from absl import logging
 from PIL import Image
 
 from photoapp import curation
+from photoapp import crop as crop_lib
 from photoapp import db as db_lib
 from photoapp import export
 from photoapp import fileinfo
@@ -92,6 +93,13 @@ class RawSettingsBody(pydantic.BaseModel):
   demosaic: int | None = None
 
 
+class CropBody(pydantic.BaseModel):
+  x: float
+  y: float
+  w: float
+  h: float
+
+
 def create_app(conn, settings):
   """Build the app around an open (migrated) database and its settings."""
   app = FastAPI(title="photos")
@@ -138,8 +146,9 @@ def create_app(conn, settings):
     if row is None:
       raise RuntimeError("file is gone")
     file_settings = raw_settings.get(conn, row["id"])   # ticket 085: parity with every other path
+    file_crop = crop_lib.get(conn, row["id"])           # ticket 115: Thumb/Small rendered cropped
     made = thumbs.render_raw_sizes(settings.pictures_dir, settings.thumbs_dir,
-                                   row["path"], file_settings)
+                                   row["path"], file_settings, file_crop)
     if not made:
       raise RuntimeError("LibRaw could not decode the file")
     for size, path in made.items():
@@ -453,6 +462,22 @@ def create_app(conn, settings):
       current = raw_settings.get(app.state.db, file_id)
     return {"file_id": file_id, "cleared": cleared, "settings": current}
 
+  @app.post("/api/files/{file_id}/crop")
+  @db_route
+  def set_crop(file_id: int, body: CropBody):
+    """Ticket 115: replace this file's non-destructive crop (normalized x/y/w/h) and clear every
+    cached thumbnail size so Thumb/Small are regenerated cropped. A whole-frame rectangle
+    (0, 0, 1, 1) clears the crop. Works for JPEG and RAW alike."""
+    row = file_row(file_id)
+    with app.state.db_lock:
+      try:
+        crop_lib.set(app.state.db, file_id, body.x, body.y, body.w, body.h)
+      except crop_lib.CropError as e:
+        raise HTTPException(400, str(e))
+      cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
+      current = crop_lib.get(app.state.db, file_id)
+    return {"file_id": file_id, "cleared": cleared, "crop": current}
+
   @app.get("/api/thumbs/usage")
   @db_route
   def thumbs_usage(lacking: bool = False):
@@ -586,13 +611,14 @@ def create_app(conn, settings):
         path = os.path.join(settings.pictures_dir, row["path"])
         logging.vlog(7, "%s: Huge served from the original", row["path"])
     else:
-      def get_settings():
+      def get_file_settings():
         with app.state.db_lock:
-          return raw_settings.get(app.state.db, file_id)
-      file_settings = await run_in_threadpool(run_db, get_settings)
+          return (raw_settings.get(app.state.db, file_id),
+                  crop_lib.get(app.state.db, file_id))
+      file_settings, file_crop = await run_in_threadpool(run_db, get_file_settings)
       made = await run_in_threadpool(
           render_limited, settings.pictures_dir, settings.thumbs_dir,
-          row["path"], size, settings=file_settings)
+          row["path"], size, settings=file_settings, crop=file_crop)
       path = None
       if made:
         path, source = made

@@ -75,6 +75,23 @@ See ticket [093](../tickets/093.md) for a follow-up not yet implemented: when a 
 to happen, doing it once at `Huge` and downscaling the smaller sizes from that, instead of
 demosaicing separately per requested size.
 
+## Non-destructive crop changes which sizes are cropped (ticket 115)
+
+A file's crop (`photoapp/crop.py`: normalized `crop_x`/`crop_y`/`crop_w`/`crop_h` on `files`, all
+`NULL` = whole frame) changes the rule per size, per ticket 116's answer:
+
+- `Thumb` and `Small` (the grid/filmstrip sizes) are rendered **cropped** — the crop is applied in
+  `thumbs._open` before the downscale, so the intended composition is what the grid shows. A
+  cropped file always renders these straight from the original: every larger cached size is
+  full-frame (see below), so the "downscale from a larger cached size" shortcut above cannot be
+  used for them.
+- `Medium` and `Huge` (the loupe's large and zoomed views) stay **full-frame**; the client shades
+  the cropped-out part (`loupe.js`'s `.crop-shade`). This is also why the `raw_render` job's
+  `render_raw_sizes` crops only `Thumb`/`Small` from its one demosaic and leaves `Medium` full.
+- Saving a crop (`POST /api/files/{id}/crop`) clears every cached size first, exactly like a
+  raw-settings save, so a stale uncropped/cropped `Thumb` is never reused. Crop applies to JPEG and
+  RAW alike.
+
 ## The layout facts came from measuring the real tree, not from a spec
 
 The pixel sizes per named size tier (`Thumb` 300px, `Small` 1000px, `Medium` 2000px, `Huge` = full source size)

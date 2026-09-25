@@ -243,6 +243,16 @@ MIGRATIONS = [
     -- predate this column (their duration falls back to created_at until they run again).
     ALTER TABLE jobs ADD COLUMN started_at TEXT;
     """,
+    """
+    -- Ticket 115: non-destructive crop, normalized [0..1] fractions of the source frame. All four
+    -- NULL means "no crop" (the whole frame); a whole-frame rectangle is normalized back to NULL.
+    -- Applies to JPEG and RAW alike; Thumb/Small are rendered cropped, Medium/Huge stay full and
+    -- the loupe shades the cropped-out area (ticket 116's answer).
+    ALTER TABLE files ADD COLUMN crop_x REAL;
+    ALTER TABLE files ADD COLUMN crop_y REAL;
+    ALTER TABLE files ADD COLUMN crop_w REAL;
+    ALTER TABLE files ADD COLUMN crop_h REAL;
+    """,
 ]
 
 

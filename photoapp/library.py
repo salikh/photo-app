@@ -122,13 +122,16 @@ def list_dirs(conn, rel_dir="."):
 
 
 def _photo_json(r, tags):
+  crop = None
+  if r["crop_x"] is not None:
+    crop = {"x": r["crop_x"], "y": r["crop_y"], "w": r["crop_w"], "h": r["crop_h"]}
   return {
       "id": r["id"], "file_id": r["file_id"],
       "name": r["path"].rpartition("/")[2], "path": r["path"],
       "rating": r["rating"], "fav": bool(r["fav"]),
       "previous_stars": r["previous_stars"], "tags": tags, "conflict": bool(r["conflict"]),
       "files": r["nfiles"], "width": r["width"], "height": r["height"],
-      "exif_date": r["exif_date"],
+      "exif_date": r["exif_date"], "crop": crop,
   }
 
 
@@ -152,7 +155,7 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
       "p.representative_file_id WHERE " + where, args).fetchone()[0]
   rows = conn.execute(
       "SELECT p.id, p.rating, p.fav, p.conflict, p.previous_stars, rf.id AS file_id, rf.path,"
-      " rf.width, rf.height, rf.exif_date,"
+      " rf.width, rf.height, rf.exif_date, rf.crop_x, rf.crop_y, rf.crop_w, rf.crop_h,"
       " (SELECT COUNT(*) FROM files x WHERE x.photo_id = p.id AND"
       "  x.missing = 0) AS nfiles"
       " FROM photos p JOIN files rf ON rf.id = p.representative_file_id"
@@ -220,7 +223,7 @@ def photo_detail(conn, photo_id):
   files = [dict(r) for r in conn.execute(
       "SELECT id, path, role, derived_from, link_source, mime_type, width,"
       " height, bytesize, exif_date, aperture, shutter_speed, iso, focal_length,"
-      " camera_make, camera_model, missing,"
+      " camera_make, camera_model, crop_x, crop_y, crop_w, crop_h, missing,"
       f" hash, exported_from_file_id, {', '.join(raw_settings.COLUMNS)} FROM files"
       " WHERE photo_id = ? ORDER BY (id = ?) DESC, path",
       (photo_id, p["original_file_id"]))]
