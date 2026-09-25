@@ -287,6 +287,13 @@ def test_raw_preview_renders_pending_settings_without_touching_files_or_thumbs(s
   r2 = c.get(f"/api/files/{file_id}/raw_preview", params={"bright": 0.5, "size": "Small"})
   assert r2.status_code == 200 and seen_settings[-1]["raw_bright"] == 0.5
 
+  # ticket 109: exposure/shadow are carried through as pending values too, still without persisting
+  r3 = c.get(f"/api/files/{file_id}/raw_preview",
+             params={"exposure": 2.0, "shadow": 0.3, "size": "Small"})
+  assert r3.status_code == 200
+  assert seen_settings[-1]["raw_exposure"] == 2.0 and seen_settings[-1]["raw_shadow"] == 0.3
+  assert raw_settings.get(c.app.state.db, file_id) == before
+
 
 def test_raw_preview_rejects_bad_settings_and_non_raw_files(settings):
   c = app_with_pair(settings)
@@ -294,6 +301,8 @@ def test_raw_preview_rejects_bad_settings_and_non_raw_files(settings):
   jpg_id = fid(c, "y/a.jpg")
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"wb_mode": "nope"}).status_code == 400
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"highlight": 99}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"exposure": 0.2}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"shadow": 0.6}).status_code == 400
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"size": "Enormous"}).status_code == 404
   assert c.get(f"/api/files/{jpg_id}/raw_preview").status_code == 400
   assert c.get("/api/files/99999/raw_preview").status_code == 404

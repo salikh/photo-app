@@ -368,6 +368,43 @@ def test_raw_settings_are_provisional_until_save(page, server):
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
 
 
+def test_exposure_and_shadow_sliders_preview_and_persist(page, server):
+  # Ticket 109: the two new sliders, like every other control, only update provisional state and
+  # request a preview until Save; on Save they round-trip through the file detail as committed.
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+
+  exposure = dng_row.locator(".raw-settings input[aria-label=exposure]")
+  shadow = dng_row.locator(".raw-settings input[aria-label='shadow pull']")
+  expect(exposure).to_have_value("1")
+  expect(shadow).to_have_value("0")
+  save_btn = dng_row.get_by_role("button", name="Save", exact=True)
+  expect(save_btn).to_be_disabled()
+
+  exposure.focus()
+  exposure.press("ArrowRight")          # 1.0 -> 1.05
+  shadow.focus()
+  for _ in range(5):
+    shadow.press("ArrowRight")          # 0.0 -> 0.05
+  expect(save_btn).to_be_enabled()
+  save_btn.click()
+  expect(page.locator("#toast")).to_contain_text("saved")
+
+  page.keyboard.press("i")
+  page.keyboard.press("i")   # reopen: both values survived, because Save was clicked
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  expect(dng_row.locator(".raw-settings input[aria-label=exposure]")).to_have_value("1.05")
+  expect(dng_row.locator(".raw-settings input[aria-label='shadow pull']")).to_have_value("0.05")
+  expect(dng_row.get_by_role("button", name="Reset to default")).to_be_visible()
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
 def test_compare_hover_and_shift_reveal_the_provisional_overlay(page, server, monkeypatch):
   # Ticket 107: the tuned overlay is hidden by default (the committed rendering is what's shown);
   # it only appears while the user is actively asking to compare -- hovering the sliders block, or
@@ -470,6 +507,55 @@ def test_local_libraw_wasm_renders_the_tuning_preview_for_a_real_raw(page, serve
   # browser context (no cross-test cache), which can take a while under this machine's load.
   expect(tuning).to_have_attribute("src", re.compile(r"^blob:"), timeout=30000)
   assert network_preview_requests == []
+
+
+@real_dng_only
+def test_libraw_wasm_exposure_matches_rawpy_on_a_real_raw(page, server):
+  # Ticket 109: the vendored LibRaw-Wasm build's expShift/expCorrec/noAutoBright must mean the
+  # same as rawpy's exp_shift/no_auto_bright for the same value (a linear multiplier, not stops).
+  # Compare the local render's mean RGB against rawpy rendering the same preview DNG through
+  # previews._postprocess_kwargs -- within a few percent, like ticket 106's parity check.
+  import numpy as np
+  import rawpy
+  from photoapp import previews
+  from photoapp import raw_preview_dng
+
+  rel = "2024/trip/IMG_0001.DNG"
+  shutil.copy(REAL_DNG, os.path.join(server.pictures, rel))
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  preview_dng = raw_preview_dng.ensure(
+      server.settings.thumbs_dir, server.settings.pictures_dir, rel)
+
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+
+  exposure = dng_row.locator(".raw-settings input[aria-label=exposure]")
+  exposure.evaluate(
+      "el => { el.value = '2'; el.dispatchEvent(new Event('input', {bubbles: true})); }")
+  tuning = page.locator(".stage img.tuning:not(.row-preview)")
+  expect(tuning).to_have_attribute("src", re.compile(r"^blob:"), timeout=30000)
+  wasm_mean = page.evaluate("""async (url) => {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, b = 0; const n = d.length / 4;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    return [r / n, g / n, b / n];
+  }""", tuning.get_attribute("src"))
+
+  with rawpy.imread(preview_dng) as raw:
+    rgb = raw.postprocess(**previews._postprocess_kwargs({"raw_exposure": 2.0}))
+  rawpy_mean = rgb.reshape(-1, 3).mean(axis=0)
+  diff = np.abs(np.array(wasm_mean) - rawpy_mean) / rawpy_mean
+  assert diff.max() < 0.05, (wasm_mean, rawpy_mean)
 
 
 @real_dng_only

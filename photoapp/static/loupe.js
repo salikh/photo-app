@@ -559,7 +559,8 @@ let hoverFile = null;    // a sibling file whose own thumbnail ui.rowPreview is 
 
 function committedValues(f) {
   return {bright: f.raw_bright, wb_mode: f.raw_wb_mode, wb_r: f.raw_wb_r, wb_g: f.raw_wb_g,
-          wb_b: f.raw_wb_b, highlight: f.raw_highlight};
+          wb_b: f.raw_wb_b, highlight: f.raw_highlight,
+          exposure: f.raw_exposure, shadow: f.raw_shadow};
 }
 
 function isDirty(values, committed) {
@@ -669,6 +670,8 @@ function renderRawSettingsBody(f, container) {
   const highlight = values.highlight ?? 0;
   const brightLabel = el('span', {class: 'meta', text: bright.toFixed(2)});
   const highlightLabel = el('span', {class: 'meta', text: String(highlight)});
+  const exposureLabel = el('span', {class: 'meta', text: (values.exposure ?? 1.0).toFixed(2)});
+  const shadowLabel = el('span', {class: 'meta', text: (values.shadow ?? 0.0).toFixed(2)});
   const saveBtn = el('button', {class: 'primary', text: 'Save', onclick: () => saveRawSettings(f)});
   const discardBtn = el('button', {text: 'Discard changes', onclick: () => {
     discardPending();
@@ -718,14 +721,14 @@ function renderRawSettingsBody(f, container) {
         onchange: (e) => { values[`wb_${c}`] = Number(e.target.value); syncButtons(); schedulePreview(f); }}))) : null,
     el('div', {class: 'row'},
       el('label', {text: 'Exposure'}),
-      el('input', {type: 'range', min: '0.25', max: '8.0', step: '0.05', value: values.raw_exposure ?? 1.0,
-                 'aria-label': 'exposure', oninput: onTick('raw_exposure', el('span', {class: 'meta', text: ''}), (v) => v.toFixed(2))}),
-      el('span', {class: 'meta', text: values.raw_exposure?.toFixed(2) || '1.0'})),
+      el('input', {type: 'range', min: '0.25', max: '8.0', step: '0.05', value: values.exposure ?? 1.0,
+                 'aria-label': 'exposure', oninput: onTick('exposure', exposureLabel, (v) => v.toFixed(2))}),
+      exposureLabel),
     el('div', {class: 'row'},
       el('label', {text: 'Shadow pull'}),
-      el('input', {type: 'range', min: '0.0', max: '0.5', step: '0.01', value: values.raw_shadow ?? 0.0,
-                 'aria-label': 'shadow pull', oninput: onTick('raw_shadow', el('span', {class: 'meta', text: ''}), (v) => v.toFixed(2))}),
-      el('span', {class: 'meta', text: values.raw_shadow?.toFixed(2) || '0.0'})),
+      el('input', {type: 'range', min: '0.0', max: '0.5', step: '0.01', value: values.shadow ?? 0.0,
+                 'aria-label': 'shadow pull', oninput: onTick('shadow', shadowLabel, (v) => v.toFixed(2))}),
+      shadowLabel),
     el('div', {class: 'row'}, saveBtn, discardBtn,
       Object.values(values).every((v) => v == null) ? null : el('button', {
         text: 'Reset to default', onclick: () => {

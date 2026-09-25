@@ -4,9 +4,11 @@
 // resolves null here -- LibRaw-Wasm failing to load, the vendored module missing, the preview
 // DNG not being available for this file, or a decode error for a camera model it chokes on.
 //
-// Settings mapping mirrors previews.py's _postprocess_kwargs exactly (same four parameters
-// raw_settings.py persists today -- see ticket 106 for whether that set grows) so the local
-// preview and the eventual server-side committed render mean the same thing by each control.
+// Settings mapping mirrors previews.py's _postprocess_kwargs exactly (the same parameters
+// raw_settings.py persists -- brightness, WB, highlight, exposure, shadow) so the local preview
+// and the eventual server-side committed render mean the same thing by each control. `values` is
+// loupe.js's pending dict (the same API-shaped keys saveRawSettings POSTs), not the raw_*-prefixed
+// raw_settings.get() shape the server uses.
 
 const VENDOR_URL = '/static/vendor/libraw-wasm/index.js';
 
@@ -20,17 +22,17 @@ function loadLibRaw() {
 
 function mapSettings(values) {
   const settings = {outputBps: 8};
-  const mode = values.raw_wb_mode || 'camera';
+  const mode = values.wb_mode || 'camera';
   if (mode === 'auto') settings.useAutoWb = true;
-  else if (mode === 'manual' && values.raw_wb_r != null) {
-    settings.userMul = [values.raw_wb_r, values.raw_wb_g, values.raw_wb_b, values.raw_wb_g];
+  else if (mode === 'manual' && values.wb_r != null) {
+    settings.userMul = [values.wb_r, values.wb_g, values.wb_b, values.wb_g];
   } else {
     settings.useCameraWb = true;   // 'camera', or no mode set at all
   }
-  if (values.raw_bright != null) settings.bright = values.raw_bright;
-  if (values.raw_highlight != null) settings.highlight = values.raw_highlight;
-  if (values.raw_exposure != null) {
-    settings.expShift = values.raw_exposure;
+  if (values.bright != null) settings.bright = values.bright;
+  if (values.highlight != null) settings.highlight = values.highlight;
+  if (values.exposure != null) {
+    settings.expShift = values.exposure;
     settings.expCorrec = true;
     settings.noAutoBright = true;
   }
@@ -41,14 +43,26 @@ function mapSettings(values) {
 // interleaved RGB buffer -- not something an <img> can show directly, so it's painted onto a
 // throwaway canvas and read back out as a blob: URL, matching what ui.tuning already expects
 // from the network path.
-function toObjectUrl(img) {
+//
+// Ticket 109: raw_shadow is applied here, post-decode, per channel -- v' = v + amount*(1-v)^2 --
+// exactly the server-side previews._lift_shadows formula, so a local preview and the eventual
+// committed thumbnail agree. Only applied when shadow is set (NULL/0 is a no-op).
+function liftShadow(v, amount) {
+  const x = v / 255;
+  return Math.round(Math.min(1, Math.max(0, x + amount * (1 - x) ** 2)) * 255);
+}
+
+function toObjectUrl(img, shadow) {
   if (img.colors !== 3 || img.bits !== 8) {
     throw new Error(`unsupported imageData shape: colors=${img.colors} bits=${img.bits}`);
   }
   const {width, height, data} = img;
+  const lift = shadow != null && shadow !== 0;
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let i = 0, j = 0; i < width * height; i++, j += 3) {
-    rgba[i * 4] = data[j]; rgba[i * 4 + 1] = data[j + 1]; rgba[i * 4 + 2] = data[j + 2];
+    rgba[i * 4] = lift ? liftShadow(data[j], shadow) : data[j];
+    rgba[i * 4 + 1] = lift ? liftShadow(data[j + 1], shadow) : data[j + 1];
+    rgba[i * 4 + 2] = lift ? liftShadow(data[j + 2], shadow) : data[j + 2];
     rgba[i * 4 + 3] = 255;
   }
   const canvas = document.createElement('canvas');
@@ -105,7 +119,7 @@ export class RawTuningSession {
     try {
       await lr.open(this.bytes, mapSettings(values));
       const img = await lr.imageData();
-      url = await toObjectUrl(img);
+      url = await toObjectUrl(img, values.shadow);
     } catch (e) {
       return null;
     }

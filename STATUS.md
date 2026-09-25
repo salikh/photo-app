@@ -102,10 +102,17 @@ All ten build-order epics are done.
       an hour; `grid.js`'s `refreshCellThumb`/`filmstrip.js`'s `refreshThumb` cache-bust them the
       same way `saveRawSettings` already did for the loupe's own main image (user bug report
       2026-09-25)
+- [x] [109](docs/tickets/109.md) Exposure and shadow-pull as tunable RAW conversion parameters
+      (user request 2026-09-25): two new `files.raw_exposure`/`raw_shadow` columns, `exp_shift` +
+      `no_auto_bright` server-side and `expShift`/`expCorrec`/`noAutoBright` client-side, and a
+      post-decode `v + a*(1-v)^2` shadow lift applied identically in `previews._lift_shadows` and
+      `rawTuning.js`; verified the real vendored LibRaw-Wasm build matches rawpy on the K-5 DNG
+      (mean RGB within 0.005%). Also fixed a pre-existing 105 bug: `mapSettings` read `raw_*` keys
+      while the pending dict uses unprefixed ones, so the local preview had been ignoring every
+      slider including brightness/WB/highlight.
 
-Still open (see `TODO.md` for where to resume): [109](docs/tickets/109.md) (exposure and
-shadow-pull RAW parameters — backend half committed as WIP, API/client/tests remain) and
-[111](docs/tickets/111.md) (full-scan `index.json` / per-file JSON metadata cache, not started).
+Still open (see `TODO.md` for where to resume): [111](docs/tickets/111.md) (full-scan `index.json`
+/ per-file JSON metadata cache, not started).
 
 ## Cross-cutting
 

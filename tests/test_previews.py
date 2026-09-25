@@ -110,3 +110,42 @@ def test_migration_forces_reread_of_raw_rows(tmp_path):
   sizes = dict(conn.execute("SELECT path, bytesize FROM files").fetchall())
   assert sizes == {"a.DNG": -1, "b.jpg": 100}
   assert conn.execute("SELECT COUNT(*) FROM dir_mtimes").fetchone()[0] == 0
+
+
+def test_postprocess_kwargs_defaults_and_camera_wb():
+  # ticket 085: an all-None (or missing) settings dict means today's hardcoded defaults.
+  for settings in (None, {}):
+    k = previews._postprocess_kwargs(settings)
+    assert k["output_bps"] == 8 and k["use_camera_wb"] is True
+    assert "exp_shift" not in k and "no_auto_bright" not in k
+
+
+def test_postprocess_kwargs_maps_wb_bright_and_highlight():
+  k = previews._postprocess_kwargs({"raw_wb_mode": "auto"})
+  assert k["use_auto_wb"] is True
+  k = previews._postprocess_kwargs({"raw_wb_mode": "manual", "raw_wb_r": 2.0,
+                                    "raw_wb_g": 1.0, "raw_wb_b": 1.5})
+  assert k["user_wb"] == [2.0, 1.0, 1.5, 1.0]
+  k = previews._postprocess_kwargs({"raw_bright": 1.4, "raw_highlight": 3})
+  assert k["bright"] == 1.4 and k["highlight_mode"] == 3
+
+
+def test_postprocess_kwargs_exposure_sets_exp_shift_and_disables_auto_bright():
+  # ticket 109: exp_shift is essentially invisible unless LibRaw's own auto-brightness is off.
+  k = previews._postprocess_kwargs({"raw_exposure": 2.0})
+  assert k["exp_shift"] == 2.0 and k["no_auto_bright"] is True
+  # ...but only when exposure is actually set, so every other file renders as before.
+  assert "no_auto_bright" not in previews._postprocess_kwargs({"raw_bright": 1.2})
+  assert "no_auto_bright" not in previews._postprocess_kwargs({"raw_shadow": 0.3})
+
+
+def test_lift_shadows_identity_monotonic_and_highlight_neutral():
+  import numpy as np
+  ramp = np.tile(np.arange(256, dtype=np.uint8)[:, None, None], (1, 1, 3))
+  assert np.array_equal(previews._lift_shadows(ramp, 0.0), ramp)   # 0 is identity
+  lifted = previews._lift_shadows(ramp, 0.3)
+  assert lifted[10, 0, 0] > ramp[10, 0, 0]                          # shadows are lifted
+  assert np.all(np.diff(lifted[:, 0, 0].astype(int)) >= 0)          # monotonic: no tone reversal
+  assert lifted[255, 0, 0] == 255                                   # v=1 is a fixed point
+  assert lifted[250, 0, 0] <= ramp[250, 0, 0] + 1                   # highlights essentially untouched
+

@@ -9,14 +9,8 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108 and 110 are done (see `STATUS.md`). What's left, in the order to pick it up:
+108, 109 and 110 are done (see `STATUS.md`). What's left, in the order to pick it up:
 
-- [ ] [109](docs/tickets/109.md) **In progress** — exposure and shadow-pull as tunable RAW
-      conversion parameters (user request 2026-09-25). Backend half and API plumbing are written;
-      still to do: `rawTuning.js` (+ verifying `expShift`/`noAutoBright` in the real LibRaw-Wasm
-      build), the two `loupe.js` sliders, updating/adding tests.
-      Technique decisions are already made and verified on a real DNG — see the ticket's "Decisions
-      made" and "Progress" sections; do not redo the toe-slope experiment (it was rejected).
 - [ ] [111](docs/tickets/111.md) Not started — full-scan metadata cache: per-directory
       `index.json` + per-file `<name>.json`, plus new EXIF fields (focal length, camera make;
       exif date/shutter/aperture/ISO already exist). The `index.json` machinery to reuse is in
