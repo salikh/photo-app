@@ -405,6 +405,49 @@ def test_exposure_and_shadow_sliders_preview_and_persist(page, server):
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
 
 
+def test_advanced_raw_settings_controls_preview_and_persist(page, server):
+  # Ticket 112: saturation/contrast/noise/demosaic live behind the "Advanced" zipper and, like
+  # every other control, only persist on Save.
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+
+  advanced = dng_row.locator(".raw-settings details.advanced")
+  expect(advanced).to_have_count(1)
+  advanced.locator("summary").click()   # open the zipper
+  saturation = advanced.locator("input[aria-label=saturation]")
+  contrast = advanced.locator("input[aria-label=contrast]")
+  expect(saturation).to_have_value("1")
+  expect(contrast).to_have_value("1")
+
+  save_btn = dng_row.get_by_role("button", name="Save", exact=True)
+  expect(save_btn).to_be_disabled()
+  saturation.focus(); saturation.press("ArrowRight")     # 1.0 -> 1.05
+  contrast.focus(); contrast.press("ArrowRight")         # 1.0 -> 1.05
+  advanced.locator("select[aria-label='noise reduction']").select_option("2")
+  advanced.locator("select[aria-label=demosaic]").select_option("4")
+  expect(save_btn).to_be_enabled()
+  save_btn.click()
+  expect(page.locator("#toast")).to_contain_text("saved")
+
+  page.keyboard.press("i")
+  page.keyboard.press("i")   # reopen: all four survived
+  dng_row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  advanced = dng_row.locator(".raw-settings details.advanced")
+  advanced.locator("summary").click()
+  expect(advanced.locator("input[aria-label=saturation]")).to_have_value("1.05")
+  expect(advanced.locator("input[aria-label=contrast]")).to_have_value("1.05")
+  expect(advanced.locator("select[aria-label='noise reduction']")).to_have_value("2")
+  expect(advanced.locator("select[aria-label=demosaic]")).to_have_value("4")
+  expect(dng_row.get_by_role("button", name="Reset to default")).to_be_visible()
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
 def test_compare_hover_and_shift_reveal_the_provisional_overlay(page, server, monkeypatch):
   # Ticket 107: the tuned overlay is hidden by default (the committed rendering is what's shown);
   # it only appears while the user is actively asking to compare -- hovering the sliders block, or
@@ -553,6 +596,62 @@ def test_libraw_wasm_exposure_matches_rawpy_on_a_real_raw(page, server):
 
   with rawpy.imread(preview_dng) as raw:
     rgb = raw.postprocess(**previews._postprocess_kwargs({"raw_exposure": 2.0}))
+  rawpy_mean = rgb.reshape(-1, 3).mean(axis=0)
+  diff = np.abs(np.array(wasm_mean) - rawpy_mean) / rawpy_mean
+  assert diff.max() < 0.05, (wasm_mean, rawpy_mean)
+
+
+@real_dng_only
+def test_libraw_wasm_advanced_params_match_rawpy_on_a_real_raw(page, server):
+  # Ticket 112: the advanced controls must render the same locally and server-side. Drives the
+  # real RawTuningSession (mapSettings + toObjectUrl) with a combined pending dict and compares
+  # its mean RGB against rawpy rendering the same preview DNG through previews' full pipeline
+  # (postprocess kwargs + the post-decode contrast/saturation). Noise and demosaic are included
+  # to catch a binding-name drift like the one that made `gamm` unusable here.
+  import numpy as np
+  import rawpy
+  from photoapp import previews
+  from photoapp import raw_preview_dng
+  from photoapp import raw_settings
+
+  pending = {"contrast": 0.6, "saturation": 1.5, "noise": 1, "demosaic": 11}
+  rel = "2024/trip/IMG_0001.DNG"
+  shutil.copy(REAL_DNG, os.path.join(server.pictures, rel))
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  file_id = server.app.state.db.execute(
+      "SELECT id FROM files WHERE path = ?", (rel,)).fetchone()[0]
+  preview_dng = raw_preview_dng.ensure(
+      server.settings.thumbs_dir, server.settings.pictures_dir, rel)
+
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  expect(page.locator(".files-panel")).to_have_count(0)
+  wasm_mean = page.evaluate("""async ([fileId, values]) => {
+    const m = await import('/static/rawTuning.js');
+    const s = new m.RawTuningSession(fileId);
+    const url = await s.render(values);
+    if (!url) return null;
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, b = 0; const n = d.length / 4;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    s.dispose();
+    return [r / n, g / n, b / n];
+  }""", [file_id, pending])
+  assert wasm_mean is not None
+
+  settings = raw_settings.to_columns(**pending)
+  with rawpy.imread(preview_dng) as raw:
+    rgb = raw.postprocess(**previews._postprocess_kwargs(settings))
+  rgb = previews._apply_contrast(rgb, settings["raw_contrast"])
+  rgb = previews._apply_saturation(rgb, settings["raw_saturation"])
   rawpy_mean = rgb.reshape(-1, 3).mean(axis=0)
   diff = np.abs(np.array(wasm_mean) - rawpy_mean) / rawpy_mean
   assert diff.max() < 0.05, (wasm_mean, rawpy_mean)

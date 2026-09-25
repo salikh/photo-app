@@ -24,10 +24,13 @@ def test_get_defaults_to_all_none(settings, conn):
 
 def test_set_then_get_round_trips(settings, conn):
   fid = scanned(settings, conn)
-  raw_settings.set(conn, fid, bright=1.5, wb_mode="manual", wb_r=2.1, wb_g=1.0, wb_b=1.8, highlight=2, exposure=2.0, shadow=0.3)
+  raw_settings.set(conn, fid, bright=1.5, wb_mode="manual", wb_r=2.1, wb_g=1.0, wb_b=1.8,
+                   highlight=2, exposure=2.0, shadow=0.3, saturation=1.4, contrast=1.5, noise=1,
+                   demosaic=4)
   s = raw_settings.get(conn, fid)
   assert s == {"raw_bright": 1.5, "raw_wb_mode": "manual", "raw_wb_r": 2.1, "raw_wb_g": 1.0,
-              "raw_wb_b": 1.8, "raw_highlight": 2, "raw_exposure": 2.0, "raw_shadow": 0.3}
+              "raw_wb_b": 1.8, "raw_highlight": 2, "raw_exposure": 2.0, "raw_shadow": 0.3,
+              "raw_saturation": 1.4, "raw_contrast": 1.5, "raw_noise": 1, "raw_demosaic": 4}
   assert not raw_settings.is_default(s)
 
 
@@ -39,9 +42,12 @@ def test_set_with_no_args_clears_back_to_default(settings, conn):
   assert raw_settings.is_default(raw_settings.get(conn, fid))
 
 
-def test_set_rejects_bad_wb_mode_and_out_of_range_highlight_and_exposure_and_shadow(settings, conn):
+def test_set_rejects_bad_wb_mode_and_out_of_range_values(settings, conn):
   fid = scanned(settings, conn)
-  for kwargs in ({"wb_mode": "nope"}, {"highlight": 10}, {"highlight": -1}, {"exposure": 0.2}, {"exposure": 8.1}, {"shadow": -0.1}, {"shadow": 0.6}):
+  for kwargs in ({"wb_mode": "nope"}, {"highlight": 10}, {"highlight": -1}, {"exposure": 0.2},
+                 {"exposure": 8.1}, {"shadow": -0.1}, {"shadow": 0.6}, {"saturation": -0.1},
+                 {"saturation": 2.1}, {"contrast": 0.4}, {"contrast": 2.1}, {"noise": 3},
+                 {"noise": -1}, {"demosaic": 5}, {"demosaic": 10}):
     try:
       raw_settings.set(conn, fid, **kwargs)
       assert False, f"should have raised for {kwargs}"

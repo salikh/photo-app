@@ -110,6 +110,13 @@ All ten build-order epics are done.
       (mean RGB within 0.005%). Also fixed a pre-existing 105 bug: `mapSettings` read `raw_*` keys
       while the pending dict uses unprefixed ones, so the local preview had been ignoring every
       slider including brightness/WB/highlight.
+- [x] [112](docs/tickets/112.md) Four advanced per-file RAW controls under a collapsible
+      "Advanced" zipper: demosaic algorithm (`user_qual`/`userQual`), FBDD noise reduction
+      (`fbdd_noise_reduction`/`fbddNoiserd`), plus post-decode saturation and contrast applied
+      identically in `previews._apply_saturation`/`_apply_contrast` and `rawTuning.js`. Native
+      `user_sat` (a white-point override, not saturation) and native gamma were tested and
+      rejected — the vendor's libraw-wasm 1.6.0 build silently ignores its documented `gamm`
+      setting, so exact parity wasn't achievable that way. Verified on the real K-5 DNG.
 
 Still open (see `TODO.md` for where to resume): [111](docs/tickets/111.md) (full-scan `index.json`
 / per-file JSON metadata cache, not started).

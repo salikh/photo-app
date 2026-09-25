@@ -86,6 +86,10 @@ class RawSettingsBody(pydantic.BaseModel):
   highlight: int | None = None
   exposure: float | None = None
   shadow: float | None = None
+  saturation: float | None = None
+  contrast: float | None = None
+  noise: int | None = None
+  demosaic: int | None = None
 
 
 def create_app(conn, settings):
@@ -438,7 +442,9 @@ def create_app(conn, settings):
       try:
         raw_settings.set(app.state.db, file_id, bright=body.bright, wb_mode=body.wb_mode,
                          wb_r=body.wb_r, wb_g=body.wb_g, wb_b=body.wb_b, highlight=body.highlight,
-                         exposure=body.exposure, shadow=body.shadow)
+                         exposure=body.exposure, shadow=body.shadow,
+                         saturation=body.saturation, contrast=body.contrast, noise=body.noise,
+                         demosaic=body.demosaic)
       except raw_settings.SettingsError as e:
         raise HTTPException(400, str(e))
       cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
@@ -612,7 +618,9 @@ def create_app(conn, settings):
                         wb_mode: str | None = None, wb_r: float | None = None,
                         wb_g: float | None = None, wb_b: float | None = None,
                         highlight: int | None = None, exposure: float | None = None,
-                        shadow: float | None = None):
+                        shadow: float | None = None, saturation: float | None = None,
+                        contrast: float | None = None, noise: int | None = None,
+                        demosaic: int | None = None):
     """Ticket 094: a provisional render of file_id with these *pending* settings, for the tuning
     UI to preview before committing anything. Unlike set_raw_settings, this never writes to
     files.raw_* or the thumbs cache -- rendered fresh into memory and returned directly, so there
@@ -625,11 +633,13 @@ def create_app(conn, settings):
     if not fileinfo.is_raw(row["path"]):
       raise HTTPException(400, "raw_preview is only for RAW files")
     try:
-      raw_settings.validate(wb_mode, highlight, exposure=exposure, shadow=shadow)
+      raw_settings.validate(wb_mode, highlight, exposure=exposure, shadow=shadow,
+                            saturation=saturation, contrast=contrast, noise=noise, demosaic=demosaic)
     except raw_settings.SettingsError as e:
       raise HTTPException(400, str(e))
     pending = raw_settings.to_columns(bright, wb_mode, wb_r, wb_g, wb_b, highlight,
-                                      exposure=exposure, shadow=shadow)
+                                      exposure=exposure, shadow=shadow, saturation=saturation,
+                                      contrast=contrast, noise=noise, demosaic=demosaic)
     full_path = os.path.join(settings.pictures_dir, row["path"])
 
     def render():

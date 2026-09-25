@@ -5,10 +5,9 @@
 // DNG not being available for this file, or a decode error for a camera model it chokes on.
 //
 // Settings mapping mirrors previews.py's _postprocess_kwargs exactly (the same parameters
-// raw_settings.py persists -- brightness, WB, highlight, exposure, shadow) so the local preview
-// and the eventual server-side committed render mean the same thing by each control. `values` is
-// loupe.js's pending dict (the same API-shaped keys saveRawSettings POSTs), not the raw_*-prefixed
-// raw_settings.get() shape the server uses.
+// raw_settings.py persists) so the local preview and the eventual server-side committed render
+// mean the same thing by each control. `values` is loupe.js's pending dict (the same API-shaped
+// keys saveRawSettings POSTs), not the raw_*-prefixed raw_settings.get() shape the server uses.
 
 const VENDOR_URL = '/static/vendor/libraw-wasm/index.js';
 
@@ -36,6 +35,11 @@ function mapSettings(values) {
     settings.expCorrec = true;
     settings.noAutoBright = true;
   }
+// Ticket 112: noise reduction (FBDD) and demosaic algorithm map straight through; contrast and
+  // saturation are post-decode in toObjectUrl (the vendored libraw-wasm build ignores its
+  // documented `gamm` setting, so no native gamma is sent).
+  if (values.noise != null) settings.fbddNoiserd = values.noise;
+  if (values.demosaic != null) settings.userQual = values.demosaic;
   return settings;
 }
 
@@ -52,18 +56,38 @@ function liftShadow(v, amount) {
   return Math.round(Math.min(1, Math.max(0, x + amount * (1 - x) ** 2)) * 255);
 }
 
-function toObjectUrl(img, shadow) {
+// Ticket 112: post-decode saturation (v' = luma + (v - luma)*amount, luma = 0.299R+0.587G+0.114B)
+// and contrast (v' = 0.5 + (v - 0.5)*amount), the server's previews._apply_saturation and
+// _apply_contrast formulas, on 8-bit values. Applied after the shadow lift, in the same order as
+// render(): shadow -> contrast -> saturation. 1.0 is identity for either, so it is skipped then.
+function clamp255(x) {
+  return Math.max(0, Math.min(255, Math.round(x)));
+}
+
+function toObjectUrl(img, shadow, contrast, saturation) {
   if (img.colors !== 3 || img.bits !== 8) {
     throw new Error(`unsupported imageData shape: colors=${img.colors} bits=${img.bits}`);
   }
   const {width, height, data} = img;
   const lift = shadow != null && shadow !== 0;
+  const con = contrast != null && contrast !== 1;
+  const sat = saturation != null && saturation !== 1;
   const rgba = new Uint8ClampedArray(width * height * 4);
   for (let i = 0, j = 0; i < width * height; i++, j += 3) {
-    rgba[i * 4] = lift ? liftShadow(data[j], shadow) : data[j];
-    rgba[i * 4 + 1] = lift ? liftShadow(data[j + 1], shadow) : data[j + 1];
-    rgba[i * 4 + 2] = lift ? liftShadow(data[j + 2], shadow) : data[j + 2];
-    rgba[i * 4 + 3] = 255;
+    let r = data[j], g = data[j + 1], b = data[j + 2];
+    if (lift) { r = liftShadow(r, shadow); g = liftShadow(g, shadow); b = liftShadow(b, shadow); }
+    if (con) {
+      r = clamp255(127.5 + (r - 127.5) * contrast);
+      g = clamp255(127.5 + (g - 127.5) * contrast);
+      b = clamp255(127.5 + (b - 127.5) * contrast);
+    }
+    if (sat) {
+      const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+      r = clamp255(luma + (r - luma) * saturation);
+      g = clamp255(luma + (g - luma) * saturation);
+      b = clamp255(luma + (b - luma) * saturation);
+    }
+    rgba[i * 4] = r; rgba[i * 4 + 1] = g; rgba[i * 4 + 2] = b; rgba[i * 4 + 3] = 255;
   }
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -119,7 +143,7 @@ export class RawTuningSession {
     try {
       await lr.open(this.bytes, mapSettings(values));
       const img = await lr.imageData();
-      url = await toObjectUrl(img, values.shadow);
+      url = await toObjectUrl(img, values.shadow, values.contrast, values.saturation);
     } catch (e) {
       return null;
     }

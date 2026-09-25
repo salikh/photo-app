@@ -187,13 +187,14 @@ def test_raw_settings_endpoint_sets_clears_cache_and_reports_current_settings(se
   c.get(f"/img/Thumb/{file_id}")   # populate a cache entry to prove it gets cleared
   assert c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"] == 1
 
-  r = c.post(f"/api/files/{file_id}/raw_settings", json={"bright": 1.4, "highlight": 2})
+  r = c.post(f"/api/files/{file_id}/raw_settings", json={"bright": 1.4, "highlight": 2, "saturation": 1.5, "contrast": 1.5, "noise": 1, "demosaic": 4})
   assert r.status_code == 200, r.text
   body = r.json()
   assert body["file_id"] == file_id and body["cleared"] == ["Thumb"]
   assert body["settings"] == {"raw_bright": 1.4, "raw_wb_mode": None, "raw_wb_r": None,
                               "raw_wb_g": None, "raw_wb_b": None, "raw_highlight": 2,
-                              "raw_exposure": None, "raw_shadow": None}
+                              "raw_exposure": None, "raw_shadow": None, "raw_saturation": 1.5,
+                              "raw_contrast": 1.5, "raw_noise": 1, "raw_demosaic": 4}
   assert c.get("/api/thumbs/usage").json()["usage"]["Thumb"]["files"] == 0
 
   # posting again (e.g. clearing back to default) replaces wholesale, not a partial patch
@@ -225,6 +226,10 @@ def test_raw_settings_endpoint_rejects_bad_input_and_unknown_file(settings):
   file_id = fid(c, "y/a.jpg")
   assert c.post(f"/api/files/{file_id}/raw_settings", json={"wb_mode": "nope"}).status_code == 400
   assert c.post(f"/api/files/{file_id}/raw_settings", json={"highlight": 99}).status_code == 400
+  assert c.post(f"/api/files/{file_id}/raw_settings", json={"saturation": 2.5}).status_code == 400
+  assert c.post(f"/api/files/{file_id}/raw_settings", json={"contrast": 2.5}).status_code == 400
+  assert c.post(f"/api/files/{file_id}/raw_settings", json={"noise": 3}).status_code == 400
+  assert c.post(f"/api/files/{file_id}/raw_settings", json={"demosaic": 10}).status_code == 400
   assert c.post("/api/files/99999/raw_settings", json={"bright": 1.0}).status_code == 404
 
 
@@ -294,6 +299,14 @@ def test_raw_preview_renders_pending_settings_without_touching_files_or_thumbs(s
   assert seen_settings[-1]["raw_exposure"] == 2.0 and seen_settings[-1]["raw_shadow"] == 0.3
   assert raw_settings.get(c.app.state.db, file_id) == before
 
+  # ticket 112: the advanced params likewise pass through raw_preview unpersisted
+  r4 = c.get(f"/api/files/{file_id}/raw_preview",
+             params={"saturation": 1.5, "contrast": 1.5, "noise": 2, "demosaic": 4, "size": "Small"})
+  assert r4.status_code == 200
+  assert seen_settings[-1]["raw_saturation"] == 1.5 and seen_settings[-1]["raw_contrast"] == 1.5
+  assert seen_settings[-1]["raw_noise"] == 2 and seen_settings[-1]["raw_demosaic"] == 4
+  assert raw_settings.get(c.app.state.db, file_id) == before
+
 
 def test_raw_preview_rejects_bad_settings_and_non_raw_files(settings):
   c = app_with_pair(settings)
@@ -303,6 +316,10 @@ def test_raw_preview_rejects_bad_settings_and_non_raw_files(settings):
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"highlight": 99}).status_code == 400
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"exposure": 0.2}).status_code == 400
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"shadow": 0.6}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"saturation": 2.5}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"contrast": 0.4}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"noise": 5}).status_code == 400
+  assert c.get(f"/api/files/{raw_id}/raw_preview", params={"demosaic": 7}).status_code == 400
   assert c.get(f"/api/files/{raw_id}/raw_preview", params={"size": "Enormous"}).status_code == 404
   assert c.get(f"/api/files/{jpg_id}/raw_preview").status_code == 400
   assert c.get("/api/files/99999/raw_preview").status_code == 404

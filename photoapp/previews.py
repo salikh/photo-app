@@ -83,6 +83,10 @@ def _postprocess_kwargs(settings):
     # every file that hasn't touched exposure renders exactly as before this ticket.
     kwargs["exp_shift"] = settings["raw_exposure"]
     kwargs["no_auto_bright"] = True
+  if settings.get("raw_noise") is not None:
+    kwargs["fbdd_noise_reduction"] = rawpy.FBDDNoiseReductionMode(settings["raw_noise"])
+  if settings.get("raw_demosaic") is not None:
+    kwargs["demosaic_algorithm"] = rawpy.DemosaicAlgorithm(settings["raw_demosaic"])
   return kwargs
 
 
@@ -94,6 +98,29 @@ def _lift_shadows(rgb, amount):
   (raw_settings.SHADOW_RANGE enforces that bound before a value ever reaches here)."""
   v = rgb.astype(np.float64) / 255.0
   v = np.clip(v + amount * (1.0 - v) ** 2, 0.0, 1.0)
+  return np.round(v * 255.0).astype(np.uint8)
+
+
+def _apply_saturation(rgb, amount):
+  """Post-decode saturation adjustment (ticket 112): per pixel luma = 0.299R+0.587G+0.114B and
+  v' = luma + (v - luma)*amount per channel, on an 8-bit RGB array. Not a native LibRaw parameter
+  -- LibRaw's user_sat is a white-level/brightness override, not a saturation multiplier -- so,
+  like _lift_shadows, this exact formula is mirrored in photoapp/static/rawTuning.js. amount 1.0
+  is identity; raw_settings.SATURATION_RANGE bounds it to [0.0, 2.0]."""
+  v = rgb.astype(np.float64) / 255.0
+  luma = v @ np.array([0.299, 0.587, 0.114])
+  v = np.clip(luma[..., None] + (v - luma[..., None]) * amount, 0.0, 1.0)
+  return np.round(v * 255.0).astype(np.uint8)
+
+
+def _apply_contrast(rgb, amount):
+  """Post-decode contrast around mid-gray (ticket 112): v' = clamp(0.5 + (v - 0.5)*amount) per
+  channel, on an 8-bit RGB array. Mirrored in photoapp/static/rawTuning.js. A native gamma control
+  was tried and rejected -- the vendored libraw-wasm 1.6.0 build ignores `gamm` entirely (verified
+  on a real DNG), so it could not be kept in parity with rawpy. amount 1.0 is identity;
+  raw_settings.CONTRAST_RANGE bounds it to [0.5, 2.0]."""
+  v = rgb.astype(np.float64) / 255.0
+  v = np.clip(0.5 + (v - 0.5) * amount, 0.0, 1.0)
   return np.round(v * 255.0).astype(np.uint8)
 
 
@@ -112,6 +139,12 @@ def render(path, settings=None, half_size=False):
   shadow = (settings or {}).get("raw_shadow")
   if shadow is not None:
     rgb = _lift_shadows(rgb, shadow)
+  contrast = (settings or {}).get("raw_contrast")
+  if contrast is not None:
+    rgb = _apply_contrast(rgb, contrast)
+  saturation = (settings or {}).get("raw_saturation")
+  if saturation is not None:
+    rgb = _apply_saturation(rgb, saturation)
   img = Image.fromarray(rgb)
   logging.vlog(7, "%s: LibRaw render (%dx%d)%s", path, *img.size,
               "" if half_size else " (full size)")

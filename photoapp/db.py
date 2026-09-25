@@ -205,6 +205,29 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN raw_exposure REAL;
     ALTER TABLE files ADD COLUMN raw_shadow REAL;
     """,
+    """
+    -- Ticket 112: four advanced per-file RAW conversion settings, shown under a collapsible
+    -- "Advanced" section. NULL still means "LibRaw's own default", same convention as the rest.
+    -- raw_saturation: not a native LibRaw parameter (LibRaw's user_sat is a white-level/brightness
+    -- override, not a saturation multiplier -- tested and rejected for this control). A post-decode
+    -- saturation adjustment applied identically on both sides: per pixel, luma = 0.299R+0.587G+
+    -- 0.114B and v' = luma + (v - luma) * raw_saturation per channel (v, v' in [0,1]); 1.0 is
+    -- identity, range [0.0, 2.0] (0 = grayscale, 2 = double saturation).
+    -- raw_contrast: post-decode contrast around mid-gray, applied identically on both sides:
+    -- v' = clamp(0.5 + (v - 0.5) * raw_contrast) per channel (v, v' in [0,1]); 1.0 is identity,
+    -- range [0.5, 2.0]. A native gamma control (rawpy gamma= / libraw-wasm gamm=) was tried first
+    -- and rejected: the vendored libraw-wasm 1.6.0 build silently ignores `gamm` (verified on a real
+    -- DNG -- identical output for every value, while outputBps/userQual do take effect), so exact
+    -- client/server parity is not achievable that way.
+    -- raw_noise: FBDD noise reduction mode, 0=off, 1=light, 2=full (LibRaw fbdd_noiserd).
+    -- raw_demosaic: LibRaw demosaic quality (user_qual), one of 0=linear, 1=VNG, 2=PPG, 3=AHD
+    -- (default), 4=DCB, 11=DHT, 12=AAHD -- the algorithms this LibRaw build supports (AMAZE/LMMSE
+    -- need the GPL demosaic packs, which neither binding here ships).
+    ALTER TABLE files ADD COLUMN raw_saturation REAL;
+    ALTER TABLE files ADD COLUMN raw_contrast REAL;
+    ALTER TABLE files ADD COLUMN raw_noise INTEGER;
+    ALTER TABLE files ADD COLUMN raw_demosaic INTEGER;
+    """,
 ]
 
 

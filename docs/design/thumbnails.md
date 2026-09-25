@@ -46,7 +46,8 @@ recovery all have direct LibRaw equivalents).
 
 A RAW file's embedded preview (the camera's own already-baked JPEG, extracted via
 `previews.embedded_preview`) is not demosaiced at all — a per-file setting (`raw_settings.py`:
-brightness, white balance mode, highlight recovery, exposure, shadow) can only have a visible effect on a render that
+brightness, white balance mode, highlight recovery, exposure, shadow, and the advanced saturation,
+contrast, noise-reduction and demosaic controls) can only have a visible effect on a render that
 actually ran LibRaw's `postprocess()`. So the rule `thumbs._open`/`make` follow, for **every** size,
 not just `Thumb`:
 

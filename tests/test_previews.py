@@ -1,6 +1,7 @@
 import os
 
 import pytest
+import rawpy
 from PIL import Image
 
 from photoapp import fileinfo
@@ -137,6 +138,40 @@ def test_postprocess_kwargs_exposure_sets_exp_shift_and_disables_auto_bright():
   # ...but only when exposure is actually set, so every other file renders as before.
   assert "no_auto_bright" not in previews._postprocess_kwargs({"raw_bright": 1.2})
   assert "no_auto_bright" not in previews._postprocess_kwargs({"raw_shadow": 0.3})
+
+
+def test_postprocess_kwargs_maps_advanced_params():
+  # ticket 112: noise/demosaic map to rawpy enums; contrast/saturation are post-decode, not kwargs.
+  assert previews._postprocess_kwargs({"raw_noise": 2})["fbdd_noise_reduction"] == \
+      rawpy.FBDDNoiseReductionMode.Full
+  assert previews._postprocess_kwargs({"raw_demosaic": 4})["demosaic_algorithm"] == \
+      rawpy.DemosaicAlgorithm.DCB
+  base = previews._postprocess_kwargs({})
+  for key in ("fbdd_noise_reduction", "demosaic_algorithm"):
+    assert key not in base   # absent unless set, so defaults are untouched
+  # contrast is not a LibRaw parameter at all (the vendored WASM build ignores `gamm`)
+  assert "gamma" not in previews._postprocess_kwargs({"raw_contrast": 1.5})
+
+
+def test_apply_contrast_identity_and_spread():
+  import numpy as np
+  px = np.array([[[200, 100, 50]]], dtype=np.uint8)
+  assert np.array_equal(previews._apply_contrast(px, 1.0), px)   # 1.0 is identity
+  more = previews._apply_contrast(px, 2.0)                       # 2.0 spreads away from mid-gray
+  assert more[0, 0, 0] > px[0, 0, 0] and more[0, 0, 2] < px[0, 0, 2]
+  flat = previews._apply_contrast(px, 0.0)                       # 0.0 collapses to mid-gray
+  assert flat[0, 0, 0] == flat[0, 0, 1] == flat[0, 0, 2] == 128
+
+
+def test_apply_saturation_identity_grayscale_and_boost():
+  import numpy as np
+  px = np.array([[[200, 100, 50]]], dtype=np.uint8)
+  assert np.array_equal(previews._apply_saturation(px, 1.0), px)   # 1.0 is identity
+  gray = previews._apply_saturation(px, 0.0)                       # 0.0 is fully desaturated
+  luma = round(0.299 * 200 + 0.587 * 100 + 0.114 * 50)
+  assert gray[0, 0, 0] == gray[0, 0, 1] == gray[0, 0, 2] == luma
+  boosted = previews._apply_saturation(px, 2.0)
+  assert boosted[0, 0, 0] > px[0, 0, 0] and boosted[0, 0, 2] < px[0, 0, 2]   # channels spread out
 
 
 def test_lift_shadows_identity_monotonic_and_highlight_neutral():

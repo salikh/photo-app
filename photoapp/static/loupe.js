@@ -550,6 +550,11 @@ function cameraMetaText(f) {
 
 const WB_MODES = ['camera', 'auto', 'manual'];
 const DEFAULT_WB = {r: 2.0, g: 1.0, b: 1.5};
+// Ticket 112: advanced RAW controls. Select values are strings; the noise/demosaic defaults
+// (off/AHD) map back to NULL so picking them again keeps "at default" true.
+const NOISE_MODES = [['0', 'off'], ['1', 'light'], ['2', 'full']];
+const DEMOSAIC_MODES = [['1', 'VNG'], ['2', 'PPG'], ['3', 'AHD (default)'], ['4', 'DCB'],
+                        ['11', 'DHT'], ['12', 'AAHD']];
 const PREVIEW_DEBOUNCE_MS = 200;
 
 let pending = null;      // {fileId, values} for whichever file's controls are currently open
@@ -560,7 +565,9 @@ let hoverFile = null;    // a sibling file whose own thumbnail ui.rowPreview is 
 function committedValues(f) {
   return {bright: f.raw_bright, wb_mode: f.raw_wb_mode, wb_r: f.raw_wb_r, wb_g: f.raw_wb_g,
           wb_b: f.raw_wb_b, highlight: f.raw_highlight,
-          exposure: f.raw_exposure, shadow: f.raw_shadow};
+          exposure: f.raw_exposure, shadow: f.raw_shadow,
+          saturation: f.raw_saturation, contrast: f.raw_contrast, noise: f.raw_noise,
+          demosaic: f.raw_demosaic};
 }
 
 function isDirty(values, committed) {
@@ -672,6 +679,8 @@ function renderRawSettingsBody(f, container) {
   const highlightLabel = el('span', {class: 'meta', text: String(highlight)});
   const exposureLabel = el('span', {class: 'meta', text: (values.exposure ?? 1.0).toFixed(2)});
   const shadowLabel = el('span', {class: 'meta', text: (values.shadow ?? 0.0).toFixed(2)});
+  const saturationLabel = el('span', {class: 'meta', text: (values.saturation ?? 1.0).toFixed(2)});
+  const contrastLabel = el('span', {class: 'meta', text: (values.contrast ?? 1.0).toFixed(2)});
   const saveBtn = el('button', {class: 'primary', text: 'Save', onclick: () => saveRawSettings(f)});
   const discardBtn = el('button', {text: 'Discard changes', onclick: () => {
     discardPending();
@@ -729,10 +738,44 @@ function renderRawSettingsBody(f, container) {
       el('input', {type: 'range', min: '0.0', max: '0.5', step: '0.01', value: values.shadow ?? 0.0,
                  'aria-label': 'shadow pull', oninput: onTick('shadow', shadowLabel, (v) => v.toFixed(2))}),
       shadowLabel),
+    // Ticket 112: the advanced controls (saturation, contrast, noise reduction, demosaic
+    // algorithm) live behind a zipper so the loupe stays uncluttered for the common sliders above.
+    el('details', {class: 'advanced'},
+      el('summary', {text: 'Advanced'}),
+      el('div', {class: 'row'},
+        el('label', {text: 'Saturation'}),
+        el('input', {type: 'range', min: '0.0', max: '2.0', step: '0.05',
+                   value: values.saturation ?? 1.0, 'aria-label': 'saturation',
+                   oninput: onTick('saturation', saturationLabel, (v) => v.toFixed(2))}),
+        saturationLabel),
+      el('div', {class: 'row'},
+        el('label', {text: 'Contrast'}),
+        el('input', {type: 'range', min: '0.5', max: '2.0', step: '0.05',
+                   value: values.contrast ?? 1.0, 'aria-label': 'contrast',
+                   oninput: onTick('contrast', contrastLabel, (v) => v.toFixed(2))}),
+        contrastLabel),
+      el('div', {class: 'row'},
+        el('label', {text: 'Noise reduction'}),
+        el('select', {'aria-label': 'noise reduction', onchange: (e) => {
+          const v = Number(e.target.value);
+          values.noise = v === 0 ? null : v;   // off is the default -> back to NULL
+          syncButtons();
+          schedulePreview(f);
+        }}, NOISE_MODES.map(([v, text]) => el('option', {value: v, text,
+              selected: Number(v) === (values.noise ?? 0)})))),
+      el('div', {class: 'row'},
+        el('label', {text: 'Demosaic'}),
+        el('select', {'aria-label': 'demosaic', onchange: (e) => {
+          const v = Number(e.target.value);
+          values.demosaic = v === 3 ? null : v;   // AHD is the default -> back to NULL
+          syncButtons();
+          schedulePreview(f);
+        }}, DEMOSAIC_MODES.map(([v, text]) => el('option', {value: v, text,
+              selected: Number(v) === (values.demosaic ?? 3)}))))),
     el('div', {class: 'row'}, saveBtn, discardBtn,
       Object.values(values).every((v) => v == null) ? null : el('button', {
         text: 'Reset to default', onclick: () => {
-          Object.assign(values, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null, exposure: null, shadow: null});
+          Object.assign(values, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null, exposure: null, shadow: null, saturation: null, contrast: null, noise: null, demosaic: null});
           syncButtons();
           schedulePreview(f);
           renderRawSettingsBody(f, container);
