@@ -250,6 +250,7 @@ def test_pages_activity_attention_usage_jobs(page, server):
   page.goto(server.url + "/#!jobs")
   expect(page.get_by_role("heading", name="Background jobs")).to_be_visible()
   expect(page.locator("p.status").first).to_contain_text("Worker:")   # ticket 113 status line
+  expect(page.get_by_role("columnheader", name="Last minute")).to_be_visible()   # ticket 114
 
 
 def test_zoom_loads_full_size_and_toggles(page, server):

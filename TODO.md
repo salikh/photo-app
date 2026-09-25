@@ -9,10 +9,8 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-113, and 118 are done (see `STATUS.md`). What's left, in the order to pick it up:
+108-114, and 118 are done (see `STATUS.md`). What's left, in the order to pick it up:
 
-- [ ] [114](docs/tickets/114.md) Not started — recent job activity reporting columns on the "Jobs" page
-      (queued, running, done/failed across time windows: all time, 1d, 1h, 1m).
 - [ ] [115](docs/tickets/115.md) Ready to start (unblocked by [116](docs/tickets/116.md) answer) — non-destructive
       crop mode in photo editing.
 - [ ] [117](docs/tickets/117.md) Not started — multi-state filter buttons cycling =, >=, <= and 3-column

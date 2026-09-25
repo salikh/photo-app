@@ -246,8 +246,14 @@ def test_progress_buckets_by_finished_at(settings):
   p = q.progress()
   assert p["total"] == 6
   assert p["incomplete"] == 2
-  assert p["by_kind"] == {"a": {"done": 1, "failed": 1, "queued": 1},
-                          "b": {"done": 2, "running": 1}}
+  # ticket 114: by_kind keeps the all-time state counts and adds the per-window done/failed ones.
+  a, b = p["by_kind"]["a"], p["by_kind"]["b"]
+  assert (a["done"], a["failed"], a["queued"], a["running"]) == (1, 1, 1, 0)
+  assert (b["done"], b["failed"], b["running"]) == (2, 0, 1)
+  assert a["done_last_minute"] == 1 and a["failed_last_minute"] == 0
+  assert a["failed_last_hour"] == 1 and a["done_last_hour"] == 1
+  assert b["done_last_day"] == 1 and b["done_last_hour"] == 0
+  assert b["done_last_minute"] == 0 and b["failed_last_day"] == 0
   assert p["completed"]["last_minute"] == {"done": 1, "failed": 0}
   assert p["completed"]["last_hour"] == {"done": 1, "failed": 1}
   assert p["completed"]["last_day"] == {"done": 2, "failed": 1}
@@ -372,7 +378,8 @@ def test_populate_thumb_jobs_appear_on_the_running_apps_jobs_page(settings, monk
     assert data["counts"] == {"done": 1}
     assert data["jobs"][0]["kind"] == "populate_thumb"
     assert data["progress"]["total"] == 1 and data["progress"]["incomplete"] == 0
-    assert data["progress"]["by_kind"] == {"populate_thumb": {"done": 1}}
+    assert data["progress"]["by_kind"]["populate_thumb"]["done"] == 1
+    assert data["progress"]["by_kind"]["populate_thumb"]["done_last_minute"] == 1
     assert data["progress"]["completed"]["last_minute"] == {"done": 1, "failed": 0}
   finally:
     populator.stop()

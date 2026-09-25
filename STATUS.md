@@ -134,7 +134,12 @@ All ten build-order epics are done.
       returning busy state plus every running job's kind/path/start/duration, exposed on
       `/api/jobs`, and a `Worker: Idle` / `Worker: Active — …` status line on the Jobs page.
 
-Still open (see `TODO.md` for where to resume): [114](docs/tickets/114.md)-[115](docs/tickets/115.md),
+- [x] [114](docs/tickets/114.md) Recent job activity columns on the Jobs page: `JobQueue.progress()`
+      adds per-kind done/failed counts for all time, 1 day, 1 hour and 1 minute, and the page
+      replaces the old summary line with a grouped-header table (Queued, Running, Done/Failed per
+      window).
+
+Still open (see `TODO.md` for where to resume): [115](docs/tickets/115.md),
 [117](docs/tickets/117.md), [119](docs/tickets/119.md), [120](docs/tickets/120.md).
 
 ## Cross-cutting

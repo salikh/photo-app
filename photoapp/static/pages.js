@@ -63,11 +63,6 @@ export async function usagePage(main) {
     el('p', {class: 'status', text: 'Counts cover files the app has scanned; sizes are created on demand.'}));
 }
 
-function completedLine(label, text, completed) {
-  const c = completed[label];
-  return `${text}: ${c.done} done, ${c.failed} failed`;
-}
-
 function fmtDuration(seconds) {
   if (seconds == null) return null;
   if (seconds < 60) return `${Math.round(seconds)}s`;
@@ -86,6 +81,33 @@ function workerStatusText(active) {
   return `Worker: Active — ${items.join('; ')}`;
 }
 
+// ticket 114: the per-kind job counts as a three-level grouped header -- queued/running, then
+// done/failed for all time (effectively the retention window) and each shorter window.
+function jobsTable(kinds, p) {
+  const cell = (value, cls) => el('td', {class: cls || '', text: value || 0});
+  const windowHeaders = ['Done', 'Failed', 'Done', 'Failed', 'Done', 'Failed', 'Done', 'Failed'];
+  const head = el('thead', {},
+    el('tr', {},
+      el('th', {rowspan: 2, text: 'Kind'}),
+      el('th', {rowspan: 2, text: 'Queued'}),
+      el('th', {rowspan: 2, text: 'Running'}),
+      el('th', {colspan: 2, text: 'Done / Failed (all)'}),
+      el('th', {colspan: 2, text: 'Last day'}),
+      el('th', {colspan: 2, text: 'Last hour'}),
+      el('th', {colspan: 2, text: 'Last minute'})),
+    el('tr', {}, windowHeaders.map((text) => el('th', {text}))));
+  const rows = kinds.map((kind) => {
+    const s = p.by_kind[kind];
+    return el('tr', {},
+      el('td', {text: kind}), cell(s.queued), cell(s.running),
+      cell(s.done, 'ok'), cell(s.failed, 'bad'),
+      cell(s.done_last_day), cell(s.failed_last_day),
+      cell(s.done_last_hour), cell(s.failed_last_hour),
+      cell(s.done_last_minute), cell(s.failed_last_minute));
+  });
+  return el('div', {class: 'table-wrap'}, el('table', {}, head, el('tbody', {}, rows)));
+}
+
 export async function jobsPage(main) {
   const j = await get('/api/jobs');
   const p = j.progress;
@@ -95,19 +117,7 @@ export async function jobsPage(main) {
     el('p', {class: 'status ' + (j.active && j.active.busy ? 'ok' : ''), text: workerStatusText(j.active)}),
     el('p', {class: 'status', text:
       `Total: ${p.total} (all time so far)   Incomplete: ${p.incomplete}`}),
-    el('p', {class: 'status', text: [
-      completedLine('last_minute', 'Last minute', p.completed),
-      completedLine('last_hour', 'Last hour', p.completed),
-      completedLine('last_day', 'Last day', p.completed),
-    ].join('   ')}),
-    kinds.length ? table(['Kind', 'Queued', 'Running', 'Done', 'Failed'],
-      kinds.map((kind) => {
-        const s = p.by_kind[kind];
-        return el('tr', {},
-          el('td', {text: kind}), el('td', {text: s.queued || 0}),
-          el('td', {text: s.running || 0}), el('td', {class: 'ok', text: s.done || 0}),
-          el('td', {class: 'bad', text: s.failed || 0}));
-      })) : el('p', {class: 'status', text: 'No jobs.'}),
+    kinds.length ? jobsTable(kinds, p) : el('p', {class: 'status', text: 'No jobs.'}),
     j.jobs.length ? table(['#', 'Kind', 'File', 'State', 'Error'], j.jobs.map((x) => el('tr', {},
       el('td', {text: x.id}), el('td', {text: x.kind}), el('td', {text: x.file_id}),
       el('td', {class: x.state === 'failed' ? 'bad' : x.state === 'done' ? 'ok' : '', text: x.state}),

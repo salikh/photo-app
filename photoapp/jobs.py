@@ -138,13 +138,22 @@ class JobQueue:
   def progress(self):
     """A summary for the Jobs page (ticket 074): total, incomplete, a per-kind breakdown of
     every state, and how many done/failed jobs finished in the last minute/hour/day. Spans every
-    kind in the table, like counts(), not just this queue's own kinds."""
+    kind in the table, like counts(), not just this queue's own kinds.
+
+    Ticket 114: each `by_kind` entry also carries the per-window done/failed counts the Jobs table
+    shows as its "last day/hour/minute" columns (keys like `done_last_day`), so one request drives
+    the whole table; the top-level `completed` buckets stay for the overall summary."""
+    def empty_kind():
+      return {**{state: 0 for state in ("queued", "running", "done", "failed")},
+              **{f"{state}_{label}": 0
+                 for label, _ in self._COMPLETED_WINDOWS
+                 for state in ("done", "failed")}}
     with self._conn_lock:
       by_state = {r["state"]: r["n"] for r in self._conn.execute(
           "SELECT state, COUNT(*) n FROM jobs GROUP BY state")}
       by_kind = {}
       for r in self._conn.execute("SELECT kind, state, COUNT(*) n FROM jobs GROUP BY kind, state"):
-        by_kind.setdefault(r["kind"], {})[r["state"]] = r["n"]
+        by_kind.setdefault(r["kind"], empty_kind())[r["state"]] = r["n"]
       completed = {}
       for label, seconds in self._COMPLETED_WINDOWS:
         cutoff = (datetime.datetime.now() - datetime.timedelta(seconds=seconds)).isoformat(
@@ -155,6 +164,10 @@ class JobQueue:
             "state IN ('done', 'failed') GROUP BY state", (cutoff,)):
           bucket[r["state"]] = r["n"]
         completed[label] = bucket
+        for r in self._conn.execute(
+            "SELECT kind, state, COUNT(*) n FROM jobs WHERE finished_at >= ? AND "
+            "state IN ('done', 'failed') GROUP BY kind, state", (cutoff,)):
+          by_kind.setdefault(r["kind"], empty_kind())[f"{r['state']}_{label}"] = r["n"]
     return {
         "total": sum(by_state.values()),
         "incomplete": by_state.get("queued", 0) + by_state.get("running", 0),
