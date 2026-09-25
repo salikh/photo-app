@@ -311,6 +311,52 @@ def test_files_panel_shows_camera_metadata(page, server):
   expect(page.locator(".files-panel .file")).to_contain_text("2024:06:01 12:00:00")
 
 
+def test_files_panel_recenters_image_without_obstruction(page, server):
+  # ticket 121: opening the files/tuning panel recenters the image so it is not obstructed
+  # by the side panel. Both img.main and the flip / tuning overlay (img.tuning / img.row-preview)
+  # must clear the panel.
+  ids = open_loupe(page, server)
+  page.set_viewport_size({"width": 1024, "height": 768})
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel")).to_be_visible()
+  img = page.locator(".stage img.main").bounding_box()
+  panel = page.locator(".files-panel").bounding_box()
+  assert img["x"] + img["width"] <= panel["x"] + 0.5
+
+  # Flip / tuning overlay is also positioned within the cleared space, clearing the panel.
+  rp_box = page.evaluate("""() => {
+    const t = document.querySelector(".stage img.row-preview");
+    t.hidden = false;
+    return t.getBoundingClientRect();
+  }""")
+  assert rp_box["x"] + rp_box["width"] <= panel["x"] + 0.5
+
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel")).to_have_count(0)
+
+
+def test_crop_mode_saves_and_shades(page, server):
+  # ticket 115: the Crop button opens the editor, dragging a handle shrinks the rectangle, Save
+  # commits it, and the loupe then shades the cropped-out part (the grid Thumb is rendered
+  # cropped server-side, covered by tests/test_crop.py).
+  ids = open_loupe(page, server)
+  fid = server.app.state.db.execute(
+      "SELECT representative_file_id FROM photos WHERE id = ?", (ids[0],)).fetchone()[0]
+  page.get_by_role("button", name="crop").click()
+  expect(page.locator(".crop-editing")).to_be_visible()
+  handle = page.locator(".crop-handle.se").bounding_box()
+  page.mouse.move(handle["x"] + handle["width"] / 2, handle["y"] + handle["height"] / 2)
+  page.mouse.down()
+  page.mouse.move(handle["x"] - 80, handle["y"] - 60, steps=8)
+  page.mouse.up()
+  page.get_by_role("button", name="Save crop").click()
+  expect(page.locator(".crop-editing")).to_have_count(0)
+  crop_w = wait_for(lambda: server.app.state.db.execute(
+      "SELECT crop_w FROM files WHERE id = ?", (fid,)).fetchone()[0])
+  assert 0 < crop_w < 1
+  expect(page.locator(".crop-shade:not([hidden])")).to_have_count(1)
+
+
 def test_raw_settings_controls_only_show_for_raw_files(page, server):
   # ticket 085: sliders/controls only appear for a RAW file (not the JPEG sibling).
   open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")

@@ -29,7 +29,13 @@ const current = () => state.photos[index];
 function build() {
   if (root) return;
   window.__preloadedUrls = preloader.urls;      // test hook: what is being held ahead of time
-  ui.img = el('img', {class: 'main', alt: '', draggable: 'false'});
+  ui.img = el('img', {class: 'main', alt: '', draggable: 'false',
+                      onload: () => updateCropShade()});
+  // Ticket 115: a dark shading layer over the cropped-out part of the frame, shown for a file
+  // with a crop while viewing the full-frame Medium/Huge (the cropped Thumb/Small are rendered
+  // server-side instead). Pointer-events none; purely visual.
+  ui.cropShade = el('div', {class: 'crop-shade', hidden: true},
+    el('div', {class: 'crop-rect'}));
   ui.tuning = el('img', {class: 'tuning', alt: '', draggable: 'false', hidden: true,
                         onload: syncTuningVisible});
   // Ticket 107: a second, independent overlay for hovering a sibling file's row in the Files
@@ -44,7 +50,7 @@ function build() {
   ui.tuningBusy = el('div', {class: 'tuning-busy', hidden: true});
   ui.preview = el('div', {class: 'rate-preview'});
   ui.stage = el('div', {class: 'stage'},
-    ui.img, ui.tuning, ui.rowPreview, ui.tuningBusy, ui.preview,
+    ui.img, ui.cropShade, ui.tuning, ui.rowPreview, ui.tuningBusy, ui.preview,
     el('button', {class: 'nav-hint prev', 'aria-label': 'previous', text: '‹', onclick: (e) => { e.stopPropagation(); go(-1); }}),
     el('button', {class: 'nav-hint next', 'aria-label': 'next', text: '›', onclick: (e) => { e.stopPropagation(); go(1); }}));
   ui.strip = createFilmstrip((id) => {
@@ -62,6 +68,7 @@ function build() {
   // Pinch, drag, double tap, Ctrl+wheel: see zoom.js. The viewer supplies the photo's real size and
   // what to show while zoomed.
   ui.zoom = createZoom(ui.stage, ui.img, {fullSize, onEnter: enterZoom, onExit: exitZoom});
+  window.addEventListener('resize', updateCropShade);
 
   attachSwipe(ui.stage, {
     enabled: () => !zoomed,
@@ -134,6 +141,7 @@ export function close() {
   closeFiles();
   closeFilterPicker();
   closeDeleteModal();
+  exitCropMode();   // ticket 115: leaving the viewer drops an unsaved crop
   ui.zoom.reset();
   zoomed = false;
   ui.stage.classList.remove('zoomed');
@@ -144,6 +152,7 @@ function show(i) {
   index = i;
   const photo = current();
   closeDeleteModal();   // it would otherwise still show, referring to the previous photo's file
+  exitCropMode(false);  // ticket 115: navigating away discards an unsaved crop
   ui.zoom.reset();
   zoomed = false;
   ui.stage.classList.remove('zoomed');
@@ -152,6 +161,7 @@ function show(i) {
   discardPending();   // ticket 094: never let a provisional render leak past navigating away
   ui.img.src = imgUrl('Medium', photo.file_id);
   ui.img.alt = photo.name;
+  updateCropShade();
   retryOnce(ui.img, photo);
   renderHud();
   renderFilmstrip(true);                 // centered on the current photo
@@ -234,6 +244,7 @@ function enterZoom() {
   zoomed = true;
   ui.stage.classList.add('zoomed');
   ui.tuning.hidden = true;   // ticket 094: the provisional overlay doesn't track the zoom transform
+  ui.cropShade.hidden = true;   // ticket 115: nor does the crop shading
   const photo = current();
   const url = imgUrl('Huge', photo.file_id);
   const full = new Image();                          // swap in the full-size picture once it is there
@@ -257,6 +268,7 @@ function exitZoom() {
   const photo = current();
   if (photo) ui.img.src = imgUrl('Medium', photo.file_id);
   syncTuningVisible();   // ticket 094/107: restore the overlay if hover/Shift still calls for it
+  updateCropShade();
 }
 
 // Zoom needs the size of the picture on screen; if it has not loaded yet (a slow link), wait for it.
@@ -303,6 +315,9 @@ function renderHud() {
       el('button', {text: '♥', title: 'fav (F)', class: p.fav ? 'on' : '', onclick: toggleFav}),
       el('button', {text: 'tag', title: 'tags (T)', onclick: openTagInput}),
       el('button', {text: '↶', title: 'undo (U)', onclick: undo}),
+      el('button', {text: 'crop', title: 'crop this photo (non-destructive)',
+                    class: cropMode ? 'on' : '',
+                    onclick: (e) => { e.stopPropagation(); toggleCropMode(); }}),
       el('button', {text: 'files', title: 'files / tunings (I)', class: filesOpen ? 'on' : '', onclick: () => filesOpen ? closeFiles() : openFiles()}),
       brokenFileId === p.file_id
         ? el('button', {class: 'broken-thumb', title: 'this thumbnail failed to load -- click to re-render it',
@@ -800,11 +815,175 @@ function renderRawSettingsBody(f, container) {
       })));
 }
 
+// ------------------------------------------- non-destructive crop (ticket 115)
+//
+// A crop is stored per file as normalized x/y/w/h fractions. Thumb/Small are rendered cropped
+// server-side (the grid and filmstrip show the intended composition), while the loupe's
+// Medium/Huge stay full-frame and the cropped-out part is shaded dark (ticket 116's answer).
+// The editor below overlays an interactive rectangle on the full-frame Medium image; Save POSTs
+// the rectangle and clears the thumbnail cache so the cropped sizes regenerate; Discard just
+// drops the overlay (nothing was written until Save).
+//
+// Non-RAW files never got a raw-settings panel, so this is deliberately its own mode rather than
+// folded into it -- crop applies to JPEG and RAW alike.
+
+let cropMode = false;
+let cropState = null;   // {photo, rect, layer, rectEl, drag}
+const CROP_MIN = 0.05;
+const CROP_HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const clampTo = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+function cropFromColumns(row) {
+  return row && row.crop_x != null
+    ? {x: row.crop_x, y: row.crop_y, w: row.crop_w, h: row.crop_h} : null;
+}
+
+function setRectStyle(node, rect) {
+  node.style.left = rect.x * 100 + '%';
+  node.style.top = rect.y * 100 + '%';
+  node.style.width = rect.w * 100 + '%';
+  node.style.height = rect.h * 100 + '%';
+}
+
+// Position a shade/editor layer exactly over the displayed image (object-fit: contain centers it
+// within the stage, so img.getBoundingClientRect() is the real content box) and place its rect.
+function positionCropLayer(layer, rect) {
+  const stage = ui.stage.getBoundingClientRect();
+  const img = ui.img.getBoundingClientRect();
+  layer.style.left = img.left - stage.left + 'px';
+  layer.style.top = img.top - stage.top + 'px';
+  layer.style.width = img.width + 'px';
+  layer.style.height = img.height + 'px';
+  setRectStyle(layer.querySelector('.crop-rect'), rect);
+}
+
+function updateCropShade() {
+  if (!ui.cropShade) return;
+  const photo = current();
+  if (cropMode || zoomed || !photo || !photo.crop || !ui.img.naturalWidth) {
+    ui.cropShade.hidden = true;
+    return;
+  }
+  positionCropLayer(ui.cropShade, photo.crop);
+  ui.cropShade.hidden = false;
+}
+
+function toggleCropMode() { cropMode ? exitCropMode(false) : enterCropMode(); }
+
+function enterCropMode() {
+  const photo = current();
+  if (!photo) return;
+  if (!ui.img.naturalWidth) {
+    // The image (and so its on-screen box) is not there yet; retry once it loads, unless the user
+    // has navigated away in the meantime.
+    whenShown(() => { if (current() === photo) enterCropMode(); });
+    return;
+  }
+  if (zoomed) ui.zoom.exit();
+  exitCropMode(false);
+  cropMode = true;
+  const rect = photo.crop ? {...photo.crop} : {x: 0, y: 0, w: 1, h: 1};
+  const rectEl = el('div', {class: 'crop-rect crop-editable'},
+    CROP_HANDLES.map((dir) => el('div', {class: 'crop-handle ' + dir, dataset: {dir}})));
+  const layer = el('div', {class: 'crop-shade crop-editing',
+    // Keep the stage's swipe handler from capturing the pointer (which would swallow the
+    // actions' clicks), the same way the Files panel does.
+    onpointerdown: (e) => e.stopPropagation()},
+    rectEl,
+    el('div', {class: 'crop-actions'},
+      el('button', {class: 'primary', text: 'Save crop',
+                    onclick: (e) => { e.stopPropagation(); saveCrop(); }}),
+      el('button', {text: 'Discard', onclick: (e) => { e.stopPropagation(); exitCropMode(false); }})));
+  ui.stage.append(layer);
+  cropState = {photo, rect, layer, rectEl, drag: null};
+  setRectStyle(rectEl, rect);
+  positionCropLayer(layer, rect);
+  ui.cropShade.hidden = true;
+  layer.addEventListener('pointerdown', onCropPointerDown);
+  renderHud();
+}
+
+function exitCropMode() {
+  if (!cropMode) return;
+  cropMode = false;
+  if (cropState) { cropState.layer.remove(); cropState = null; }
+  updateCropShade();
+  renderHud();
+}
+
+function onCropPointerDown(e) {
+  if (!cropState) return;
+  const dir = e.target.dataset ? e.target.dataset.dir : null;
+  const moving = e.target.classList.contains('crop-editable');
+  if (!dir && !moving) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const box = cropState.layer.getBoundingClientRect();
+  cropState.drag = {dir: dir || 'move', startX: e.clientX, startY: e.clientY,
+                    rect: {...cropState.rect}, boxW: box.width || 1, boxH: box.height || 1};
+  e.target.setPointerCapture(e.pointerId);
+  cropState.layer.addEventListener('pointermove', onCropPointerMove);
+  cropState.layer.addEventListener('pointerup', onCropPointerUp);
+  cropState.layer.addEventListener('pointercancel', onCropPointerUp);
+}
+
+function onCropPointerMove(e) {
+  const d = cropState && cropState.drag;
+  if (!d) return;
+  const dx = (e.clientX - d.startX) / d.boxW;
+  const dy = (e.clientY - d.startY) / d.boxH;
+  const r = d.rect;
+  let {x, y, w, h} = r;
+  if (d.dir === 'move') {
+    x = clampTo(r.x + dx, 0, 1 - r.w);
+    y = clampTo(r.y + dy, 0, 1 - r.h);
+  } else {
+    let left = r.x, top = r.y, right = r.x + r.w, bottom = r.y + r.h;
+    if (d.dir.includes('w')) left = clampTo(r.x + dx, 0, right - CROP_MIN);
+    if (d.dir.includes('e')) right = clampTo(r.x + r.w + dx, left + CROP_MIN, 1);
+    if (d.dir.includes('n')) top = clampTo(r.y + dy, 0, bottom - CROP_MIN);
+    if (d.dir.includes('s')) bottom = clampTo(r.y + r.h + dy, top + CROP_MIN, 1);
+    x = left; y = top; w = right - left; h = bottom - top;
+  }
+  cropState.rect = {x, y, w, h};
+  setRectStyle(cropState.rectEl, cropState.rect);
+}
+
+function onCropPointerUp() {
+  if (!cropState) return;
+  cropState.drag = null;
+  cropState.layer.removeEventListener('pointermove', onCropPointerMove);
+  cropState.layer.removeEventListener('pointerup', onCropPointerUp);
+  cropState.layer.removeEventListener('pointercancel', onCropPointerUp);
+}
+
+async function saveCrop() {
+  if (!cropState) return;
+  const {photo, rect} = cropState;
+  try {
+    const res = await post(`/api/files/${photo.file_id}/crop`, rect);
+    photo.crop = cropFromColumns(res.crop);
+    toast('crop saved; thumbnails will regenerate on next view');
+  } catch (e) { return; }   // post() already toasted the server error
+  exitCropMode();
+  if (current() === photo) {
+    // Medium is unchanged (full frame) but the Thumb/Small the grid and filmstrip show are stale.
+    refreshCellThumb(photo.id, photo.file_id);
+    ui.strip.refreshThumb(photo.id, photo.file_id);
+    updateCropShade();
+  }
+  if (filesOpen) openFiles();
+}
+
 async function openFiles() {
   filesOpen = true;
+  if (ui.stage) {
+    ui.stage.classList.add('panel-open');   // ticket 121: recenter image immediately
+    updateCropShade();
+  }
   const photo = current();
   let detail;
-  try { detail = await get('/api/photos/' + photo.id); } catch (e) { toast(e.message, true); return; }
+  try { detail = await get('/api/photos/' + photo.id); } catch (e) { toast(e.message, true); closeFiles(); return; }
   if (!filesOpen || current() !== photo) return;
   closePanelOnly();
   hideRowPreview();   // ticket 107: drop any hover state from the panel being replaced
@@ -841,18 +1020,26 @@ async function openFiles() {
       el('button', {text: 'Close', onclick: closeFiles})));
   ui.stage.append(ui.panel);
   ui.stage.classList.add('panel-open');   // ticket 121: recenter image to avoid panel
+  updateCropShade();
   renderHud();
 }
 
 function closePanelOnly() {
   if (ui.panel) { ui.panel.remove(); ui.panel = null; }
-  if (ui.stage) ui.stage.classList.remove('panel-open');   // ticket 121
+  if (ui.stage && !filesOpen) {
+    ui.stage.classList.remove('panel-open');   // ticket 121
+    updateCropShade();
+  }
 }
 
 function closeFiles() {
   filesOpen = false;
   discardPending();   // ticket 094: closing the panel without Save drops any provisional tuning
   hideRowPreview();   // ticket 107
+  if (ui.stage) {
+    ui.stage.classList.remove('panel-open');
+    updateCropShade();
+  }
   closePanelOnly();
   if (root && !root.hidden) renderHud();
 }
@@ -986,6 +1173,9 @@ async function deleteFile(file) {
 
 function onKey(e) {
   if (ui.deleteModal) { if (e.key === 'Escape') closeDeleteModal(); return; }
+  // Ticket 115: crop mode swallows the normal hotkeys (an accidental rating key while dragging a
+  // handle would be surprising); Escape discards the crop.
+  if (cropMode) { if (e.key === 'Escape') exitCropMode(); return; }
   // Ticket 107: Shift is the compare modifier -- checked before isTyping's guard because a bare
   // modifier key never types a character into a focused input (unlike a letter hotkey), so it
   // must keep working even while a raw-settings slider has focus, which is exactly when comparing
