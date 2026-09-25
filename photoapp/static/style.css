@@ -261,6 +261,10 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   position: absolute; right: 0; top: 0; bottom: 0; width: min(420px, 100%); overflow: auto;
   background: var(--bg-raised); border-left: 1px solid var(--border); padding: 12px; z-index: 3;
 }
+/* Ticket 121: recenter the image so it is not obstructed by the side panel.
+   padding-right shrinks the flex centering area, shifting img.main left; the tuning overlay
+   (position: absolute; inset: 0) tracks the same padded bounds automatically. */
+.stage.panel-open { padding-right: min(420px, 40%); }
 .files-panel h3 { margin: 0 0 8px; }
 .files-panel .file { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .files-panel .file.rep { border-color: var(--accent); }
@@ -354,4 +358,5 @@ h2 { margin: 16px 0 8px; }
   header.bar nav { order: 3; width: 100%; gap: 16px; }
   .hud .name { flex-basis: 100%; }
   .files-panel { width: 100%; }
+  .stage.panel-open { padding-right: 0; }   /* ticket 121: panel is full-width on mobile, no shift */
 }

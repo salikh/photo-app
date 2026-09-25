@@ -840,11 +840,13 @@ async function openFiles() {
       el('button', {text: 'Use default', onclick: () => setRepresentative(detail, null)}),
       el('button', {text: 'Close', onclick: closeFiles})));
   ui.stage.append(ui.panel);
+  ui.stage.classList.add('panel-open');   // ticket 121: recenter image to avoid panel
   renderHud();
 }
 
 function closePanelOnly() {
   if (ui.panel) { ui.panel.remove(); ui.panel = null; }
+  if (ui.stage) ui.stage.classList.remove('panel-open');   // ticket 121
 }
 
 function closeFiles() {
