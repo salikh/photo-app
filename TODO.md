@@ -14,6 +14,7 @@ All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (1
 - [ ] [119](docs/tickets/119.md) Bug — tuned RAW rendering sometimes is not applied when switching images.
 - [ ] [120](docs/tickets/120.md) Bug — deletion confirmation page does not support "this folder and subfolders" mode.
 - [ ] [122](docs/tickets/122.md) Enhancement — free option in "filter by tag" to type any tag in addition to aspects from current view.
+- [ ] [123](docs/tickets/123.md) Enhancement — dot-tags unhide hidden directories and imply tag from directory name.
 
 ## Restart notes
 
@@ -57,4 +58,4 @@ To try things on a device: `./start.sh` (add `--one_star_is_unrated` if you want
 
 ## Feature requests (to file new tickets)
 
-* When filter is to search by tag, and the tag starts with a dot ('.'), during scanning of the matching files include the dot-starting hidden directories. In other words, tags starting with a dot unhide the hidden directories. Also, for the files in a hidden directory, assume they are tagged with the tag equal to the hidden directory name, even if the tag is not written directly into the metadata.
+*No open feature requests right now (dot-tag hidden directory request filed as [123](docs/tickets/123.md)).*
