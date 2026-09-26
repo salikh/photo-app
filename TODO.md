@@ -9,7 +9,16 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-115 and 117-123 are done (see `STATUS.md`). There are no open tickets.
+108-115 and 117-123 are done (see `STATUS.md`). New reports filed 2026-09-26:
+
+- [ ] [124](docs/tickets/124.md) Bug — rejected-deletion confirmation screen ignores subdirectories
+      (related to the 120 fix; needs the exact remaining path pinned down).
+- [ ] [125](docs/tickets/125.md) Export should be a Huge-equivalent JPEG that always applies the
+      file's crop (refined feature request; related to 115/116).
+- [ ] [126](docs/tickets/126.md) Bug — "Rescan" fails with "scan failed: no item with that key"
+      (root cause: `_scan_files` reads `old["hash"]` from a lookup that doesn't select it).
+- [ ] [127](docs/tickets/127.md) Feature — Rescan should honour the current folder's scope
+      ("This folder" vs "+ subfolders"); same button as 126.
 
 ## Restart notes
 
