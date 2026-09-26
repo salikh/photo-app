@@ -70,11 +70,12 @@ def move_to_trash(pictures_dir, rel_path):
 
 
 def _move_file_and_sidecars(conn, settings, file_id, rel_path):
-  """Move one file and its own sidecars into .trash/. Returns (moved, errors) in the same shape
-  trash_photo/trash_file return under those keys. Does not mark anything missing or commit --
-  shared by both callers, which do that at their own granularity (once per file for trash_file,
-  once per Photo's worth of files for trash_photo)."""
-  rels = [rel_path] + [r["path"] for r in conn.execute(
+  """Move one file, its XMP sidecars and its per-file metadata JSON (ticket 111's
+  ``<name>.json``) into .trash/. Returns (moved, errors) in the same shape trash_photo/trash_file
+  return under those keys. Does not mark anything missing or commit -- shared by both callers,
+  which do that at their own granularity (once per file for trash_file, once per Photo's worth of
+  files for trash_photo)."""
+  rels = [rel_path, rel_path + ".json"] + [r["path"] for r in conn.execute(
       "SELECT path FROM xmp_sidecars WHERE file_id = ?", (file_id,))]
   moved, errors = [], []
   for rel in rels:

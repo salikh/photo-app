@@ -73,6 +73,21 @@ def test_trash_photo_moves_every_file_and_sidecar_and_marks_them_missing(conn, s
   assert len(rows) == 2 and all(r["missing"] for r in rows)
 
 
+def test_trash_photo_moves_the_per_file_metadata_json_too(conn, settings):
+  # ticket 111's <name>.json cache lives next to the image, so trashing the image takes it along.
+  pid = setup_rejected_pair(conn, settings)
+  d = settings.pictures_dir
+  for name in ("K1.DNG", "K1.JPG"):
+    with open(os.path.join(d, "2024/trip", name + ".json"), "w") as f:
+      f.write("{}")
+  result = trash.trash_photo(conn, settings, pid)
+  moved_from = sorted(m["from"] for m in result["moved"])
+  assert "2024/trip/K1.DNG.json" in moved_from and "2024/trip/K1.JPG.json" in moved_from
+  for rel in ("2024/trip/K1.DNG.json", "2024/trip/K1.JPG.json"):
+    assert not os.path.exists(os.path.join(d, rel))
+    assert os.path.isfile(os.path.join(d, ".trash", rel))
+
+
 def test_trash_photo_refuses_a_photo_that_is_not_rejected(conn, settings):
   d = settings.pictures_dir
   make_jpeg(os.path.join(d, "a.jpg"))
@@ -106,6 +121,19 @@ def test_trash_file_moves_one_file_and_its_sidecar_leaves_siblings_alone(conn, s
   rows = {r["path"]: r["missing"] for r in conn.execute(
       "SELECT path, missing FROM files WHERE photo_id = ?", (pid,))}
   assert rows["2024/trip/K1.DNG"] == 1 and rows["2024/trip/K1.JPG"] == 0
+
+
+def test_trash_file_moves_only_its_own_metadata_json(conn, settings):
+  pid = setup_rejected_pair(conn, settings)
+  d = settings.pictures_dir
+  for name in ("K1.DNG", "K1.JPG"):
+    with open(os.path.join(d, "2024/trip", name + ".json"), "w") as f:
+      f.write("{}")
+  dng_id = conn.execute("SELECT id FROM files WHERE path = '2024/trip/K1.DNG'").fetchone()[0]
+  moved_from = sorted(m["from"] for m in trash.trash_file(conn, settings, dng_id)["moved"])
+  assert "2024/trip/K1.DNG.json" in moved_from and "2024/trip/K1.JPG.json" not in moved_from
+  assert os.path.isfile(os.path.join(d, ".trash/2024/trip/K1.DNG.json"))
+  assert os.path.isfile(os.path.join(d, "2024/trip/K1.JPG.json"))   # sibling's stays
 
 
 def test_trash_file_does_not_require_a_rejected_photo(conn, settings):

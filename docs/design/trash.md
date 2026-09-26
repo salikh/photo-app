@@ -66,7 +66,9 @@ only one answer in this codebase to "what does deleting a file mean," not two si
 different ones that could drift apart. What differs is scope (every live file of a Photo vs. one
 file) and the gate (rated reject vs. none) — `trash_file` exists specifically because "delete this
 one tuning/export, I don't want to reject the whole Photo" is a real, different intent from "get
-this whole rejected Photo off disk."
+this whole rejected Photo off disk." Each image's XMP sidecars *and* its ticket 111 per-file
+`<name>.json` metadata cache move with it (the cache is written next to the image, so it would
+otherwise be a stale record pointing at a file that is no longer there).
 
 `trash_file` does **not** try to repair `photos.representative_file_id` or `original_file_id` if
 the deleted file was either — worth spelling out because the tempting fix doesn't actually work:
