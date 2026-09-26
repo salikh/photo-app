@@ -39,6 +39,21 @@ def path_for(thumbs_dir, file_path):
   return os.path.join(thumbs_dir, PREVIEW_DIR, file_path + ".preview.dng")
 
 
+def move(thumbs_dir, old_path, new_path):
+  """Rename the cached preview DNG (if any) after its source moved/renamed (ticket 128).
+
+  Keeps this cache matched to the picture's new name alongside thumbs.move_thumbnails. Returns
+  whether a file was moved.
+  """
+  src = path_for(thumbs_dir, old_path)
+  if not os.path.isfile(src):
+    return False
+  dest = path_for(thumbs_dir, new_path)
+  os.makedirs(os.path.dirname(dest), exist_ok=True)
+  os.replace(src, dest)
+  return True
+
+
 def stats(conn, thumbs_dir):
   """(usage, lacking) for the on-disk preview DNG cache, for the Thumbnails report table.
 

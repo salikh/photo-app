@@ -171,6 +171,28 @@ def clear(thumbs_dir, conn, file_id, file_path):
   return cleared
 
 
+def move_thumbnails(conn, thumbs_dir, file_id, old_path, new_path):
+  """Rename a moved/renamed file's cached thumbnails to the new name and update their rows.
+
+  Ticket 128: thumbnails are keyed by the source path, so a move/rename would otherwise orphan the
+  existing renders and force a fresh render under the new name. Every size that actually has a
+  cached file is moved (`os.replace`, parent dirs created); a size with no file is left alone.
+  Returns the sizes moved.
+  """
+  moved = []
+  for size in SIZES:
+    src = thumb_path(thumbs_dir, size, old_path)
+    if not os.path.isfile(src):
+      continue
+    dest = thumb_path(thumbs_dir, size, new_path)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    os.replace(src, dest)
+    conn.execute("UPDATE thumbs SET path = ? WHERE file_id = ? AND size = ?",
+                 (dest, file_id, size))
+    moved.append(size)
+  return moved
+
+
 def _record(conn, file_id, size, path, source):
   conn.execute(
       "INSERT INTO thumbs (file_id, size, path, bytesize, source) "

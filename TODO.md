@@ -8,18 +8,13 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [128](docs/tickets/128.md) Move/rename detection keeps the file's identity and moves its
-      thumbnails (and the PreviewDNG cache) to the new name, checking the content hash against the
-      full database so a limited rescan still catches a move out of an unscanned directory.
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-115, 117-124 and 127 are done (see `STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107) and tickets 108-115, 117-124, 127 and 128 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- **In progress: ticket [128](docs/tickets/128.md) (move/rename detection + thumbnail move).** Filed
-  with the full design; see the ticket for the detection rule, the repoint-instead-of-insert plan and
-  the thumbnail/PreviewDNG followup moves.
+- No work in progress. Ticket 128 (move/rename detection + thumbnail move) is done; see `STATUS.md`.
+  New requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

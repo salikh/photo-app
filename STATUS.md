@@ -195,6 +195,13 @@ All ten build-order epics are done.
       `crop.pixel_box` rectangle, never the full-frame lossy Huge). The imported export row starts
       with all `crop_*` columns `NULL`, so it is not double-cropped.
 
+- [x] [128](docs/tickets/128.md) Move/rename detection keeps the file's identity and moves its
+      cached thumbnails: a not-yet-known path whose content uniquely matches one gone `files` row
+      (looked up against the whole database) repoints that row instead of inserting a new one, so its
+      Photo/rating/tags/raw settings/crop/links survive; `thumbs.move_thumbnails` and
+      `raw_preview_dng.move` then rename the cached artifacts to the new name. Copies and ambiguous
+      duplicates are left alone; hash recovery remains the fallback for a row that is truly gone.
+
 No open tickets. See `TODO.md`.
 
 ## Cross-cutting

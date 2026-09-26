@@ -126,14 +126,7 @@ def test_file_that_moved_is_found_by_hash(conn, settings):
   bump(d)
   scan.scan(conn, d)
   f = by_path(conn)
-  assert f["a.jpg"]["missing"] == 1
-  assert f["sub/a.jpg"]["photo_id"] == f["sub/a.dng"]["photo_id"]   # rule paired it
-  # once the stale row is gone (cleanup), the decision follows the hash
-  old_id = f["a.jpg"]["id"]
-  conn.execute("UPDATE files SET photo_id = NULL WHERE id = ?", (old_id,))
-  conn.execute("DELETE FROM photos WHERE original_file_id = ?", (old_id,))
-  conn.execute("DELETE FROM files WHERE id = ?", (old_id,))
-  manual_links.apply_all(conn)
-  f = by_path(conn)
-  assert f["sub/a.jpg"]["photo_id"] != f["sub/a.dng"]["photo_id"]
+  assert "a.jpg" not in f                                     # ticket 128: repointed, not left missing
+  # the unlink decision follows the file (by its unchanged row / hash) and beats the pairing rule
   assert f["sub/a.jpg"]["link_source"] == "manual"
+  assert f["sub/a.jpg"]["photo_id"] != f["sub/a.dng"]["photo_id"]

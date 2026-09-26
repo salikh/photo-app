@@ -7,6 +7,7 @@ marked missing=1, never deleted. All paths in the database are relative
 to the pictures dir with '/' separators.
 """
 
+import collections
 import concurrent.futures
 import dataclasses
 import hashlib
@@ -24,6 +25,7 @@ from photoapp import manual_links
 from photoapp import metacache
 from photoapp import paths
 from photoapp import ratings
+from photoapp import raw_preview_dng
 from photoapp import thumbs
 from photoapp import trash
 from photoapp import xmp
@@ -106,8 +108,50 @@ def _lookup_files(conn, rel_dir, names, columns="id, path, mtime, bytesize, miss
   return found
 
 
+def _find_move_source(conn, pictures_dir, file_hash):
+  """The one existing files row whose content matches file_hash and whose file is gone.
+
+  Searched against the whole table (the files_hash index), not just the scanned scope, so a limited
+  rescan still recognises a move out of a directory it did not walk (ticket 128). A file whose old
+  path still exists on disk is a copy, not a move, and is not a candidate. More than one gone match
+  is ambiguous (the content was in several places) and returns None, matching recovery.py's rule
+  that a wrong automatic repoint is worse than leaving a path missing one scan longer.
+  """
+  if not file_hash:
+    return None
+  gone = [r for r in conn.execute(
+      "SELECT id, path FROM files WHERE hash = ?", (file_hash,))
+      if not os.path.exists(os.path.join(pictures_dir, r["path"]))]
+  return gone[0] if len(gone) == 1 else None
+
+
+def _apply_move(conn, pictures_dir, thumbs_dir, file_id, old_path, new_path, record):
+  """Repoint a moved/renamed file's row to its new path and move its cached artifacts (ticket 128).
+
+  The row keeps its id -- and so its Photo, rating/fav, tags, raw settings, crop, thumb_rev, manual
+  links and exports -- instead of being left missing while a fresh, unrated row is inserted. The
+  generated thumbnails and the PreviewDNG cache follow the new name so they stay matched to the
+  picture. The old directory is returned so grouping there can be revisited.
+  """
+  conn.execute(
+      "UPDATE files SET path = ?, hash = ?, mime_type = ?, width = ?, height = ?,"
+      " bytesize = ?, mtime = ?, exif_date = ?, aperture = ?, shutter_speed = ?, iso = ?,"
+      " focal_length = ?, camera_make = ?, camera_model = ?, missing = 0 WHERE id = ?",
+      (new_path, record["hash"], record["mime_type"], record["width"], record["height"],
+       record["bytesize"], record["mtime"], record["exif_date"], record["aperture"],
+       record["shutter_speed"], record["iso"], record["focal_length"],
+       record["camera_make"], record["camera_model"], file_id))
+  moved = []
+  if thumbs_dir:
+    moved = thumbs.move_thumbnails(conn, thumbs_dir, file_id, old_path, new_path)
+    raw_preview_dng.move(thumbs_dir, old_path, new_path)
+  logging.vlog(3, "%s: moved from %s (kept file id %d, %d thumbnail size(s))",
+               new_path, old_path, file_id, len(moved))
+  return paths.dirname(old_path)
+
+
 def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
-                progress, pool, metadata_cache=False):
+                progress, pool, thumbs_dir=None, metadata_cache=False):
   """Read new or changed image files of one directory.
 
   The pool runs the per-file work (stat, decode, hash), which is dominated by
@@ -117,9 +161,12 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
   in the directory's on-disk index.json is reused instead of decoded: only its
   database row is refreshed from the record. A record that is still valid but
   lacks a key added later (e.g. focal_length) is backfilled by re-reading just
-  that file's metadata, keeping its cached hash. Returns (changed, records):
-  records is {name: record} for every current image file (used to write the new
-  index.json), or {} when the cache is off.
+  that file's metadata, keeping its cached hash. A file at a path not yet known
+  whose content matches one gone row is treated as that row moved/renamed
+  (ticket 128) and repointed, keeping its identity. Returns (changed, records,
+  moved_from): records is {name: record} for every current image file (used to
+  write the new index.json), or {} when the cache is off; moved_from is the set
+  of old directories a move came out of, for grouping.
   """
   changed = False
   # Include hash: the ticket 111 cache path below reuses an unchanged file's DB hash when its
@@ -182,17 +229,30 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
         "focal_length": focal_length, "camera_make": camera_make,
         "camera_model": camera_model}, True
 
+  results = [r for r in pool.map(work, filenames) if r is not None]
+  # Ticket 128: a file at a path not yet known whose content uniquely matches one gone row is
+  # that row moved/renamed. The new files' hashes are counted first, so two new files with the
+  # same content (a copy, or genuine duplicates) are ambiguous and both fall back to plain
+  # inserts instead of claiming the one source row.
+  new_hashes = collections.Counter(
+      r[2]["hash"] for r in results if known.get(r[1]) is None and r[2].get("hash"))
   records = {}
-  for result in pool.map(work, filenames):
-    if result is None:
-      continue
-    name, rel_path, record, was_read = result
+  moved_from = set()
+  for name, rel_path, record, was_read in results:
     records[name] = record
-    _upsert_file(conn, rel_path, record)
+    source = None
+    if (known.get(rel_path) is None and record.get("hash")
+        and new_hashes[record["hash"]] == 1):
+      source = _find_move_source(conn, pictures_dir, record["hash"])
+    if source is not None:
+      moved_from.add(_apply_move(conn, pictures_dir, thumbs_dir,
+                                 source["id"], source["path"], rel_path, record))
+    else:
+      _upsert_file(conn, rel_path, record)
     if was_read:
       progress.files_processed += 1
       changed = True
-  return changed, records
+  return changed, records, moved_from
 
 
 def _sidecar_owners(image_names, sidecar_names):
@@ -338,11 +398,12 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
       continue
 
     logging.vlog(3, "scanning %s (%d files)", rel_dir, len(images))
-    changed_files, records = _scan_files(
+    changed_files, records, moved_from = _scan_files(
         conn, pictures_dir, dirpath, rel_dir, images, hashes, progress, pool,
-        metadata_cache)
+        thumbs_dir, metadata_cache)
     if changed_files:
       changed_dirs.add(rel_dir)
+    changed_dirs.update(moved_from)   # ticket 128: regroup where a moved file came from too
     if metadata_cache:
       # Writing the cache changes dirpath's mtime; write_index re-reads it after the write so the
       # dir_mtimes row below records the directory's true final mtime and the next scan skips it.

@@ -34,10 +34,25 @@ def rescan(conn, settings):
             on_done=lambda c: recovery.recover(c, settings))
 
 
-def test_rated_photo_moved_without_its_sidecar_gets_its_rating_back(conn, settings):
+def forget_file(conn, path):
+  """Delete a file's row (and the FK links to it) as if the database had been rebuilt, while the
+  rating_by_hash memory survives -- the state hash recovery exists for."""
+  old = conn.execute("SELECT id FROM files WHERE path = ?", (path,)).fetchone()["id"]
+  conn.execute("UPDATE xmp_sidecars SET file_id = NULL WHERE file_id = ?", (old,))
+  conn.execute("UPDATE files SET derived_from = NULL WHERE derived_from = ?", (old,))
+  conn.execute("UPDATE files SET exported_from_file_id = NULL WHERE exported_from_file_id = ?", (old,))
+  conn.execute("DELETE FROM thumbs WHERE file_id = ?", (old,))
+  conn.execute("UPDATE files SET photo_id = NULL WHERE id = ?", (old,))
+  conn.execute("DELETE FROM photos WHERE original_file_id = ?", (old,))
+  conn.execute("DELETE FROM files WHERE id = ?", (old,))
+  conn.commit()
+
+
+def test_rated_photo_moved_without_its_sidecar_keeps_its_rating(conn, settings):
   d = settings.pictures_dir
   make_jpeg(os.path.join(d, "old", "a.jpg"))
   scan.scan(conn, d)
+  before = conn.execute("SELECT id FROM files WHERE path = 'old/a.jpg'").fetchone()["id"]
   curation.set_rating(conn, settings, pid(conn, "old/a.jpg"), 4)
   curation.set_fav(conn, settings, pid(conn, "old/a.jpg"), True)
   # the picture is moved WITHOUT its sidecar (a plain copy or download)
@@ -45,16 +60,10 @@ def test_rated_photo_moved_without_its_sidecar_gets_its_rating_back(conn, settin
   os.remove(os.path.join(d, "old", "a.jpg.xmp"))
   rescan(conn, settings)
   s = state(conn, "new/a-renamed.jpg")
-  assert (s["rating"], s["fav"]) == (4, 1)
-  sidecar = os.path.join(d, "new", "a-renamed.jpg.xmp")
-  parsed = xmp.parse(open(sidecar, "rb").read())
-  assert parsed.rating == 4 and parsed.fav
-  log = [(l["field"], l["cause"]) for l in curation.recent_activity(conn)
-         if l["cause"] == "hash-recovery"]
-  assert ("rating", "hash-recovery") in log and ("fav", "hash-recovery") in log
-  rescan(conn, settings)                         # nothing more to do
-  assert len([l for l in curation.recent_activity(conn) if l["cause"] == "hash-recovery"]) == len(log)
-  assert conn.execute("SELECT last_path FROM rating_by_hash WHERE rating = 4").fetchone()[0] == "new/a-renamed.jpg"
+  assert (s["rating"], s["fav"]) == (4, 1)      # ticket 128: the move kept the file/Photo identity
+  assert conn.execute("SELECT id FROM files WHERE path = 'new/a-renamed.jpg'").fetchone()["id"] == before
+  # so there is nothing for hash recovery to do
+  assert [l for l in curation.recent_activity(conn) if l["cause"] == "hash-recovery"] == []
 
 
 def test_moved_with_sidecar_needs_no_recovery(conn, settings):
@@ -65,8 +74,24 @@ def test_moved_with_sidecar_needs_no_recovery(conn, settings):
   move(settings, "old/a.jpg", "new/a.jpg")
   move(settings, "old/a.jpg.xmp", "new/a.jpg.xmp")
   rescan(conn, settings)
-  assert state(conn, "new/a.jpg")["rating_source"] == "xmp"
+  assert state(conn, "new/a.jpg")["rating"] == 3
   assert [l for l in curation.recent_activity(conn) if l["cause"] == "hash-recovery"] == []
+
+
+def test_recovery_still_applies_when_the_file_row_is_gone(conn, settings):
+  # Hash recovery remains the fallback when there is no row to repoint (e.g. the database was
+  # rebuilt): a new, unrated row whose content matches rating_by_hash gets the rating back.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "a.jpg"))
+  scan.scan(conn, d)
+  curation.set_rating(conn, settings, pid(conn, "a.jpg"), 4)
+  forget_file(conn, "a.jpg")
+  os.remove(os.path.join(d, "a.jpg"))
+  make_jpeg(os.path.join(d, "b.jpg"))            # same bytes, brand new path
+  scan.scan(conn, d)
+  assert state(conn, "b.jpg")["rating"] == 0     # new row, no gone row to repoint
+  recovery.recover(conn, settings)
+  assert state(conn, "b.jpg")["rating"] == 4
 
 
 def test_copy_while_original_still_exists_is_not_recovered(conn, settings):
@@ -104,8 +129,9 @@ def test_dry_run_recovers_nothing(conn, settings):
   make_jpeg(os.path.join(d, "a.jpg"))
   scan.scan(conn, d)
   curation.set_rating(conn, settings, pid(conn, "a.jpg"), 4)
-  move(settings, "a.jpg", "b.jpg")
-  os.remove(os.path.join(d, "a.jpg.xmp"))
+  forget_file(conn, "a.jpg")
+  os.remove(os.path.join(d, "a.jpg"))
+  make_jpeg(os.path.join(d, "b.jpg"))
   dry = dataclasses.replace(settings, xmp_dry_run=True)
   scan.scan(conn, d, on_done=lambda c: recovery.recover(c, dry))
   assert state(conn, "b.jpg")["rating"] == 0

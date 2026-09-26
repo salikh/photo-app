@@ -55,3 +55,31 @@ reading RAW dimensions through LibRaw (`fileinfo.read_raw_size`, via `rawpy`) in
 file is RAW, using LibRaw's *crop* size specifically (not the raw sensor size) because that is what a viewer
 actually shows and what matches the camera JPEG's own dimensions. A migration forces every existing RAW file row
 to be re-read on the next scan so already-scanned libraries pick up the correct dimensions.
+
+## Move/rename detection repoints the row and moves its thumbnails (ticket 128)
+
+A file is matched to the database by **path**, so a rename would otherwise look like a deletion of the old path
+plus the arrival of a brand-new, unrated file. Ticket 128 recognises a move instead: when a file is found at a
+path that is **not yet known**, its freshly computed content hash is looked up against the **whole** `files`
+table (`files_hash`), and a row is a candidate only if its own file is **gone from disk**
+(`os.path.exists(pictures_dir/old_path)` is false). This filesystem check is what lets a *limited* rescan
+(a single subdirectory, a nightly `scan_dir` job, `fullscan --scan_dirs`) still catch a move whose old path lies
+in a directory that was not walked — the old row may still say `missing=0`, so the database alone cannot answer
+it.
+
+Exactly as with hash recovery ([ratings-and-xmp.md](ratings-and-xmp.md)), the rule is deliberately conservative:
+a move is applied only when **exactly one** candidate remains, and only when exactly one not-yet-known file in
+the batch carries that hash. A copy (the old path still exists), a content duplicate, or two gone rows with the
+same content are all skipped and fall back to today's insert-a-new-row behaviour.
+
+Applying a move **repoints the existing row** (`UPDATE files SET path=?, <refreshed metadata>, missing=0
+WHERE id=old_id`) rather than inserting a new one, so the `files.id` -- and with it the Photo, rating/fav, tags,
+every `raw_*`/crop/`thumb_rev` column, `xmp_sidecars.file_id` and `exported_from_file_id` -- is preserved for
+free. As a followup, the artifacts keyed by the picture's name are renamed to the new name:
+`thumbs.move_thumbnails` moves every cached `thumbs_dir/<Size>/<old>.jpg` to the new path and updates its
+`thumbs` row, and `raw_preview_dng.move` does the same for the `PreviewDNG` cache -- so the thumbnail tree keeps
+matching the picture tree and no render is redone. The moved-from directory is added to the scan's changed
+directories so grouping there is revisited too.
+
+Hash recovery still exists for the cases this cannot cover: a row that is genuinely gone (a rebuilt database) or
+an ambiguous match, where the content hash in `rating_by_hash` is the only way back to the rating.
