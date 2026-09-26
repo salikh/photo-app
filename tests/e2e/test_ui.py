@@ -247,6 +247,7 @@ def test_pages_activity_attention_usage_jobs(page, server):
   expect(page.get_by_role("heading", name="Sidecars that disagree (0)")).to_be_visible()
   page.goto(server.url + "/#!usage")
   expect(page.locator("table")).to_contain_text("Thumb")
+  expect(page.locator("table")).to_contain_text("PreviewDNG")   # the on-disk RAW tuning cache
   page.goto(server.url + "/#!jobs")
   expect(page.get_by_role("heading", name="Background jobs")).to_be_visible()
   expect(page.locator("p.status").first).to_contain_text("Worker:")   # ticket 113 status line

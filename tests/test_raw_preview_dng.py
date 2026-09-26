@@ -18,6 +18,25 @@ def test_undecodable_raw_raises_unsupported_and_leaves_no_partial_file(tmp_path)
   assert not os.path.exists(raw_preview_dng.path_for(str(thumbs_dir), "a.dng"))
 
 
+def test_stats_reports_usage_and_lacking_from_disk(settings, conn):
+  from photoapp import scan
+  from tests.conftest import make_jpeg
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "y", "a.jpg"))
+  touch(os.path.join(d, "y", "K1.DNG"))
+  scan.scan(conn, d)
+
+  usage, lacking = raw_preview_dng.stats(conn, settings.thumbs_dir)
+  assert usage == {"files": 0, "bytes": 0} and lacking == 1   # the one RAW has no preview yet
+
+  dest = raw_preview_dng.path_for(settings.thumbs_dir, "y/K1.DNG")
+  os.makedirs(os.path.dirname(dest), exist_ok=True)
+  with open(dest, "wb") as f:
+    f.write(b"x" * 123)
+  usage, lacking = raw_preview_dng.stats(conn, settings.thumbs_dir)
+  assert usage == {"files": 1, "bytes": 123} and lacking == 0  # counted straight from disk
+
+
 REAL_DNG = os.environ.get("REAL_DNG")
 _skip = pytest.mark.skipif(not REAL_DNG or not os.path.exists(REAL_DNG or ""), reason="REAL_DNG not set")
 

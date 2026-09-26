@@ -96,6 +96,9 @@ def test_thumbs_usage_endpoint(settings):
   u = c.get("/api/thumbs/usage", params={"lacking": True}).json()
   assert u["usage"]["Thumb"]["files"] == 1 and u["usage"]["Small"]["files"] == 0
   assert u["lacking"]["Thumb"] == 4 and "lacking" not in c.get("/api/thumbs/usage").json()
+  # the on-disk preview DNG cache (ticket 104) is reported alongside the real sizes
+  assert u["usage"]["PreviewDNG"] == {"files": 0, "bytes": 0}
+  assert u["lacking"]["PreviewDNG"] == 1   # the one RAW file, no preview DNG generated yet
 
 
 def test_photos_route_bumps_missing_thumbnails_for_the_opened_folder(settings):

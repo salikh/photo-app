@@ -487,10 +487,17 @@ def create_app(conn, settings):
   @db_route
   def thumbs_usage(lacking: bool = False):
     with app.state.db_lock:
-      result = {"usage": thumbs.usage(app.state.db)}
+      usage = thumbs.usage(app.state.db)
+      result = {"usage": usage}
       if lacking:
         result["lacking"] = thumbs.lacking(app.state.db)
-      return result
+      # The preview DNG cache is tracked purely on disk (ticket 104), not in the `thumbs` table,
+      # so it is measured from the filesystem and appended after the real sizes.
+      preview_usage, preview_lacking = raw_preview_dng.stats(app.state.db, settings.thumbs_dir)
+    usage[raw_preview_dng.PREVIEW_DIR] = preview_usage
+    if lacking:
+      result["lacking"][raw_preview_dng.PREVIEW_DIR] = preview_lacking
+    return result
 
   @app.get("/api/attention")
   @db_route

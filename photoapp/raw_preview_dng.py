@@ -24,6 +24,8 @@ import tifffile
 from absl import logging
 from PIL import Image
 
+from photoapp import fileinfo
+
 PREVIEW_DIR = "PreviewDNG"   # a cache dimension alongside thumbs.SIZES, tracked purely on disk
 MAX_DIM = 1600                # long edge cap -- generous for an on-screen tuning preview
 DNG_COLOR_CODE = {"R": 0, "G": 1, "B": 2}   # TIFF-EP/DNG CFAPattern color codes this project needs
@@ -35,6 +37,33 @@ class Unsupported(Exception):
 
 def path_for(thumbs_dir, file_path):
   return os.path.join(thumbs_dir, PREVIEW_DIR, file_path + ".preview.dng")
+
+
+def stats(conn, thumbs_dir):
+  """(usage, lacking) for the on-disk preview DNG cache, for the Thumbnails report table.
+
+  usage = {'files': n, 'bytes': total} for the cached preview DNGs; lacking = the number of
+  non-missing RAW files that do not have one yet. The cache is deliberately not in the `thumbs`
+  table (see the module docstring), so both are measured against the disk: one walk of the
+  PreviewDNG directory gives the files/bytes and the set of cached paths, then the raw rows are
+  checked against that set (no per-file stat).
+  """
+  base = os.path.join(thumbs_dir, PREVIEW_DIR)
+  cached = set()
+  files = total = 0
+  for dirpath, _dirnames, filenames in os.walk(base):
+    for name in filenames:
+      if not name.endswith(".preview.dng"):
+        continue
+      path = os.path.join(dirpath, name)
+      cached.add(os.path.relpath(path, base))
+      files += 1
+      total += os.path.getsize(path)
+  lacking = 0
+  for row in conn.execute("SELECT path FROM files WHERE missing = 0"):
+    if fileinfo.is_raw(row["path"]) and (row["path"] + ".preview.dng") not in cached:
+      lacking += 1
+  return {"files": files, "bytes": total}, lacking
 
 
 def _make_model(source_path):
