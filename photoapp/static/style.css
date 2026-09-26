@@ -222,7 +222,7 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .crop-shade { position: absolute; pointer-events: none; z-index: 3; }
 .crop-shade[hidden] { display: none; }
 .crop-shade .crop-rect {
-  position: absolute; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.6);
+  position: absolute; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7);
 }
 .crop-editing { pointer-events: auto; z-index: 6; touch-action: none; }
 .crop-editing .crop-rect { outline: 1px solid #fff; cursor: move; touch-action: none; }
