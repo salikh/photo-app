@@ -9,34 +9,20 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-115 and 117-123 are done (see `STATUS.md`). New reports filed 2026-09-26:
+108-115 and 117-123 and 127 are done (see `STATUS.md`). New reports filed 2026-09-26:
 
 - [ ] [124](docs/tickets/124.md) Bug — rejected-deletion confirmation screen ignores subdirectories
       (related to the 120 fix; needs the exact remaining path pinned down).
 - [ ] [125](docs/tickets/125.md) Export should be a Huge-equivalent JPEG that always applies the
       file's crop (refined feature request; related to 115/116).
-- [ ] [127](docs/tickets/127.md) Feature — Rescan should honour the current folder's scope
-      ("This folder" vs "+ subfolders"); same button as 126.
 
 ## Restart notes
 
-- **In progress: ticket [127](docs/tickets/127.md) (Rescan honours the current folder's scope).**
-  A partial change is committed as a `wip:` commit: `photoapp/scan.py`'s `ScanManager.start(rel_dir,
-  recursive=True)` and `_run(scan_dir, recursive, progress)` already thread `recursive` through and
-  use `scan_all` only for root + recursive. Remaining:
-  1. `photoapp/api.py`: the `/api/scan` route takes `recursive: bool = True` and passes it to
-     `app.state.scanner.start(dir, recursive)`.
-  2. `photoapp/static/app.js`: `rescan(route)` posts `?dir=<dir>&recursive=<0|1>` from the browse
-     route's `route.recursive` (include the root `.` too, so "This folder" at the root scans only
-     the root's own files); non-browse pages keep today's no-arg scan.
-  3. `tests/test_scan.py`: an API scan of a subdir with `recursive=0` must not read a nested
-     subdir's files; with `recursive=1` it must (the existing `scan(..., recursive=False)` unit
-     test already covers the core). Then run
-     `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q`.
-  4. Mark ticket 127 done, move its pointer from `TODO.md` to `STATUS.md`, then do tickets
-     [124](docs/tickets/124.md) and [125](docs/tickets/125.md) (both filed, not started; 124's
-     ticket notes that the header/selection flows already reproduce as working, so pin down the
-     remaining path first).
+- **Next: ticket [124](docs/tickets/124.md) (rejected-deletion confirmation ignores
+  subdirectories).** Ticket 127 is done. 124's ticket notes that the header/selection flows already
+  reproduce as working, so pin down the remaining path first (root `.` with `recursive=1`, the
+  selection hand-off, hidden/dot subdirectories, or a >1000-photo truncated fetch). Then do ticket
+  [125](docs/tickets/125.md) (both filed, not started).
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

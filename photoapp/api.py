@@ -250,9 +250,10 @@ def create_app(conn, settings):
     return {"ok": True}
 
   @app.post("/api/scan")
-  def start_scan(dir: str = None):
+  def start_scan(dir: str = None, recursive: bool = True):
+    """ticket 127: recursive scopes the requested dir (and root alone), same as the grid toggle."""
     try:
-      started = app.state.scanner.start(dir)
+      started = app.state.scanner.start(dir, recursive)
     except ValueError as e:
       raise HTTPException(400, str(e))
     return {"started": started}

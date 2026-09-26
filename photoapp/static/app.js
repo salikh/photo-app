@@ -153,7 +153,10 @@ function toggleSelecting() {
 
 async function rescan(route) {
   try {
-    const r = await post('/api/scan' + (route.page === 'browse' && route.dir !== '.' ? '?dir=' + encodeURIComponent(route.dir) : ''));
+    const q = route.page === 'browse'
+      ? '?dir=' + encodeURIComponent(route.dir) + '&recursive=' + (route.recursive ? '1' : '0')
+      : '';
+    const r = await post('/api/scan' + q);
     if (!r.started) toast('a scan is already running');
     pollScan();
   } catch (e) { toast(e.message, true); }

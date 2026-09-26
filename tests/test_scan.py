@@ -274,3 +274,45 @@ def test_api_scan_without_a_directory_runs_year_by_year_and_reports_steps(settin
   status = client.get("/api/scan/status").json()
   assert status["steps_total"] == 4 and status["steps_done"] == 4 and status["error"] is None
   assert status["current_dir"] is None and not status["running"]
+
+
+# --- Rescan honours the folder's scope, ticket 127 ---------------------------
+
+def scanned_paths(app):
+  return {r["path"] for r in app.state.db.execute("SELECT path FROM files")}
+
+
+def test_api_scan_recursive_false_reads_only_the_requested_subdir(settings):
+  from fastapi.testclient import TestClient
+  from photoapp import api, db
+  build_years(settings.pictures_dir)
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  client = TestClient(app)
+  assert client.post("/api/scan", params={"dir": "2019", "recursive": 0}).json() == {"started": True}
+  app.state.scanner.wait()
+  assert scanned_paths(app) == {"2019/a.DNG", "2019/a.JPG"}
+  assert client.get("/api/scan/status").json()["error"] is None
+
+
+def test_api_scan_recursive_true_reads_the_subdir_subtree(settings):
+  from fastapi.testclient import TestClient
+  from photoapp import api, db
+  build_years(settings.pictures_dir)
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  client = TestClient(app)
+  assert client.post("/api/scan", params={"dir": "2019", "recursive": 1}).json() == {"started": True}
+  app.state.scanner.wait()
+  assert scanned_paths(app) == {"2019/a.DNG", "2019/a.JPG", "2019/sub/b.jpg"}
+
+
+def test_api_scan_root_recursive_false_does_not_touch_a_year_directory(settings):
+  from fastapi.testclient import TestClient
+  from photoapp import api, db
+  build_years(settings.pictures_dir)
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  client = TestClient(app)
+  assert client.post("/api/scan", params={"dir": ".", "recursive": 0}).json() == {"started": True}
+  app.state.scanner.wait()
+  assert scanned_paths(app) == {"loose.jpg"}
+  status = client.get("/api/scan/status").json()
+  assert not status["running"] and status["files_seen"] == 1

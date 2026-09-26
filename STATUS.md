@@ -179,12 +179,12 @@ All ten build-order epics are done.
       not select `hash` (hit whenever a DB existed without an `index.json` yet). The lookup now
       includes `hash`; regression test added.
 
-Still open: [124](docs/tickets/124.md), [125](docs/tickets/125.md), [127](docs/tickets/127.md).
-See `TODO.md`.
+- [x] [127](docs/tickets/127.md) Rescan honours the current folder's scope: `/api/scan` takes a
+      `recursive` query param, `app.js`'s `rescan` posts the browse route's `route.recursive`
+      (root `.` included), and only the root + recursive case still routes to `scan_all`.
 
-In progress (resume from `TODO.md`'s restart-notes bullet): [127](docs/tickets/127.md) — the
-`ScanManager` half is committed as a `wip:` commit; the `/api/scan` route, `app.js`'s `rescan`,
-and the tests remain.
+Still open: [124](docs/tickets/124.md), [125](docs/tickets/125.md).
+See `TODO.md`.
 
 ## Cross-cutting
 
