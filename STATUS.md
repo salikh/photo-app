@@ -174,7 +174,13 @@ All ten build-order epics are done.
       tag or the path segment, and list/detail responses carry an `implied` list that `filters.matches`
       and the loupe HUD use.
 
-Still open: none. See `TODO.md`.
+- [x] [126](docs/tickets/126.md) Bug fix: "Rescan" crashed with `no item with that key` because
+      `_scan_files`'s ticket 111 cache path read `old["hash"]` from a `_lookup_files` call that did
+      not select `hash` (hit whenever a DB existed without an `index.json` yet). The lookup now
+      includes `hash`; regression test added.
+
+Still open: [124](docs/tickets/124.md), [125](docs/tickets/125.md), [127](docs/tickets/127.md).
+See `TODO.md`.
 
 ## Cross-cutting
 

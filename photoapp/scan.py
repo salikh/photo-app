@@ -122,7 +122,9 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
   index.json), or {} when the cache is off.
   """
   changed = False
-  known = _lookup_files(conn, rel_dir, filenames)
+  # Include hash: the ticket 111 cache path below reuses an unchanged file's DB hash when its
+  # on-disk record is missing/incomplete (ticket 126: the default columns don't carry it).
+  known = _lookup_files(conn, rel_dir, filenames, "id, path, mtime, bytesize, missing, hash")
   existing = metacache.load_records(dirpath) if metadata_cache else {}
 
   def work(name):

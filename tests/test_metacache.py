@@ -124,6 +124,20 @@ def test_record_missing_a_new_key_is_backfilled_by_rereading_only_it(conn, setti
   assert metacache.has_all_keys(read_index(d)["files"]["a.jpg"])
 
 
+def test_scan_with_cache_on_over_a_database_scanned_with_it_off(conn, settings):
+  # ticket 126: rows already exist but no index.json yet (the state after the ticket 111 default
+  # flipped on), so the cache path must reuse the DB hash instead of raising "no item with that key".
+  make_jpeg(os.path.join(settings.pictures_dir, "2020", "a.jpg"))
+  scan.scan(conn, settings.pictures_dir)           # cache off: DB rows written, no index.json
+  assert not os.path.exists(os.path.join(settings.pictures_dir, "2020", "index.json"))
+  before = files(conn)["2020/a.jpg"]["hash"]
+
+  p = scan.scan(conn, settings.pictures_dir, metadata_cache=True)
+  assert p.error is None
+  assert files(conn)["2020/a.jpg"]["hash"] == before
+  assert os.path.isfile(os.path.join(settings.pictures_dir, "2020", "index.json"))
+
+
 def test_second_cache_scan_of_untouched_directory_is_a_noop(conn, settings):
   make_jpeg(os.path.join(settings.pictures_dir, "a.jpg"))
   scan.scan(conn, settings.pictures_dir, metadata_cache=True)
