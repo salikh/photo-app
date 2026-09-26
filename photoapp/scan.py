@@ -525,8 +525,13 @@ class ScanManager:
     self._thread = None
     self.progress = Progress()
 
-  def start(self, rel_dir=None):
-    """Start a scan; returns False if one is already running."""
+  def start(self, rel_dir=None, recursive=True):
+    """Start a scan; returns False if one is already running.
+
+    recursive (ticket 127): whether the requested directory's subtree is walked, or only the files
+    directly in it. Only the whole-library case (the root with recursive) uses scan_all; a
+    non-recursive root scan reads just the root's own files.
+    """
     with self._lock:
       if self._thread is not None and self._thread.is_alive():
         return False
@@ -537,21 +542,21 @@ class ScanManager:
           raise ValueError("directory outside pictures_dir")
       self.progress = Progress(running=True)
       self._thread = threading.Thread(
-          target=self._run, args=(scan_dir, self.progress), daemon=True)
+          target=self._run, args=(scan_dir, recursive, self.progress), daemon=True)
       self._thread.start()
       return True
 
-  def _run(self, scan_dir, progress):
+  def _run(self, scan_dir, recursive, progress):
     conn = db.connect(self._db_path, busy_timeout=60.0)
     try:
-      if scan_dir == self._pictures_dir:
+      if scan_dir == self._pictures_dir and recursive:
         scan_all(conn, self._pictures_dir, None, self._hashes, progress,
                  self._thumbs_dir, self._on_done, self._workers,
                  self._metadata_cache)
       else:
         scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
              self._thumbs_dir, self._on_done, self._workers,
-             metadata_cache=self._metadata_cache)
+             recursive=recursive, metadata_cache=self._metadata_cache)
     finally:
       conn.close()
 
