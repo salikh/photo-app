@@ -166,8 +166,15 @@ All ten build-order epics are done.
       `route.parse` now carry `recursive` for `!` pages, the header/grid hand-off passes the mode,
       and the review page fetches and links back recursively.
 
-Still open (see `TODO.md` for where to resume): [122](docs/tickets/122.md),
-[123](docs/tickets/123.md).
+- [x] [122](docs/tickets/122.md) Free-form tag filter: the tag dropdown's "Other tag…" option opens
+      an autofocused input (Enter/Filter applies `tag:<typed>`, Escape/Cancel restores), and an active
+      tag not among the view's aspects still appears as the selected option.
+- [x] [123](docs/tickets/123.md) Dot-tags unhide hidden directories and imply a tag from the
+      directory name: `tag:.name` includes dot-directories in the query scope, matches an explicit
+      tag or the path segment, and list/detail responses carry an `implied` list that `filters.matches`
+      and the loupe HUD use.
+
+Still open: none. See `TODO.md`.
 
 ## Cross-cutting
 

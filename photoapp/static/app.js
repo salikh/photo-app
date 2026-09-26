@@ -71,8 +71,39 @@ function filterRow(route) {
       extra.map(([v, text]) => el('option', {value: v, text, selected: v === route.filter}))),
     // ticket 087: options are populated by filters.applyTags (state.tags, an open set) right
     // after this element is in the DOM, not built here from a fixed list like the row above.
-    el('select', {'aria-label': 'tag filter', class: 'tag-filter', onchange: (e) => e.target.value && go(e.target.value)},
+    // Ticket 122: the "Other tag…" option opens an input to type any tag (notably a dot-tag).
+    el('select', {'aria-label': 'tag filter', class: 'tag-filter', onchange: (e) => {
+      if (e.target.value === filters.CUSTOM_TAG) promptCustomTag(go);
+      else if (e.target.value) go(e.target.value);
+    }},
       el('option', {value: '', text: 'tag: \u2026'})));
+}
+
+// Ticket 122: a small modal to type any tag. Enter/Filter applies tag:<typed>; Escape/Cancel
+// restores the selector to whatever the active filter is.
+function promptCustomTag(go) {
+  const input = el('input', {type: 'text', class: 'tag-input', placeholder: 'tag name',
+                             'aria-label': 'tag name'});
+  const restore = () => filters.applyTags(state.tags);
+  const close = () => { modal.remove(); restore(); };
+  const apply = () => {
+    const tag = input.value.trim();
+    modal.remove();
+    if (tag) go('tag:' + tag); else restore();
+  };
+  const modal = el('div', {class: 'confirm-modal', onclick: close},
+    el('div', {class: 'confirm-card', onclick: (e) => e.stopPropagation()},
+      el('h3', {text: 'Filter by tag'}),
+      input,
+      el('div', {class: 'row'},
+        el('button', {class: 'primary', text: 'Filter', onclick: apply}),
+        el('button', {text: 'Cancel', onclick: close}))));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); apply(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+  });
+  document.body.append(modal);
+  input.focus();
 }
 
 function renderHeader(route) {

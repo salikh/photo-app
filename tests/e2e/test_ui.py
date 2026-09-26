@@ -1030,6 +1030,28 @@ def test_folders_starting_with_a_dot_are_not_shown_as_chips(page, server):
   expect(page.locator(".cell")).to_have_count(1)
 
 
+def test_dot_tag_filter_reveals_a_hidden_folder_and_its_implied_tag(page, server):
+  # tickets 122/123: typing tag:.nu (via the free-form input) reveals the hidden folder's photo,
+  # and the loupe marks the directory name as an implied tag.
+  import os
+  from tests.conftest import make_jpeg
+  make_jpeg(os.path.join(server.pictures, "2024/trip/.nu/x.jpg"))
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  page.goto(server.url + "/#/2024/trip?recursive=1")
+  expect(page.locator(".cell")).to_have_count(6)      # the hidden .nu photo is not in a normal view
+  sel = page.get_by_label("tag filter")
+  sel.select_option("__custom__")
+  page.get_by_label("tag name").fill(".nu")
+  page.get_by_label("tag name").press("Enter")
+  expect(page.locator(".cell")).to_have_count(1)
+  assert "filter=tag%3A.nu" in page.url
+  expect(sel).to_have_value("tag:.nu")
+  page.locator(".cell").first.click()
+  expect(page.locator(".loupe")).to_be_visible()
+  expect(page.locator(".hud .tag.implied")).to_have_text(".nu")
+
+
 # --- filter buttons (ticket 055) and the reject-first order (ticket 058) ---------------------------
 
 def filter_button(page, name):
@@ -1132,8 +1154,9 @@ def test_tag_filter_dropdown_lists_and_filters_by_one_tag(page, server):
   page.goto(server.url + "/#/2024/trip")
 
   tag_select = page.get_by_label("tag filter")
-  expect(tag_select.locator("option")).to_have_count(3)                 # placeholder + 2 tags
-  assert tag_select.locator("option").all_inner_texts()[1:] == ["family (1)", "vacation (2)"]
+  expect(tag_select.locator("option")).to_have_count(4)                 # placeholder + 2 tags + Other tag…
+  assert tag_select.locator("option").all_inner_texts()[1:3] == ["family (1)", "vacation (2)"]
+  assert tag_select.locator("option").all_inner_texts()[3] == "Other tag…"
 
   tag_select.select_option("tag:vacation")
   expect(page.locator(".cell")).to_have_count(2)
@@ -1147,6 +1170,37 @@ def test_tag_filter_dropdown_lists_and_filters_by_one_tag(page, server):
   add_tag(page, server, 3, "vacation")                      # a 3rd photo joins the tag mid-session
   page.goto(server.url + "/#/2024/trip?filter=tag%3Avacation")
   expect(page.locator(".cell")).to_have_count(3)
+
+
+def test_custom_tag_filter_input(page, server):
+  # ticket 122: "Other tag…" opens an input to type any tag, even one not among the view's aspects.
+  add_tag(page, server, 0, "vacation")
+  page.goto(server.url + "/#/2024/trip")
+  sel = page.get_by_label("tag filter")
+
+  sel.select_option("__custom__")
+  expect(page.locator(".confirm-modal h3")).to_have_text("Filter by tag")
+  inp = page.get_by_label("tag name")
+  expect(inp).to_be_focused()
+  inp.fill("vacation")
+  inp.press("Enter")
+  expect(page.locator(".cell")).to_have_count(1)
+  assert "filter=tag%3Avacation" in page.url
+  expect(sel).to_have_value("tag:vacation")
+
+  # a tag with no photos in this view still applies, and the selector shows it rather than resetting
+  sel.select_option("__custom__")
+  page.get_by_label("tag name").fill("no-such-tag")
+  page.get_by_role("button", name="Filter").click()
+  expect(page.locator(".cell")).to_have_count(0)
+  assert "filter=tag%3Ano-such-tag" in page.url
+  expect(sel).to_have_value("tag:no-such-tag")
+
+  # Escape cancels and restores the selector to the still-active filter, without navigating
+  sel.select_option("__custom__")
+  page.get_by_label("tag name").press("Escape")
+  expect(page.locator(".confirm-modal")).to_have_count(0)
+  expect(sel).to_have_value("tag:no-such-tag")
 
 
 def test_filter_is_kept_when_changing_folder_and_shown_in_the_loupe(page, server):

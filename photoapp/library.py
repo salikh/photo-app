@@ -35,6 +35,21 @@ _FILTER_SQL_ONE_STAR_UNRATED = dict(
 )
 
 
+def _is_dot_tag(name):
+  """True if name is a 'tag:NAME' filter whose tag starts with a dot (ticket 123)."""
+  m = TAG_FILTER_RE.match(name or "")
+  return bool(m) and m.group(1).startswith('.')
+
+
+def implied_tags(path):
+  """Dot-prefixed directory names in path, e.g. 'a/.picasa/b.jpg' -> ['.picasa'].
+
+  A file in a hidden directory is implicitly tagged with that directory's name even when no sidecar
+  says so (ticket 123), so a dot-tag filter can unhide and match it.
+  """
+  return [seg for seg in path.split('/')[:-1] if seg.startswith('.')]
+
+
 def filter_condition(name, one_star_is_unrated=False):
   """(sql, params) condition (on photos p) for a filter name; ValueError if unknown.
 
@@ -61,7 +76,12 @@ def filter_condition(name, one_star_is_unrated=False):
     return f"p.rating >= 1 AND p.rating <= {int(m.group(1))}", ()
   m = TAG_FILTER_RE.match(name or "")
   if m:
-    return "EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?)", (m.group(1),)
+    tag = m.group(1)
+    if tag.startswith('.'):
+      # Ticket 123: a dot-tag also matches a file under a directory of that name (an implied tag).
+      return ("(EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?)"
+              " OR instr('/' || rf.path || '/', '/' || ? || '/') > 0)"), (tag, tag)
+    return "EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?)", (tag,)
   raise ValueError(
       f"filter must be one of {FILTERS}, rating:1..5, rating>=1..5, rating<=1..5, or tag:NAME")
 
@@ -76,7 +96,7 @@ def _prefix_range(rel_dir):
   return rel_dir + "/", rel_dir + "0"     # '0' is the character after '/'
 
 
-def _scope_condition(rel_dir, recursive):
+def _scope_condition(rel_dir, recursive, include_hidden=False):
   """SQL condition (on files rf) + params selecting a Photo's representative file
   directly in rel_dir, or -- when recursive -- anywhere in its subtree.
 
@@ -85,12 +105,17 @@ def _scope_condition(rel_dir, recursive):
   about: a Photo directly in rel_dir isn't under any nested subdirectory, dotted
   or not. list_photos and filter_counts both call this so their scope can't drift
   apart (docs/design/databases.md's note: a filter button's count must always
-  equal what clicking it shows).
+  equal what clicking it shows). include_hidden (ticket 123) drops the exclusion
+  when the active filter is a dot-tag, so its hidden directories can be found.
   """
   lo, hi = _prefix_range(rel_dir)
   if recursive:
-    return ("rf.path >= ? AND rf.path < ? AND substr(rf.path, ?) NOT LIKE '.%/%'"
-             " AND substr(rf.path, ?) NOT LIKE '%/.%/%'"), (lo, hi, len(lo) + 1, len(lo) + 1)
+    sql = "rf.path >= ? AND rf.path < ?"
+    args = (lo, hi)
+    if not include_hidden:
+      sql += " AND substr(rf.path, ?) NOT LIKE '.%/%' AND substr(rf.path, ?) NOT LIKE '%/.%/%'"
+      args += (len(lo) + 1, len(lo) + 1)
+    return sql, args
   return "rf.path >= ? AND rf.path < ? AND instr(substr(rf.path, ?), '/') = 0", (lo, hi, len(lo) + 1)
 
 
@@ -143,6 +168,7 @@ def _photo_json(r, tags):
       "previous_stars": r["previous_stars"], "tags": tags, "conflict": bool(r["conflict"]),
       "files": r["nfiles"], "width": r["width"], "height": r["height"],
       "exif_date": r["exif_date"], "crop": crop, "rev": r["thumb_rev"],
+      "implied": implied_tags(r["path"]),
   }
 
 
@@ -156,7 +182,7 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
   filter_sql, filter_args = filter_condition(filter, one_star_is_unrated)
   limit = max(1, min(int(limit), 1000))
   offset = max(0, int(offset))
-  scope_sql, scope_args = _scope_condition(rel_dir, recursive)
+  scope_sql, scope_args = _scope_condition(rel_dir, recursive, _is_dot_tag(filter))
   where = scope_sql + " AND rf.missing = 0 AND " + filter_sql
   args = scope_args + filter_args
   order = ("COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path"
@@ -259,6 +285,7 @@ def photo_detail(conn, photo_id):
       for r in conn.execute(
           "SELECT s.* FROM xmp_sidecars s JOIN files f ON f.id = s.file_id "
           "WHERE f.photo_id = ? ORDER BY s.path", (photo_id,))]
+  original = next((f["path"] for f in files if f["id"] == p["original_file_id"]), "")
   return {
       "id": p["id"], "rating": p["rating"], "fav": bool(p["fav"]),
       "conflict": bool(p["conflict"]), "previous_stars": p["previous_stars"],
@@ -266,5 +293,6 @@ def photo_detail(conn, photo_id):
       "representative_file_id": p["representative_file_id"],
       "tags": sorted(r["tag"] for r in conn.execute(
           "SELECT tag FROM tags WHERE photo_id = ?", (photo_id,))),
+      "implied": implied_tags(original),   # ticket 123: dot-directory names in the path
       "files": files, "sidecars": sidecars,
   }

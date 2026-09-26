@@ -274,6 +274,7 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .hud .fav-on { color: var(--fav); }
 .hud .conflict { color: var(--conflict); }
 .hud .tag { padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-dim); font-size: 13px; }
+.hud .tag.implied { border-style: dashed; font-style: italic; opacity: 0.75; }
 .hud .buttons { display: flex; flex-wrap: wrap; gap: 4px; }
 .hud .buttons button { min-width: var(--touch); padding: 0 8px; }
 .hud .buttons button.debug-menu { opacity: 0.5; }

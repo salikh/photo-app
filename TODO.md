@@ -9,10 +9,7 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-115 and 117-120 are done (see `STATUS.md`). What's left, in the order to pick it up:
-
-- [ ] [122](docs/tickets/122.md) Enhancement — free option in "filter by tag" to type any tag in addition to aspects from current view.
-- [ ] [123](docs/tickets/123.md) Enhancement — dot-tags unhide hidden directories and imply tag from directory name.
+108-115 and 117-123 are done (see `STATUS.md`). There are no open tickets.
 
 ## Restart notes
 

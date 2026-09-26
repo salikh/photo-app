@@ -89,7 +89,8 @@ export function matches(photo, filter) {
       const le = /^rating<=([1-5])$/.exec(filter || '');
       if (le) return r >= 1 && r <= Number(le[1]);
       const t = /^tag:(.+)$/.exec(filter || '');
-      return !!t && (photo.tags || []).includes(t[1]);
+      // Ticket 123: a dot-tag also matches a file's implied tag (its hidden directory name).
+      return !!t && ((photo.tags || []).includes(t[1]) || (photo.implied || []).includes(t[1]));
     }
   }
 }
@@ -119,23 +120,34 @@ export function applyCounts(counts) {
   });
 }
 
-// ---- tag filter dropdown (ticket 087) ----
+// ---- tag filter dropdown (ticket 087, free-form option ticket 122) ----
 //
 // Tags are an open set (docs/design/databases.md's tags table has no controlled vocabulary), so
 // unlike the fixed "more filters" list this <select>'s options are rebuilt from state.tags
-// whenever they change, not just its selected value/counts.
+// whenever they change, not just its selected value/counts. Ticket 122 adds a "Other tag…"
+// sentinel option so any arbitrary tag (notably a dot-tag, ticket 123) can be typed even when it
+// is not among the current view's aspects.
+
+export const CUSTOM_TAG = '__custom__';
 
 export function applyTags(tags) {
   state.tags = tags || [];
   const sel = document.querySelector('.filters select.tag-filter');
   if (!sel) return;
   const known = new Set(state.tags.map((t) => 'tag:' + t.tag));
-  setChildren(sel,
-    el('option', {value: '', text: 'tag: …'}),
-    state.tags.map(({tag, count}) => el('option', {value: 'tag:' + tag, text: `${tag} (${count})`})));
-  // state.route.filter is always the authoritative active filter -- select it here if it names
-  // a tag this folder actually has, whether this is the first render or a live refresh.
-  sel.value = state.route && known.has(state.route.filter) ? state.route.filter : '';
+  const options = [el('option', {value: '', text: 'tag: …'})];
+  // An already-active custom tag (not in this view's aspects) still gets an option, so the
+  // selector shows what is filtering the view instead of silently falling back to the placeholder.
+  const active = state.route && state.route.filter;
+  if (active && active.startsWith('tag:') && !known.has(active)) {
+    options.push(el('option', {value: active, text: 'tag: ' + active.slice(4)}));
+    known.add(active);
+  }
+  options.push(...state.tags.map(({tag, count}) =>
+    el('option', {value: 'tag:' + tag, text: `${tag} (${count})`})));
+  options.push(el('option', {value: CUSTOM_TAG, text: 'Other tag…'}));
+  setChildren(sel, options);
+  sel.value = active && known.has(active) ? active : '';
   sel.classList.toggle('on', sel.value !== '');
 }
 

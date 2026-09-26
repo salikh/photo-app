@@ -310,6 +310,41 @@ def test_rating_comparator_filters_are_over_the_star_scale(settings):
     assert counts[f] == len(names(f)), f
 
 
+def test_dot_tag_filter_unhides_hidden_dirs_and_matches_implied_tags(settings):
+  # ticket 123: a 'tag:.name' filter includes dot-directories and matches files under a directory
+  # of that name as if they carried the tag, even with no sidecar saying so.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "s", ".picasaoriginals", "h.jpg"))
+  make_jpeg(os.path.join(d, "s", "visible.jpg"))
+  make_jpeg(os.path.join(d, "s", "sub", "v.jpg"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  c = TestClient(api.create_app(conn, settings))
+
+  def names(f, recursive=True):
+    params = {"dir": "s", "filter": f, "sort": "name"}
+    if recursive:
+      params["recursive"] = "1"
+    r = c.get("/api/photos", params=params)
+    assert r.status_code == 200, (f, r.text)
+    return [p["path"] for p in r.json()["photos"]]
+
+  assert names("all") == ["s/sub/v.jpg", "s/visible.jpg"]      # dot dir still hidden by default
+  assert names("tag:.picasaoriginals") == ["s/.picasaoriginals/h.jpg"]
+  assert names("tag:.nope") == []
+  photo = c.get("/api/photos", params={
+      "dir": "s", "filter": "tag:.picasaoriginals", "recursive": "1"}).json()["photos"][0]
+  assert photo["implied"] == [".picasaoriginals"]
+  detail = c.get(f"/api/photos/{photo['id']}").json()
+  assert detail["implied"] == [".picasaoriginals"]
+  # an explicit tag with the same dot name matches too (the OR, not only the path)
+  visible = conn.execute("SELECT id FROM files WHERE path = 's/visible.jpg'").fetchone()[0]
+  pid = conn.execute("SELECT photo_id FROM files WHERE id = ?", (visible,)).fetchone()[0]
+  conn.execute("INSERT INTO tags (photo_id, tag) VALUES (?, '.picasaoriginals')", (pid,))
+  conn.commit()
+  assert names("tag:.picasaoriginals") == ["s/.picasaoriginals/h.jpg", "s/visible.jpg"]
+
+
 def test_tag_filter_and_tags_in_view_endpoint(settings):
   # Ticket 087: filter=tag:NAME (one tag at a time), and /api/photos/tags for the dropdown --
   # scoped to the current dir/subtree like filter_counts, not the whole library.
