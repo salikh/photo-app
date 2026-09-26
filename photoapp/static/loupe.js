@@ -14,6 +14,7 @@ import {createZoom} from './zoom.js';
 import {updateCell, refreshCellThumb, settle, reinsertPhotos, loadRest, loadFolder} from './grid.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
 import {RawTuningSession} from './rawTuning.js';
+import * as exportAction from './export.js';
 
 
 let root = null;
@@ -327,6 +328,8 @@ function renderHud() {
       el('button', {text: 'crop', title: 'crop this photo (non-destructive)',
                     class: cropMode ? 'on' : '',
                     onclick: (e) => { e.stopPropagation(); toggleCropMode(); }}),
+      el('button', {text: 'export', title: 'export this photo',
+                    onclick: (e) => { e.stopPropagation(); exportAction.open([p.id]); }}),
       el('button', {text: 'files', title: 'files / tunings (I)', class: filesOpen ? 'on' : '', onclick: () => filesOpen ? closeFiles() : openFiles()}),
       brokenFileId === p.file_id
         ? el('button', {class: 'broken-thumb', title: 'this thumbnail failed to load -- click to re-render it',

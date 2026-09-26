@@ -14,15 +14,17 @@ function close() {
   if (modal) { modal.remove(); modal = null; }
 }
 
-export async function open() {
+export async function open(ids) {
   if (modal || !state.route) return;
   const route = state.route;
-  const selected = [...state.selected];
-  if (!selected.length) {
-    // "the whole view": make sure every page is loaded, not just what has scrolled into view
-    await grid.loadRest(route);
+  if (!ids) {
+    const selected = [...state.selected];
+    if (!selected.length) {
+      // "the whole view": make sure every page is loaded, not just what has scrolled into view
+      await grid.loadRest(route);
+    }
+    ids = selected.length ? selected : state.photos.map((p) => p.id);
   }
-  const ids = selected.length ? selected : state.photos.map((p) => p.id);
   if (!ids.length) { toast('nothing to export'); return; }
 
   let target = '';

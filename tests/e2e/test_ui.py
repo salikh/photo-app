@@ -1558,6 +1558,19 @@ def test_export_applies_the_file_crop_end_to_end(page, server):
     assert im.format == "JPEG" and im.size == expected
 
 
+def test_loupe_export_button_exports_only_that_photo(page, server):
+  # The loupe's Export button acts as if this one photo were the only selection.
+  open_loupe(page, server, index=1)                                        # IMG_0002
+  page.locator(".hud").get_by_role("button", name="export", exact=True).click()
+  expect(page.locator("h3")).to_have_text("Export 1 photo(s)")
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("queued 1 for export")
+
+  assert server.app.state.jobs.wait_idle(10)
+  out = os.path.join(exported_root(server), "2024/trip")
+  assert sorted(os.listdir(out)) == ["IMG_0002.jpg"]                       # just this photo
+
+
 def test_export_refuses_a_target_inside_the_library(page, server):
   page.goto(server.url + "/#/2024/trip")
   page.get_by_role("button", name="Export", exact=True).click()
