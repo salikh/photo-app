@@ -1,6 +1,6 @@
 """On-disk metadata cache for the full scan (ticket 111).
 
-When enabled (``--write_metadata_json``), a scan writes into each directory:
+When ``--write_metadata_json`` is on (the default), a scan writes into each directory:
 
 * ``index.json`` -- the directory's own mtime plus one record per image file
   directly in it, and

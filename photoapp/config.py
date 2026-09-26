@@ -31,10 +31,11 @@ flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).
 flags.DEFINE_integer("nightly_scan_hour", 3, "Local hour (0-23) of the nightly rescan; -1 disables it.")
 flags.DEFINE_integer("scan_workers", 8, "Threads reading files during a scan (network file systems are latency bound).")
 flags.DEFINE_boolean(
-    "write_metadata_json", False,
+    "write_metadata_json", True,
     "Scans write a per-directory index.json and a per-file <name>.json metadata cache into the "
     "library and reuse them on later scans, so an unchanged directory or file need not be "
-    "decoded again (ticket 111). Off by default: it writes into the picture directories.")
+    "decoded again (ticket 111). On by default; it writes into the picture directories, so pass "
+    "--nowrite_metadata_json to turn it off.")
 flags.DEFINE_boolean(
     "one_star_is_unrated", False,
     "Display-only: treat a 1-star rating as unrated (darktable's default on import "
@@ -83,7 +84,7 @@ class Settings:
   job_workers: int = 2
   nightly_scan_hour: int = -1
   scan_workers: int = 8
-  write_metadata_json: bool = False
+  write_metadata_json: bool = True
   busy_retry_seconds: float = 60.0
   one_star_is_unrated: bool = False
   load_worker_enabled: bool = True
