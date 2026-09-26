@@ -101,7 +101,7 @@ function renderHeader(route) {
     browsing ? el('button', {text: 'Export', title: 'export photos to a folder',
                              onclick: () => exportAction.open()}) : null,
     browsing && route.filter === 'rejected'
-      ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir),
+      ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir, route.recursive),
                 text: 'Delete', title: 'review and move these rejected photos to trash'}) : null,
     el('button', {text: 'Rescan', title: 'rescan this folder', onclick: () => rescan(route)}),
     scanStatus,

@@ -161,7 +161,12 @@ All ten build-order epics are done.
       updated on save) and `imgUrl` appends `?r=<rev>`, so every image URL (loupe, zoom, preload,
       grid, filmstrip) fetches the fresh render.
 
-Still open (see `TODO.md` for where to resume): [120](docs/tickets/120.md), [122](docs/tickets/122.md),
+- [x] [120](docs/tickets/120.md) Bug fix: the Delete link to the review page dropped the
+      "this folder + subfolders" mode, so a subfolder's rejected photos disappeared. `hrefPage`/
+      `route.parse` now carry `recursive` for `!` pages, the header/grid hand-off passes the mode,
+      and the review page fetches and links back recursively.
+
+Still open (see `TODO.md` for where to resume): [122](docs/tickets/122.md),
 [123](docs/tickets/123.md).
 
 ## Cross-cutting

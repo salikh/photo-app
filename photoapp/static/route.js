@@ -1,14 +1,16 @@
 // The URL hash holds the whole view state, so reload and back work.
 //   #/2020/trip?filter=fav&sort=name&photo=123     browse a folder (photo = loupe)
 //   #!activity                                     other pages
-//   #!delete-review?dir=2020/trip                  other pages scoped to a folder
+//   #!delete-review?dir=2020/trip&recursive=1   other pages scoped to a folder
 
 export function parse() {
   const raw = location.hash.slice(1);
   if (raw.startsWith('!')) {
     const [page, query = ''] = raw.slice(1).split('?');
-    const dir = new URLSearchParams(query).get('dir');
-    return {page, dir: dir ? decodeURIComponent(dir) : undefined};
+    const q = new URLSearchParams(query);
+    const dir = q.get('dir');
+    return {page, dir: dir ? decodeURIComponent(dir) : undefined,
+            recursive: q.get('recursive') === '1'};
   }
   const [pathPart, query = ''] = (raw || '/').split('?');
   const q = new URLSearchParams(query);
@@ -33,6 +35,6 @@ export function href({dir = '.', filter = 'all', sort = 'date', photo = null, re
   return '#' + path + (qs ? '?' + qs : '');
 }
 
-export function hrefPage(page, dir) {
-  return `#!${page}?dir=${encodeURIComponent(dir)}`;
+export function hrefPage(page, dir, recursive = false) {
+  return `#!${page}?dir=${encodeURIComponent(dir)}` + (recursive ? '&recursive=1' : '');
 }

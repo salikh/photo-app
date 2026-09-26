@@ -178,7 +178,7 @@ export function renderSelectionBar() {
 // selection itself already is).
 function deleteSelected(ids) {
   state.deleteReview = {ids, from: {...state.route}};
-  location.hash = hrefPage('delete-review', state.route.dir);
+  location.hash = hrefPage('delete-review', state.route.dir, state.route.recursive);
 }
 
 export function clearSelection() {

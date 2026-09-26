@@ -135,7 +135,8 @@ export async function deleteReviewPage(main) {
   const review = state.deleteReview;
   state.deleteReview = null;
   const dir = state.route.dir || '.';
-  const shown = dir === '.' ? 'the root' : dir;
+  const recursive = !!state.route.recursive;   // ticket 120: keep the "this folder + subfolders" mode
+  const shown = (dir === '.' ? 'the root' : dir) + (recursive ? ' and subfolders' : '');
 
   let photos, backHref, backText, heading, emptyText, description;
   if (review) {
@@ -146,9 +147,10 @@ export async function deleteReviewPage(main) {
     emptyText = 'Nothing to delete.';
     description = `${photos.length} selected photo(s).`;
   } else {
-    const data = await get(`/api/photos?dir=${encodeURIComponent(dir)}&filter=rejected&limit=1000`);
+    const rec = recursive ? '&recursive=1' : '';
+    const data = await get(`/api/photos?dir=${encodeURIComponent(dir)}&filter=rejected&limit=1000${rec}`);
     photos = data.photos;
-    backHref = href({dir, filter: 'rejected'});
+    backHref = href({dir, filter: 'rejected', recursive});
     backText = '← back to Rejected';
     heading = 'Delete rejected photos';
     emptyText = `No rejected photos in ${shown}.`;

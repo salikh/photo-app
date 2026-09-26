@@ -1330,6 +1330,19 @@ def test_delete_review_screen_with_nothing_rejected(page, server):
   expect(page.locator(".review-grid")).to_have_count(0)
 
 
+def test_delete_review_keeps_the_subfolders_mode(page, server):
+  # ticket 120: the Delete link from a recursive Rejected view must keep that mode on the
+  # confirmation page, or the rejected photo in the subfolder silently disappears.
+  page.goto(server.url + "/#/2024?filter=rejected&recursive=1")
+  expect(page.locator(".cell")).to_have_count(1)          # IMG_0003 in 2024/trip
+  page.locator("a.danger").click()
+  expect(page.locator("h2")).to_have_text("Delete rejected photos")
+  expect(page.locator(".review-grid .cell")).to_have_count(1)
+  expect(page.locator(".status")).to_contain_text("and subfolders")
+  back = page.get_by_role("link", name="← back to Rejected")
+  assert "recursive=1" in back.get_attribute("href")
+
+
 # --- batch delete from a grid selection (ticket 088) ------------------------------------------
 
 def reject(server, pid):
