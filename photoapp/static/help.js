@@ -17,6 +17,7 @@ const VIEWER = [
   ['F', 'favorite'], ['T', 'tag'],
   ['Z', 'zoom'], ['+ / -', 'zoom in / out'],
   ['G', 'cycle representative file'],
+  ['R', 'rotate left 90°'],
   ['U', 'undo'], ['I', 'files panel'],
   ['Hold C', 'compare: show the committed rendering while tuning RAW settings'],
   ['Esc', 'close panel, or close viewer'],

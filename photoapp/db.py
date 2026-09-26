@@ -260,6 +260,15 @@ MIGRATIONS = [
     -- navigates back to a tuned photo, instead of serving the pre-tune bytes for an unchanged URL.
     ALTER TABLE files ADD COLUMN thumb_rev INTEGER NOT NULL DEFAULT 0;
     """,
+    """
+    -- Ticket 129: per-file non-destructive rotation, in degrees counter-clockwise, normalized to
+    -- one of 90/180/270 (NULL and 0 both mean "not rotated"; 0 is normalized back to NULL, like a
+    -- whole-frame crop). Applied as the *final* render transform in thumbs._open, after the source's
+    -- metadata orientation (EXIF transpose / LibRaw flip) and after the crop -- so this fixes a
+    -- bad orientation the metadata got wrong without fighting the metadata itself. DB-only, not
+    -- written to sidecars (it is a physical-file rendering fix, like crop/raw settings).
+    ALTER TABLE files ADD COLUMN rotation INTEGER;
+    """,
 ]
 
 

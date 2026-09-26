@@ -358,6 +358,24 @@ def test_crop_mode_saves_and_shades(page, server):
   expect(page.locator(".crop-shade:not([hidden])")).to_have_count(1)
 
 
+def test_rotate_button_stores_rotation_and_bumps_the_image_url_revision(page, server):
+  # ticket 129: the loupe's rotate button turns the representative file 90 degrees left, saves it on
+  # the file, clears the cached render, and the reloaded image URL carries the new revision.
+  ids = open_loupe(page, server)
+  fid = server.app.state.db.execute(
+      "SELECT representative_file_id FROM photos WHERE id = ?", (ids[0],)).fetchone()[0]
+  page.get_by_role("button", name="⟲").click()
+  rotation = wait_for(lambda: server.app.state.db.execute(
+      "SELECT rotation FROM files WHERE id = ?", (fid,)).fetchone()[0])
+  assert rotation == 90
+  expect(page.locator("#toast")).to_contain_text("rotated")
+  rev = wait_for(lambda: server.app.state.db.execute(
+      "SELECT thumb_rev FROM files WHERE id = ?", (fid,)).fetchone()[0])
+  page.keyboard.press("ArrowRight")
+  page.keyboard.press("ArrowLeft")
+  expect(page.locator(".stage img.main")).to_have_attribute("src", re.compile(rf"\?r={rev}\b"))
+
+
 def test_saved_render_bumps_the_image_url_revision(page, server):
   # ticket 119: after a render-changing save, navigating away and back must request the image with
   # the file's new revision, not the browser-cached pre-save URL. Crop and raw_settings share this

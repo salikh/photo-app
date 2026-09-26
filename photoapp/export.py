@@ -12,6 +12,7 @@ from photoapp import crop as crop_lib
 from photoapp import grouping
 from photoapp import paths
 from photoapp import raw_settings
+from photoapp import rotation as rotation_lib
 from photoapp import scan
 from photoapp import thumbs
 
@@ -114,14 +115,16 @@ def export_file(conn, settings, file_id, file_path, dest):
   preview and nothing Pillow can decode -- the same case that would otherwise defer to the slow
   raw_render job queue; export reports it rather than blocking a whole batch on a full demosaic).
 
-  An uncropped file reuses the same thumbs.ensure path every on-demand /img/Huge request already
-  goes through and copies the result byte-for-byte (see docs/design/thumbnails.md). A cropped file
-  (ticket 125) is a finished, out-of-app artifact where the shaded-out margin makes no sense, so
-  the crop is applied for real: the full-frame image is rendered and cropped in one pass, straight
-  from the original (never the full-frame, lossy Huge) -- the same pixel rectangle Thumb/Small use.
+  An uncropped, unrotated file reuses the same thumbs.ensure path every on-demand /img/Huge request
+  already goes through and copies the result byte-for-byte (see docs/design/thumbnails.md). A
+  cropped (ticket 125) or rotated (ticket 129) file is a finished, out-of-app artifact where the
+  shaded-out margin makes no sense, so the crop/rotation is applied for real: the full-frame image
+  is rendered and cropped/rotated in one pass, straight from the original (never the full-frame,
+  lossy Huge) -- the same pixel rectangle Thumb/Small use.
   """
   file_crop = crop_lib.get(conn, file_id)
-  if crop_lib.is_default(file_crop):
+  file_rotation = rotation_lib.get(conn, file_id)
+  if crop_lib.is_default(file_crop) and rotation_lib.is_default(file_rotation):
     path = thumbs.ensure(conn, settings.pictures_dir, settings.thumbs_dir, file_id, file_path,
                          "Huge")
     if path is None:
@@ -133,7 +136,8 @@ def export_file(conn, settings, file_id, file_path, dest):
   os.makedirs(os.path.dirname(dest), exist_ok=True)
   try:
     thumbs.render(original, dest, thumbs.LONG_EDGE["Huge"],
-                  settings=raw_settings.get(conn, file_id), crop=file_crop)
+                  settings=raw_settings.get(conn, file_id), crop=file_crop,
+                  rotation=file_rotation)
   except thumbs.Unsupported:
     raise ExportError(f"no preview available for {file_path}")
   return dest

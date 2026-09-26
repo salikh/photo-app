@@ -17,6 +17,7 @@ from photoapp import fileinfo
 from photoapp import paths
 from photoapp import previews
 from photoapp import raw_settings
+from photoapp import rotation as rotation_lib
 
 # Smallest to largest. Huge is the full size of the source.
 SIZES = ("Thumb", "Small", "Medium", "Huge")
@@ -70,8 +71,17 @@ def _apply_crop(img, crop):
   return img.crop((left, top, left + box_w, top + box_h))
 
 
-def _open(source, settings=None, crop=None):
-  """Decode source to an RGB PIL image, cropped to crop (ticket 115) if it has one.
+def _finish(img, crop, rotation):
+  """Apply the non-render transforms in their fixed order: crop, then rotation last.
+
+  Rotation (ticket 129) is deliberately the final transform, so a file whose metadata
+  orientation is wrong can be turned without touching that metadata orientation.
+  """
+  return rotation_lib.apply(_apply_crop(img, crop), rotation)
+
+
+def _open(source, settings=None, crop=None, rotation=None):
+  """Decode source to an RGB PIL image, cropped to crop (ticket 115) and rotated (ticket 129).
 
   RAW files normally use their embedded preview -- fast, no demosaic (Pillow would "succeed" on
   a DNG but only return its tiny IFD0 thumbnail, which is why this doesn't just use Pillow
@@ -84,14 +94,14 @@ def _open(source, settings=None, crop=None):
       img = previews.render(source, settings)
       if img is None:
         raise Unsupported(f"{source}: LibRaw could not decode with the given settings")
-      return _apply_crop(img.convert("RGB"), crop)
+      return _finish(img.convert("RGB"), crop, rotation)
     preview = previews.embedded_preview(source)
     if preview is None:
       raise Unsupported(f"{source}: no usable embedded preview")
-    return _apply_crop(preview.convert("RGB"), crop)
+    return _finish(preview.convert("RGB"), crop, rotation)
   try:
     with Image.open(source) as img:
-      return _apply_crop(ImageOps.exif_transpose(img).convert("RGB"), crop)
+      return _finish(ImageOps.exif_transpose(img).convert("RGB"), crop, rotation)
   except Exception as e:  # Pillow raises many kinds of errors
     raise Unsupported(f"{source}: {e}")
 
@@ -114,19 +124,21 @@ def save(img, dest, long_edge):
   return dest
 
 
-def render(source, dest, long_edge, settings=None, crop=None):
+def render(source, dest, long_edge, settings=None, crop=None, rotation=None):
   """Write a JPEG of source, at most long_edge on its long side, to dest.
 
   settings: the source file's raw_settings.get()-shaped dict (ticket 085), or None -- ignored
   for a non-RAW source. crop: the source file's crop.get()-shaped dict (ticket 115), or None.
-  Never upscales. long_edge None keeps the full size. The write is atomic. Raises Unsupported if
-  source cannot be decoded (a RAW file without a usable embedded preview, at default settings,
-  needs render_raw_sizes()).
+  rotation: the source file's rotation.get() value (ticket 129), or None. Never upscales.
+  long_edge None keeps the full size. The write is atomic. Raises Unsupported if source cannot
+  be decoded (a RAW file without a usable embedded preview, at default settings, needs
+  render_raw_sizes()).
   """
-  return save(_open(source, settings, crop), dest, long_edge)
+  return save(_open(source, settings, crop, rotation), dest, long_edge)
 
 
-def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=None):
+def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=None,
+                     rotation=None):
   """Demosaic a RAW and write Thumb/Small (cropped) and Medium (full). Returns {size: path}.
 
   Slow (about a second); used by the background job when a RAW has no usable embedded preview
@@ -135,6 +147,7 @@ def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=No
   preview and no tuned settings has no fast way to get a full-size Huge either -- left to the
   next on-demand request, same as before this ticket). Returns {} if the file cannot be decoded.
   Ticket 115: the demosaic is of the full frame; Thumb/Small are cropped from it, Medium is not.
+  Ticket 129: rotation is applied last, to every size.
   """
   img = previews.render(os.path.join(pictures_dir, file_path), settings, half_size=True)
   if img is None:
@@ -145,6 +158,7 @@ def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=No
     if LONG_EDGE[size] is None:
       continue
     source = _apply_crop(img, crop) if size in CROPPED_SIZES else img
+    source = rotation_lib.apply(source, rotation)
     made[size] = save(source, thumb_path(thumbs_dir, size, file_path), LONG_EDGE[size])
   logging.vlog(5, "%s: full-decode rendered %s", file_path, ", ".join(made))
   return made
@@ -202,7 +216,7 @@ def _record(conn, file_id, size, path, source):
       (file_id, size, path, os.path.getsize(path), source))
 
 
-def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None):
+def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, rotation=None):
   """Return (path, source) of a thumbnail of exactly this size, making it if
   needed, or None if that is not possible without a RAW converter.
 
@@ -220,6 +234,10 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None):
   rendered cropped -- always straight from the original, since every larger cached size is
   full-frame and must not be downscaled from. Medium/Huge ignore crop (full frame; the loupe
   shades the cropped-out area).
+
+  Ticket 129: rotation is file_path's rotation.get() value. Like crop it is applied when
+  rendering from the original; a larger cached size already has it baked in, so the
+  downscale-from-larger step must NOT apply it again (hence `source_rotation` below).
 
   Ticket 093: a settings-tuned RAW demosaics through previews.render() (slow, ~1s) rather than
   the fast embedded-preview path, and would otherwise pay that cost again for every distinct size
@@ -240,7 +258,7 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None):
     original = os.path.join(pictures_dir, file_path)
     dest = thumb_path(thumbs_dir, size, file_path)
     try:
-      render(original, dest, LONG_EDGE[size], settings=settings, crop=crop)
+      render(original, dest, LONG_EDGE[size], settings=settings, crop=crop, rotation=rotation)
     except Unsupported as e:
       logging.vlog(3, "cannot render cropped %s from %s: %s", size, original, e)
       return None
@@ -255,7 +273,7 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None):
       and settings and not raw_settings.is_default(settings)):
     huge_dest = thumb_path(thumbs_dir, "Huge", file_path)
     try:
-      render(original, huge_dest, LONG_EDGE["Huge"], settings=settings)
+      render(original, huge_dest, LONG_EDGE["Huge"], settings=settings, rotation=rotation)
       sources = [huge_dest]
       logging.vlog(5, "%s: rendered Huge once to also satisfy %s (ticket 093)",
                    file_path, size)
@@ -263,8 +281,10 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None):
       logging.vlog(3, "cannot render Huge from %s: %s", original, e)
   sources.append(original)
   for source in sources:
+    # A larger cached size is already rotated; only a render from the original needs it.
+    source_rotation = rotation if source == original else None
     try:
-      render(source, dest, LONG_EDGE[size], settings=settings)
+      render(source, dest, LONG_EDGE[size], settings=settings, rotation=source_rotation)
     except Unsupported as e:
       logging.vlog(3, "cannot render %s from %s: %s", size, source, e)
       continue
@@ -276,16 +296,18 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None):
 def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
   """make() and record the result in the thumbs table. Returns the path.
 
-  Looks up file_id's per-file RAW settings (ticket 085) itself, since it already has conn --
-  every caller through ensure() (ticket 089's export, thumb_populate.py's background populator)
-  gets settings-awareness for free, unlike bare make(), which stays pure/DB-free for callers that
-  already have the settings dict in hand (the on-demand /img/{size} handler, which fetches the
-  file row and settings together in one round trip before calling make() directly).
+  Looks up file_id's per-file RAW settings (ticket 085) and crop (ticket 115) itself, since it
+  already has conn -- every caller through ensure() (ticket 089's export, thumb_populate.py's
+  background populator) gets settings-awareness for free, unlike bare make(), which stays
+  pure/DB-free for callers that already have the settings dict in hand (the on-demand
+  /img/{size} handler, which fetches the file row and settings together in one round trip before
+  calling make() directly). Rotation (ticket 129) comes along the same way.
   """
   settings = raw_settings.get(conn, file_id)
   file_crop = crop_lib.get(conn, file_id)
+  file_rotation = rotation_lib.get(conn, file_id)
   made = make(pictures_dir, thumbs_dir, file_path, size, settings=settings,
-              crop=file_crop)
+              crop=file_crop, rotation=file_rotation)
   if made is None:
     return None
   path, source = made

@@ -202,6 +202,14 @@ All ten build-order epics are done.
       `raw_preview_dng.move` then rename the cached artifacts to the new name. Copies and ambiguous
       duplicates are left alone; hash recovery remains the fallback for a row that is truly gone.
 
+- [x] [129](docs/tickets/129.md) Rotate a photo from the loupe: a `⟲` HUD button (and `R`) turns the
+      representative file 90° left, repeatedly. Stored per file as one nullable `files.rotation`
+      column (degrees counter-clockwise, 90/180/270; `NULL`/0 = none), applied as the **final**
+      render transform for every size (after EXIF/LibRaw metadata orientation and after the crop),
+      so it fixes bad orientation data without mixing with the metadata's own orientation. Saving
+      clears every cached size and bumps `thumb_rev`; exports re-render a rotated file; the crop
+      shade/editor compose with rotation.
+
 No open tickets. See `TODO.md`.
 
 ## Cross-cutting

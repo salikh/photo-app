@@ -33,6 +33,7 @@ from photoapp import raw_preview_dng
 from photoapp import recovery
 from photoapp import scan as scan_lib
 from photoapp import raw_settings
+from photoapp import rotation as rotation_lib
 from photoapp import thumb_populate
 from photoapp import thumbs
 from photoapp import trash
@@ -100,6 +101,10 @@ class CropBody(pydantic.BaseModel):
   h: float
 
 
+class RotationBody(pydantic.BaseModel):
+  rotation: int | None = None
+
+
 def create_app(conn, settings):
   """Build the app around an open (migrated) database and its settings."""
   app = FastAPI(title="photos")
@@ -147,8 +152,9 @@ def create_app(conn, settings):
       raise RuntimeError("file is gone")
     file_settings = raw_settings.get(conn, row["id"])   # ticket 085: parity with every other path
     file_crop = crop_lib.get(conn, row["id"])           # ticket 115: Thumb/Small rendered cropped
+    file_rotation = rotation_lib.get(conn, row["id"])   # ticket 129: every size, applied last
     made = thumbs.render_raw_sizes(settings.pictures_dir, settings.thumbs_dir,
-                                   row["path"], file_settings, file_crop)
+                                   row["path"], file_settings, file_crop, file_rotation)
     if not made:
       raise RuntimeError("LibRaw could not decode the file")
     for size, path in made.items():
@@ -483,6 +489,25 @@ def create_app(conn, settings):
           "SELECT thumb_rev FROM files WHERE id = ?", (file_id,)).fetchone()[0]
     return {"file_id": file_id, "cleared": cleared, "crop": current, "rev": rev}
 
+  @app.post("/api/files/{file_id}/rotation")
+  @db_route
+  def set_rotation(file_id: int, body: RotationBody):
+    """Ticket 129: replace this file's non-destructive rotation (degrees counter-clockwise,
+    normalized to 90/180/270; 0 or null clears it) and clear every cached thumbnail so the next
+    request regenerates in the new orientation. Applied last, after the metadata orientation and
+    after the crop."""
+    row = file_row(file_id)
+    with app.state.db_lock:
+      try:
+        rotation_lib.set(app.state.db, file_id, body.rotation)
+      except rotation_lib.RotationError as e:
+        raise HTTPException(400, str(e))
+      cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
+      current = rotation_lib.get(app.state.db, file_id)
+      rev = app.state.db.execute(
+          "SELECT thumb_rev FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+    return {"file_id": file_id, "cleared": cleared, "rotation": current, "rev": rev}
+
   @app.get("/api/thumbs/usage")
   @db_route
   def thumbs_usage(lacking: bool = False):
@@ -615,22 +640,28 @@ def create_app(conn, settings):
       raise HTTPException(404, "unknown size")
     row = await run_in_threadpool(run_db, lambda: file_row(file_id))
     logging.vlog(7, "image request: %s size=%s (file %d)", row["path"], size, file_id)
-    if size == "Huge" and not fileinfo.is_raw(row["path"]):
+
+    def get_file_settings():
+      with app.state.db_lock:
+        return (raw_settings.get(app.state.db, file_id),
+                crop_lib.get(app.state.db, file_id),
+                rotation_lib.get(app.state.db, file_id))
+    file_settings, file_crop, file_rotation = await run_in_threadpool(
+        run_db, get_file_settings)
+    if (size == "Huge" and not fileinfo.is_raw(row["path"])
+        and rotation_lib.is_default(file_rotation)):
       # Huge is the full size: an existing one, else the original if the
       # browser can show it. Never re-encode a full-size copy on request.
+      # Ticket 129: a rotated file cannot be served straight from the original
+      # (it would ignore the rotation), so it falls through to the render path.
       path = thumbs.lookup(settings.thumbs_dir, size, row["path"])
       if path is None and row["path"].lower().endswith(WEB_EXTENSIONS):
         path = os.path.join(settings.pictures_dir, row["path"])
         logging.vlog(7, "%s: Huge served from the original", row["path"])
     else:
-      def get_file_settings():
-        with app.state.db_lock:
-          return (raw_settings.get(app.state.db, file_id),
-                  crop_lib.get(app.state.db, file_id))
-      file_settings, file_crop = await run_in_threadpool(run_db, get_file_settings)
       made = await run_in_threadpool(
           render_limited, settings.pictures_dir, settings.thumbs_dir,
-          row["path"], size, settings=file_settings, crop=file_crop)
+          row["path"], size, settings=file_settings, crop=file_crop, rotation=file_rotation)
       path = None
       if made:
         path, source = made

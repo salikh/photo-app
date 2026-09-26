@@ -53,7 +53,11 @@ per-file RAW conversion overrides applied by the one shared renderer both the on
 background thumbnail paths use (ticket 090) — `NULL` in all six means "use the default" (also the
 condition [thumbnails.md](thumbnails.md) uses to decide whether the cheap embedded-preview
 shortcut is still available for this file, at any size). `raw_wb_r`/`g`/`b` only matter when
-`raw_wb_mode = 'manual'`. See [photo-model.md](photo-model.md).
+`raw_wb_mode = 'manual'`. `crop_x`/`crop_y`/`crop_w`/`crop_h` (ticket 115) are a non-destructive
+crop as normalized fractions (all `NULL` = whole frame); `rotation` (ticket 129) is a
+non-destructive rotation in degrees counter-clockwise, normalized to 90/180/270 (`NULL`/0 = not
+rotated). Both are rendering-only and applied by [thumbnails.md](thumbnails.md)'s renderer, never
+written to sidecars. See [photo-model.md](photo-model.md).
 
 **`photos`** — one row per logical picture, the unit ratings/fav/tags actually apply to.
 `original_file_id`/`representative_file_id` point into `files`; `rating`/`fav`/`previous_stars` are

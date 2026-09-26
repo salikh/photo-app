@@ -328,6 +328,8 @@ function renderHud() {
       el('button', {text: 'crop', title: 'crop this photo (non-destructive)',
                     class: cropMode ? 'on' : '',
                     onclick: (e) => { e.stopPropagation(); toggleCropMode(); }}),
+      el('button', {text: '⟲', title: 'rotate left 90° (R)',
+                    onclick: (e) => { e.stopPropagation(); rotateLeft(); }}),
       el('button', {text: 'export', title: 'export this photo',
                     onclick: (e) => { e.stopPropagation(); exportAction.open([p.id]); }}),
       el('button', {text: 'files', title: 'files / tunings (I)', class: filesOpen ? 'on' : '', onclick: () => filesOpen ? closeFiles() : openFiles()}),
@@ -860,6 +862,18 @@ function setRectStyle(node, rect) {
   node.style.height = rect.h * 100 + '%';
 }
 
+// Ticket 129: map a normalized rectangle from the source frame into the frame displayed when the
+// image is rotated `rotation` degrees counter-clockwise (and back, with (360 - rotation) % 360).
+// The server applies rotation to the pixels as the final render transform, but the crop rectangle
+// is stored in source coordinates, so the shaded-out region has to be turned the same way.
+function rotateRect(rect, rotation) {
+  const r = ((rotation || 0) % 360 + 360) % 360;
+  if (r === 90) return {x: rect.y, y: 1 - (rect.x + rect.w), w: rect.h, h: rect.w};
+  if (r === 180) return {x: 1 - (rect.x + rect.w), y: 1 - (rect.y + rect.h), w: rect.w, h: rect.h};
+  if (r === 270) return {x: 1 - (rect.y + rect.h), y: rect.x, w: rect.h, h: rect.w};
+  return rect;
+}
+
 // Position a shade/editor layer exactly over the displayed image (object-fit: contain centers it
 // within the stage, so img.getBoundingClientRect() is the real content box) and place its rect.
 function positionCropLayer(layer, rect) {
@@ -879,7 +893,7 @@ function updateCropShade() {
     ui.cropShade.hidden = true;
     return;
   }
-  positionCropLayer(ui.cropShade, photo.crop);
+  positionCropLayer(ui.cropShade, rotateRect(photo.crop, photo.rotation));
   ui.cropShade.hidden = false;
 }
 
@@ -897,7 +911,9 @@ function enterCropMode() {
   if (zoomed) ui.zoom.exit();
   exitCropMode(false);
   cropMode = true;
-  const rect = photo.crop ? {...photo.crop} : {x: 0, y: 0, w: 1, h: 1};
+  // Ticket 129: the editor works in the displayed (rotated) frame; saveCrop turns the rectangle
+  // back into source coordinates before posting.
+  const rect = rotateRect(photo.crop ? {...photo.crop} : {x: 0, y: 0, w: 1, h: 1}, photo.rotation);
   const rectEl = el('div', {class: 'crop-rect crop-editable'},
     CROP_HANDLES.map((dir) => el('div', {class: 'crop-handle ' + dir, dataset: {dir}})));
   const layer = el('div', {class: 'crop-shade crop-editing',
@@ -975,8 +991,10 @@ function onCropPointerUp() {
 async function saveCrop() {
   if (!cropState) return;
   const {photo, rect} = cropState;
+  // The editor drew in the displayed frame; convert back to source coordinates (ticket 129).
+  const sourceRect = rotateRect(rect, (360 - (photo.rotation || 0)) % 360);
   try {
-    const res = await post(`/api/files/${photo.file_id}/crop`, rect);
+    const res = await post(`/api/files/${photo.file_id}/crop`, sourceRect);
     photo.crop = cropFromColumns(res.crop);
     photo.rev = res.rev;
     setRevision(photo.file_id, res.rev);   // ticket 119: Thumb/Small were cleared server-side
@@ -990,6 +1008,41 @@ async function saveCrop() {
     updateCropShade();
   }
   if (filesOpen) openFiles();
+}
+
+// ------------------------------------------- non-destructive rotation (ticket 129)
+//
+// The "⟲" HUD button turns the representative file 90 degrees left (counter-clockwise),
+// cumulatively, and stores the result per file (degrees counter-clockwise, 0/90/180/270) like the
+// crop. The server applies it as the final render transform for every size, so all this does is
+// POST the new value, clear/reload the cached render, and keep the grid/filmstrip thumbs fresh --
+// ticket 119's thumb_rev carries the cache-busting.
+async function rotateLeft() {
+  const photo = current();
+  const before = photo.rotation || 0;
+  const value = (before + 90) % 360;
+  photo.rotation = value;
+  updateCropShade();                       // optimistic: the shade turns at once
+  const isLatest = beginEdit(photo);
+  return enqueue(async () => {
+    try {
+      const r = await post(`/api/files/${photo.file_id}/rotation`, {rotation: value});
+      if (isLatest()) {
+        photo.rotation = r.rotation;
+        photo.rev = r.rev;
+        setRevision(photo.file_id, r.rev);   // future imgUrl() calls fetch the turned render
+        ui.img.src = imgUrl('Medium', photo.file_id);
+        retryOnce(ui.img, photo);
+        refreshCellThumb(photo.id, photo.file_id);
+        ui.strip.refreshThumb(photo.id, photo.file_id);
+        updateCropShade();
+      }
+      toast('rotated');
+    } catch (e) {
+      if (isLatest()) { photo.rotation = before; updateCropShade(); }
+      toast(e.message, true);
+    }
+  });
 }
 
 async function openFiles() {
@@ -1227,6 +1280,7 @@ function onKey(e) {
   else if (key === '+' || key === '=') whenShown(() => ui.zoom.zoomIn());
   else if (key === '-' || key === '_') whenShown(() => ui.zoom.zoomOut());
   else if (key === 'g' || key === 'G') cycleRepresentative();
+  else if (key === 'r' || key === 'R') rotateLeft();
   else if (key === 'u' || key === 'U') undo();
   else if (key === 'i' || key === 'I') filesOpen ? closeFiles() : openFiles();
   else if (key === 'Escape') {

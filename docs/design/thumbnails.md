@@ -99,6 +99,37 @@ A file's crop (`photoapp/crop.py`: normalized `crop_x`/`crop_y`/`crop_w`/`crop_h
   `crop_*` columns `NULL` (a fresh row never inherits them), so viewing the export does not crop it
   a second time.
 
+## Non-destructive rotation is the final transform, after metadata orientation (ticket 129)
+
+A file's rotation (`photoapp/rotation.py`: `files.rotation`, degrees counter-clockwise, normalized
+to 90/180/270, `NULL`/0 = none) is applied **last**, by `thumbs._finish`/`_open` after both the
+metadata orientation and the crop, for every size (`Thumb`/`Small`/`Medium`/`Huge`), for JPEG and
+RAW alike. The fixed order is therefore:
+
+1. **Metadata orientation** — `ImageOps.exif_transpose` for a non-RAW file, `previews._oriented`/
+   LibRaw's `sizes.flip` for a RAW's embedded preview. This is the camera/file's own claim about
+   how the frame should be presented and is never modified by this feature.
+2. the per-file RAW conversion settings, when the file is a demosaiced RAW (ticket 085);
+3. the **crop** (ticket 115), if any;
+4. the **rotation** (ticket 129), expanding the canvas.
+
+Keeping rotation separate from step 1 is the point: the button exists to correct a file whose
+metadata orientation is wrong or inconsistent, so it must not be folded into (or confused with)
+that orientation. `expand=True` means a 90/270 turn swaps the frame's width and height losslessly.
+
+Saving a rotation (`POST /api/files/{id}/rotation`) clears every cached size and bumps `thumb_rev`,
+exactly like a crop or raw-settings save, so no stale unturned render survives. Because rotation is
+the final transform, `thumbs.make` must not apply it again when it downscales from a larger *cached*
+size (that render already has it baked in) — it passes the rotation only for a render straight from
+the original. On `/img/Huge` for a non-RAW file, a rotated file cannot be served straight from the
+original (that would ignore the rotation), so it takes the render path instead of the byte-for-byte
+original shortcut. An **export** applies the rotation for real (ticket 129, alongside ticket 125's
+crop): a rotated file is re-rendered rather than copied.
+
+On the client, `loupe.js` keeps the crop shade aligned by turning the stored source-frame crop
+rectangle into the displayed frame (`rotateRect`), and the crop editor draws in the displayed frame
+and turns the rectangle back before saving, so crop and rotation compose correctly.
+
 ## The layout facts came from measuring the real tree, not from a spec
 
 The pixel sizes per named size tier (`Thumb` 300px, `Small` 1000px, `Medium` 2000px, `Huge` = full source size)
