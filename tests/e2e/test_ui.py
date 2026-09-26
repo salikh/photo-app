@@ -1397,6 +1397,45 @@ def test_delete_review_keeps_the_subfolders_mode(page, server):
   assert "recursive=1" in back.get_attribute("href")
 
 
+def test_delete_review_reached_by_the_subfolders_toggle(page, server):
+  # ticket 124: exercise the toggle the user actually clicks, not just a hand-written recursive URL.
+  page.goto(server.url + "/#/2024?filter=rejected")
+  expect(page.locator(".cell")).to_have_count(0)          # nothing rejected directly in 2024
+  page.get_by_role("button", name="This folder", exact=True).click()
+  expect(page.locator(".cell")).to_have_count(1)          # IMG_0003 appears from 2024/trip
+  page.locator("a.danger").click()
+  expect(page.locator("h2")).to_have_text("Delete rejected photos")
+  expect(page.locator(".review-grid .cell")).to_have_count(1)
+  expect(page.locator(".status")).to_contain_text("and subfolders")
+
+
+def test_selection_delete_review_keeps_the_recursive_scope(page, server):
+  # ticket 124: the selection hand-off in a recursive view must still list the hand-picked photo.
+  page.goto(server.url + "/#/2024?filter=rejected&recursive=1")
+  expect(page.locator(".cell")).to_have_count(1)
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").first.click()
+  page.locator(".selection-bar").get_by_role("button", name="Delete").click()
+  expect(page.locator("h2")).to_have_text("Delete selected photos")
+  expect(page.locator(".review-grid .cell")).to_have_count(1)
+
+
+def test_delete_review_lists_every_rejected_photo_across_pages(page, server):
+  # ticket 124: the header flow used to fetch only the first 1000-photo page, so rejected Photos
+  # past it (typically the ones deeper in a recursive scope) silently vanished from the review.
+  # The __pageSize test hook makes a two-photo page enough to reproduce.
+  ids = photo_ids(server)
+  reject(server, ids[0])
+  reject(server, ids[3])
+  reject(server, ids[4])                                  # plus 0003 already rejected: four total
+  page.add_init_script("window.__pageSize = 2")           # test hook: pages of two
+  page.goto(server.url + "/#/2024?filter=rejected&recursive=1")
+  page.locator("a.danger").click()
+  expect(page.locator("h2")).to_have_text("Delete rejected photos")
+  expect(page.locator(".review-grid .cell")).to_have_count(4)
+  expect(page.locator(".status")).to_contain_text("4 rejected photo(s)")
+
+
 # --- batch delete from a grid selection (ticket 088) ------------------------------------------
 
 def reject(server, pid):

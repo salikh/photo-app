@@ -9,20 +9,17 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 ## Open tickets
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-115 and 117-123 and 127 are done (see `STATUS.md`). New reports filed 2026-09-26:
+108-115 and 117-123, 127 and 124 are done (see `STATUS.md`). New reports filed 2026-09-26:
 
-- [ ] [124](docs/tickets/124.md) Bug — rejected-deletion confirmation screen ignores subdirectories
-      (related to the 120 fix; needs the exact remaining path pinned down).
 - [ ] [125](docs/tickets/125.md) Export should be a Huge-equivalent JPEG that always applies the
       file's crop (refined feature request; related to 115/116).
 
 ## Restart notes
 
-- **Next: ticket [124](docs/tickets/124.md) (rejected-deletion confirmation ignores
-  subdirectories).** Ticket 127 is done. 124's ticket notes that the header/selection flows already
-  reproduce as working, so pin down the remaining path first (root `.` with `recursive=1`, the
-  selection hand-off, hidden/dot subdirectories, or a >1000-photo truncated fetch). Then do ticket
-  [125](docs/tickets/125.md) (both filed, not started).
+- **Next: ticket [125](docs/tickets/125.md) (Export should always apply the file's crop).** Ticket
+  124 is done (root cause: the confirmation screen fetched only the first 1000-photo page). 125 is
+  filed, not started; see its design notes (crop the Huge render with `crop.pixel_box`, keep the
+  no-crop export on the existing copy path, verify the imported export does not inherit the crop).
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

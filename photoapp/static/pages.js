@@ -131,6 +131,25 @@ export async function jobsPage(main) {
 // "Delete" link, dir taken from the route), or an explicit id list handed off from a grid
 // selection (grid.js's deleteSelected, via state.deleteReview -- consumed once here, not kept in
 // the URL, since selection itself is already session-only and doesn't survive a reload either).
+const REVIEW_PAGE = window.__pageSize || 1000;   // (the override is a test hook, as in grid.js)
+
+// ticket 124: the header flow must list every rejected Photo in scope, not just the first server
+// page -- a whole-library "This folder + subfolders" view can hold far more than one page, and the
+// Photos that fall past it (often the ones in deeper subfolders) silently vanished from the review.
+async function allRejectedPhotos(dir, recursive) {
+  const rec = recursive ? '&recursive=1' : '';
+  const photos = [];
+  let total = Infinity;
+  while (photos.length < total) {
+    const data = await get(`/api/photos?dir=${encodeURIComponent(dir)}&filter=rejected` +
+                           `&offset=${photos.length}&limit=${REVIEW_PAGE}${rec}`);
+    total = data.total;
+    if (!data.photos.length) break;
+    photos.push(...data.photos);
+  }
+  return photos;
+}
+
 export async function deleteReviewPage(main) {
   const review = state.deleteReview;
   state.deleteReview = null;
@@ -147,9 +166,7 @@ export async function deleteReviewPage(main) {
     emptyText = 'Nothing to delete.';
     description = `${photos.length} selected photo(s).`;
   } else {
-    const rec = recursive ? '&recursive=1' : '';
-    const data = await get(`/api/photos?dir=${encodeURIComponent(dir)}&filter=rejected&limit=1000${rec}`);
-    photos = data.photos;
+    photos = await allRejectedPhotos(dir, recursive);
     backHref = href({dir, filter: 'rejected', recursive});
     backText = '← back to Rejected';
     heading = 'Delete rejected photos';

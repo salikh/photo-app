@@ -183,7 +183,13 @@ All ten build-order epics are done.
       `recursive` query param, `app.js`'s `rescan` posts the browse route's `route.recursive`
       (root `.` included), and only the root + recursive case still routes to `scan_all`.
 
-Still open: [124](docs/tickets/124.md), [125](docs/tickets/125.md).
+- [x] [124](docs/tickets/124.md) Bug fix: the rejected-deletion confirmation screen fetched only the
+      first 1000-photo page (`limit=1000`, never paged), so an oversized "This folder + subfolders"
+      scope dropped the rejected Photos past it -- often the ones in deeper subfolders. The header
+      flow now pages through `/api/photos` until every rejected Photo in scope is collected; the
+      toggle, selection hand-off and reload/direct-URL paths were retested and are correct.
+
+Still open: [125](docs/tickets/125.md).
 See `TODO.md`.
 
 ## Cross-cutting
