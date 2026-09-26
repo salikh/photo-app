@@ -8,8 +8,10 @@ imports and links each export into the database the moment its job finishes.
 import os
 import shutil
 
+from photoapp import crop as crop_lib
 from photoapp import grouping
 from photoapp import paths
+from photoapp import raw_settings
 from photoapp import scan
 from photoapp import thumbs
 
@@ -107,17 +109,33 @@ def resolve_dest_path(conn, pictures_dir, candidate, file_id, taken=None):
 
 
 def export_file(conn, settings, file_id, file_path, dest):
-  """Render a Huge-equivalent JPEG of one file (reusing the same thumbs.ensure path every
-  on-demand /img/Huge request already goes through for a RAW file -- see docs/design/
-  thumbnails.md) and copy it to dest, creating parent directories as needed. Raises ExportError
-  if no preview could be produced (e.g. a RAW with no usable embedded preview and nothing Pillow
-  can decode -- the same case that would otherwise defer to the slow raw_render job queue; export
-  reports it rather than blocking a whole batch on a full demosaic)."""
-  path = thumbs.ensure(conn, settings.pictures_dir, settings.thumbs_dir, file_id, file_path, "Huge")
-  if path is None:
-    raise ExportError(f"no preview available for {file_path}")
+  """Render a Huge-equivalent JPEG of one file and write it to dest, creating parent directories as
+  needed. Raises ExportError if no preview could be produced (e.g. a RAW with no usable embedded
+  preview and nothing Pillow can decode -- the same case that would otherwise defer to the slow
+  raw_render job queue; export reports it rather than blocking a whole batch on a full demosaic).
+
+  An uncropped file reuses the same thumbs.ensure path every on-demand /img/Huge request already
+  goes through and copies the result byte-for-byte (see docs/design/thumbnails.md). A cropped file
+  (ticket 125) is a finished, out-of-app artifact where the shaded-out margin makes no sense, so
+  the crop is applied for real: the full-frame image is rendered and cropped in one pass, straight
+  from the original (never the full-frame, lossy Huge) -- the same pixel rectangle Thumb/Small use.
+  """
+  file_crop = crop_lib.get(conn, file_id)
+  if crop_lib.is_default(file_crop):
+    path = thumbs.ensure(conn, settings.pictures_dir, settings.thumbs_dir, file_id, file_path,
+                         "Huge")
+    if path is None:
+      raise ExportError(f"no preview available for {file_path}")
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copyfile(path, dest)
+    return dest
+  original = os.path.join(settings.pictures_dir, file_path)
   os.makedirs(os.path.dirname(dest), exist_ok=True)
-  shutil.copyfile(path, dest)
+  try:
+    thumbs.render(original, dest, thumbs.LONG_EDGE["Huge"],
+                  settings=raw_settings.get(conn, file_id), crop=file_crop)
+  except thumbs.Unsupported:
+    raise ExportError(f"no preview available for {file_path}")
   return dest
 
 

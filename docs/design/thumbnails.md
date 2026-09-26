@@ -91,6 +91,13 @@ A file's crop (`photoapp/crop.py`: normalized `crop_x`/`crop_y`/`crop_w`/`crop_h
 - Saving a crop (`POST /api/files/{id}/crop`) clears every cached size first, exactly like a
   raw-settings save, so a stale uncropped/cropped `Thumb` is never reused. Crop applies to JPEG and
   RAW alike.
+- An **export** (ticket 125) is a finished, out-of-app artifact, so the crop is always applied even
+  though `Huge` itself stays full-frame: an uncropped file copies the `Huge` JPEG byte-for-byte,
+  while a cropped one is rendered and cropped in one pass straight from the original via
+  `thumbs.render` (never the full-frame, lossy `Huge`). The same rectangle as `Thumb`/`Small`.
+  Because the crop is baked into the export's pixels, its own imported `files` row starts with all
+  `crop_*` columns `NULL` (a fresh row never inherits them), so viewing the export does not crop it
+  a second time.
 
 ## The layout facts came from measuring the real tree, not from a spec
 

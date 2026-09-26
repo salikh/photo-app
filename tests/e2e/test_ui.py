@@ -1539,6 +1539,25 @@ def test_export_button_exports_only_the_selection(page, server):
   assert sorted(os.listdir(out)) == ["IMG_0002.jpg", "IMG_0004.jpg"]  # only the selection
 
 
+def test_export_applies_the_file_crop_end_to_end(page, server):
+  # ticket 125: a cropped photo exports the crop, not the full frame, through the real UI/job.
+  from photoapp import crop
+  photo = api(server, "/api/photos?dir=2024/trip&sort=name")["photos"][0]   # IMG_0001, 1600x1067
+  urllib.request.urlopen(urllib.request.Request(
+      f"{server.url}/api/files/{photo['file_id']}/crop",
+      data=json.dumps({"x": 0.25, "y": 0.25, "w": 0.5, "h": 0.5}).encode(),
+      headers={"Content-Type": "application/json"}))
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Export", exact=True).click()
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("queued 6 for export")
+
+  assert server.app.state.jobs.wait_idle(10)
+  expected = crop.pixel_box(crop.to_columns(0.25, 0.25, 0.5, 0.5), 1600, 1067)[2:]
+  with Image.open(os.path.join(exported_root(server), "2024/trip", "IMG_0001.jpg")) as im:
+    assert im.format == "JPEG" and im.size == expected
+
+
 def test_export_refuses_a_target_inside_the_library(page, server):
   page.goto(server.url + "/#/2024/trip")
   page.get_by_role("button", name="Export", exact=True).click()

@@ -189,8 +189,13 @@ All ten build-order epics are done.
       flow now pages through `/api/photos` until every rejected Photo in scope is collected; the
       toggle, selection hand-off and reload/direct-URL paths were retested and are correct.
 
-Still open: [125](docs/tickets/125.md).
-See `TODO.md`.
+- [x] [125](docs/tickets/125.md) Export always applies the file's crop: `export_file` keeps the
+      exact old `thumbs.ensure` + copy path for an uncropped file, and for a cropped one renders
+      and crops in one pass straight from the original (`thumbs.render` with the source's
+      `crop.pixel_box` rectangle, never the full-frame lossy Huge). The imported export row starts
+      with all `crop_*` columns `NULL`, so it is not double-cropped.
+
+No open tickets. See `TODO.md`.
 
 ## Cross-cutting
 

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from photoapp import api
+from photoapp import crop
 from photoapp import db
 from photoapp import export
 from photoapp import scan
@@ -133,6 +134,38 @@ def test_export_file_always_re_encodes_even_an_already_jpeg_source(settings, con
     assert im.format == "JPEG" and im.size == (40, 30)
   # thumbs.ensure's own cache also got populated as a side effect (matching the on-demand path)
   assert thumbs.lookup(settings.thumbs_dir, "Huge", "2020/a.jpg") is not None
+
+
+def test_export_file_applies_the_file_crop(settings, conn):
+  # ticket 125: a cropped file exports the crop for real (the same rectangle Thumb/Small use),
+  # re-encoded from the original rather than the full-frame, lossy Huge.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "2020", "a.jpg"), size=(40, 30))
+  scan.scan(conn, d)
+  fid = file_id(conn, "2020/a.jpg")
+  crop.set(conn, fid, 0.25, 0.25, 0.5, 0.5)
+  dest = os.path.join(str(settings.state_dir) + "-out", "a.jpg")
+  out = export.export_file(conn, settings, fid, "2020/a.jpg", dest)
+  assert out == dest
+  with Image.open(dest) as im:
+    assert im.format == "JPEG" and im.size == (20, 15)
+
+
+def test_export_does_not_inherit_the_source_crop_into_the_imported_export(settings, conn):
+  # ticket 125: the crop is baked into the export's pixels, so its own files row starts with no
+  # crop -- otherwise a later scan/view of the export would crop it a second time.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "2020", "a.jpg"), size=(40, 30))
+  scan.scan(conn, d)
+  fid = file_id(conn, "2020/a.jpg")
+  crop.set(conn, fid, 0.25, 0.25, 0.5, 0.5)
+  dest = os.path.join(d, "Exported", "a.jpg")
+  export.export_file(conn, settings, fid, "2020/a.jpg", dest)
+  new_id = export.link_exported_file(conn, settings, fid, dest)
+  row = conn.execute(
+      "SELECT crop_x, crop_y, crop_w, crop_h FROM files WHERE id = ?", (new_id,)).fetchone()
+  assert (row["crop_x"], row["crop_y"], row["crop_w"], row["crop_h"]) == (None, None, None, None)
+  assert not crop.is_default(crop.get(conn, fid))   # the source keeps its crop
 
 
 def test_export_file_raises_when_nothing_can_be_decoded(settings, conn):

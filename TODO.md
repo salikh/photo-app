@@ -8,18 +8,13 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and tickets
-108-115 and 117-123, 127 and 124 are done (see `STATUS.md`). New reports filed 2026-09-26:
-
-- [ ] [125](docs/tickets/125.md) Export should be a Huge-equivalent JPEG that always applies the
-      file's crop (refined feature request; related to 115/116).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107) and tickets 108-115, 117-124 and 127 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- **Next: ticket [125](docs/tickets/125.md) (Export should always apply the file's crop).** Ticket
-  124 is done (root cause: the confirmation screen fetched only the first 1000-photo page). 125 is
-  filed, not started; see its design notes (crop the Huge render with `crop.pixel_box`, keep the
-  no-crop export on the existing copy path, verify the imported export does not inherit the crop).
+- No work in progress. The last three 2026-09-26 reports (124, 125, 127) are done; see `STATUS.md`
+  for what each fixed. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
