@@ -170,7 +170,7 @@ Every tool there is either read-only or prints a script for you to review before
 Folders whose name starts with a dot (`.nu`, `.thumbnails`, `.webaxs`, `.picasaoriginals`, `.comments`:
 leftovers of old programs) are not listed in the folder view, and their Photos are not counted in the
 folders that contain them. Nothing is deleted, scans still read them, and a hidden folder can be opened
-by its path (for example `#/2001/new-epoch/.nu`). A file whose own name starts with a dot is not
+by its path (for example `#/2002/.nu`). A file whose own name starts with a dot is not
 affected. Restart the app after updating so the server code is current. **One exception**: `.trash/`
 (see below) is never scanned at all, not just hidden from the listing — a trashed file's sidecar still
 says what it always said (e.g. reject), so scanning it back in would silently re-create it as a live
