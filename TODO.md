@@ -8,13 +8,19 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
-epic 102 (103-107) and tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
+- [ ] [131](docs/tickets/131.md) Epic: retire the ad hoc directory-management scripts, keep and
+  rebuild cross-copy archive comparison (children 132-138; 132 and 136 are question tickets and
+  block the rest)
+
+All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and
+tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress. Ticket 130 (config file, install docs, fresh-install tests) is done; see `STATUS.md`.
-  New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress on the app itself. Epic 131 (see Open tickets) is filed but not started —
+  132 (which legacy scripts survive) is the first thing to answer; it blocks 133, which the rest
+  of the epic depends on. Ticket 130 (config file, install docs, fresh-install tests) is done;
+  see `STATUS.md`. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
@@ -45,7 +51,10 @@ context, the question, options if any, and an empty **Answer** section). The que
 closed and the blocked ticket continues (and its pointer moves to `STATUS.md`). A ticket is "actionable"
 when it has no open blocker.
 
-*No open question tickets right now.*
+- [132](docs/tickets/132.md) Which legacy scripts survive, and where do they live? Blocks
+  [133](docs/tickets/133.md) (and, transitively, the rest of epic 131).
+- [136](docs/tickets/136.md) How automated should applying known reject/delete decisions to a
+  different copy be? Blocks [137](docs/tickets/137.md).
 
 116 was answered 2026-09-25 (Thumb cropped to selected rect; loupe Medium/Huge full with dark shading; Small cropped in grid / shaded single; see `STATUS.md`) and unblocked 115. 103 was answered 2026-09-24 (Option C, a downsampled still-mosaiced DNG via rawpy+tifffile, refined
 from the user's initial Option B lean after checking what LibRaw-Wasm actually supports; see
