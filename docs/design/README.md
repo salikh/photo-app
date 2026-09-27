@@ -1,5 +1,8 @@
 # Design documentation
 
+For the overarching philosophy and assumptions behind this project — not one subsystem's *why*,
+but the project's own — see [PHILOSOPHY.md](../../PHILOSOPHY.md) at the repo root.
+
 This directory explains the *why* behind decisions in the code — things a reader would not get just from
 reading the source, because they came from a tradeoff, a constraint discovered against the real library, or an
 explicit choice between alternatives. It is not a restatement of what the code does; read the code (or

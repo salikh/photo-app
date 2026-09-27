@@ -8,22 +8,18 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [139](docs/tickets/139.md) Top-level README.md on the project's philosophy and assumptions --
-  needs a `grilling`-skill session with the user; deliberately delayed until every other currently
-  open ticket is done (right now, that just means this ticket is next)
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
-(132-138) and tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107), epic 131 (132-138), ticket 139 and tickets 108-115, 117-124, 127, 128 and 130
+are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress on the app itself. Epic 131 (retire the ad hoc scripts, cross-copy archive
-  comparison) is fully done — `tools/archive/{catalog,import_sha224sum,find_empty_dirs,catalog_lib,
-  compare,apply}.py`, `tools/archive/README.md`, `python -m photoapp.export_catalog`; see
-  `STATUS.md`. Ticket 139 (top-level philosophy README) is next, but it needs a `grilling`-skill
-  session with the user first, not more autonomous work. Ticket 130 (config file, install docs,
-  fresh-install tests) is done too; see `STATUS.md`. New requests should be filed as tickets in
-  `docs/tickets/NNN.md` first.
+- No work in progress. Ticket 139 (`PHILOSOPHY.md`, via a `grilling`-skill session) is done; see
+  `STATUS.md`. Epic 131 (retire the ad hoc scripts, cross-copy archive comparison) is done too —
+  `tools/archive/{catalog,import_sha224sum,find_empty_dirs,catalog_lib,compare,apply}.py`,
+  `tools/archive/README.md`, `python -m photoapp.export_catalog`. Ticket 130 (config file, install
+  docs, fresh-install tests) is done as well; see `STATUS.md`. New requests should be filed as
+  tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

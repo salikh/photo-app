@@ -267,3 +267,7 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [136](docs/tickets/136.md) How automated should applying known reject/delete decisions to a different copy be? → review-script by default, `--apply`-gated for the two additive directions, never for target-copy deletion; no remote/SSH in v1; unblocked 137
 - [x] [137](docs/tickets/137.md) `tools/archive/apply.py`: act on a `compare.py` classification, per 136's answer
 - [x] [138](docs/tickets/138.md) `tools/archive/README.md` end-to-end walkthrough; `docs/operations.md` updated
+
+## Project philosophy (user request 2026-09-28, done)
+
+- [x] [139](docs/tickets/139.md) `PHILOSOPHY.md`, via a `grilling`-skill session (19 questions, two real corrections: no-auth is a boundary behind an external OAuth proxy, not a non-goal; multiple AI tools were used, not just Claude Code) — linked from `README.md` and `docs/design/README.md`

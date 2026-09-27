@@ -9,6 +9,7 @@ cache. Originals are never moved or deleted.
     ./start.sh                      # http://localhost:8080/  (creates .venv on first run)
     ./start.sh --xmp_dry_run        # try it without writing anything
 
+- Why this project is shaped the way it is: [PHILOSOPHY.md](PHILOSOPHY.md)
 - Installation and configuration for a new machine: [docs/install.md](docs/install.md)
 - Flags, safety rules and what to back up: [docs/operations.md](docs/operations.md)
 - Requirements and plan: [docs/reqs/](docs/reqs/), [docs/plans/](docs/plans/)
