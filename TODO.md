@@ -11,6 +11,9 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 - [ ] [131](docs/tickets/131.md) Epic: retire the ad hoc directory-management scripts, keep and
   rebuild cross-copy archive comparison (children 132-138; 132 and 136 are question tickets and
   block the rest)
+- [ ] [139](docs/tickets/139.md) Top-level README.md on the project's philosophy and assumptions --
+  needs a `grilling`-skill session with the user; deliberately delayed until epic 131 (and anything
+  filed after it) is done
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and
 tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
