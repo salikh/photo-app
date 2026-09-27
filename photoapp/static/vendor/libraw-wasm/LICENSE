@@ -1,0 +1,28 @@
+ISC License
+
+Copyright (c) ybouane and contributors (BeseBarni, lexluthor0304, gwennlbh, hrueger)
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+---
+
+This directory vendors the LibRaw-Wasm package (https://github.com/ybouane/LibRaw-Wasm),
+which declares this license in its package.json ("license": "ISC"). Upstream does not
+ship a LICENSE file; this text is the standard ISC license, reproduced here to satisfy
+its copyright/permission-notice requirement for this vendored copy.
+
+`libraw.wasm` is a WebAssembly build of the LibRaw C++ library (https://www.libraw.org),
+compiled by the LibRaw-Wasm project from LibRaw source under `libs/` in that repository.
+LibRaw itself is dual-licensed under the GNU Lesser General Public License v2.1 and the
+Common Development and Distribution License (CDDL) v1.0, not the ISC license above; see
+NOTICE.md at the repository root for that license's text and how it applies here.
