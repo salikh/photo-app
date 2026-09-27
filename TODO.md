@@ -8,7 +8,9 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+- [ ] [130](docs/tickets/130.md) Organize the code for use by other users: configuration, install docs, dependencies, fresh-install tests
+
+All ten build-order epics, v1 filtering, every cross-cutting ticket,
 epic 102 (103-107) and tickets 108-115, 117-124, 127 and 128 are done (see `STATUS.md`).
 
 ## Restart notes
