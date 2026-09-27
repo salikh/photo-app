@@ -24,8 +24,10 @@ Writing ``index.json`` (or a per-file JSON) changes the directory's mtime, which
 would make the next scan think the directory changed. ``write_index`` re-stats
 the directory after writing and, if the mtime moved, rewrites ``index.json``
 with the corrected value, so the file and the caller's ``dir_mtimes`` cache agree
-on the directory's true final mtime. This is lifted from the ``file_metadata.py``
-standalone tool, which has used exactly this scheme for hashes/size/dimensions.
+on the directory's true final mtime. This is lifted from the now-retired
+``file_metadata.py`` standalone tool (ticket 133), which used exactly this scheme
+for hashes/size/dimensions; ``tools/archive/catalog.py`` (ticket 131/133) still
+does, for trees this app doesn't own.
 """
 
 import json

@@ -154,15 +154,3 @@ def test_import_with_write_xmp_writes_only_winning_ratings(conn, settings, tmp_p
   import_ratings.import_ratings(conn, settings, db_path, write_xmp=True)
   assert xmp.parse(open(os.path.join(settings.pictures_dir, "y", "b.jpg.xmp"), "rb").read()).rating == 2
   assert xmp.parse(open(os.path.join(settings.pictures_dir, "y", "a.jpg.xmp"), "rb").read()).rating == 4
-
-
-def test_image_metadata_records_the_time_of_the_rating_source(tmp_path):
-  import importlib, sys
-  sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-  im = importlib.import_module("image_metadata")
-  f = tmp_path / "a.jpg.xmp"
-  f.write_text("x")
-  os.utime(f, (1234.0, 1234.0))
-  assert im.rating_time("a.jpg.xmp", str(tmp_path)) == 1234.0
-  assert im.rating_time(str(f), "/nowhere") == 1234.0
-  assert im.rating_time("missing.xmp", str(tmp_path)) is None and im.rating_time(None, "x") is None

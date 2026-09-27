@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
-"""Imports `sha224sum`-format checksum listings into the sqlite database
-populated by hash_dir.py.
+"""Imports `sha224sum`-format checksum listings into a catalog.py-format database.
+
+For a backup that already has a plain checksum listing (e.g. a NAS whose backup
+tool already ran `sha224sum`, or a machine with no Python environment for
+catalog.py) this bootstraps a catalog without re-hashing anything. Relocated,
+not rewritten, by ticket 133 (was `import_sha224sum.py` at the repo root); see
+tools/archive/README.md.
 
 Each input line has the fixed-width format produced by GNU coreutils'
 sha224sum:
@@ -11,16 +16,17 @@ sha224sum:
 is taken verbatim from the fixed byte offset after the digest and flag, so
 it is never split on whitespace -- filenames containing spaces (including
 leading, trailing, or repeated spaces) are handled correctly. A leading
-'./' on the filename is stripped, matching the root-relative paths stored
-by hash_dir.py. Lines escaped by coreutils (prefixed with '\\', used when
-a filename itself contains a backslash or newline) are also un-escaped.
+'./' on the filename is stripped, matching the root-relative paths
+tools/archive/catalog.py stores. Lines escaped by coreutils (prefixed with
+'\\', used when a filename itself contains a backslash or newline) are also
+un-escaped.
 
 Usage:
     sha224sum -b $(find . -type f) > checksums.sha224
-    import_sha224sum.py --db ~/zoo.sqlite --input checksums.sha224
+    tools/archive/import_sha224sum.py --db ~/backup-catalog.sqlite --input checksums.sha224
 
     # or stream directly:
-    sha224sum -b $(find . -type f) | import_sha224sum.py --db ~/zoo.sqlite
+    sha224sum -b $(find . -type f) | tools/archive/import_sha224sum.py --db ~/backup-catalog.sqlite
 """
 
 import os

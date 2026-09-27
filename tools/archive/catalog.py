@@ -1,8 +1,13 @@
-#!/usr/bin/env python2.7
-"""Collects sha224 hashes of files in a directory tree into a sqlite database.
+#!/usr/bin/env python3
+"""Builds an incremental sha224 hash catalog of a directory tree (ticket 131/133).
 
-Python 2.7 compatible version of hash_dir.py that uses argparse and the
-standard logging module instead of absl.
+The tool for cataloging a tree this app doesn't own -- a mounted backup drive, a
+disk image, a machine that has never run `photoapp` -- see tools/archive/README.md
+for the end-to-end cross-copy comparison workflow this feeds
+(tools/archive/compare.py, tools/archive/apply.py). Was `hash_dir.py` at the repo
+root; relocated and renamed (not rewritten) by ticket 133, since photoapp's own
+`--hashes_db` flag and `photoapp.fileinfo.load_precomputed_hashes` still read
+exactly this sqlite format.
 
 For each directory, the mtime is cached after all files directly in it have
 been hashed; on subsequent runs a directory whose mtime has not changed is
@@ -13,62 +18,43 @@ cached mtime (e.g. from a database written before this column existed)
 have it filled in without recomputing their hash. Within a directory
 that does get (re)scanned, a file whose mtime still matches the cached
 value is likewise left alone -- only files that are new or whose mtime
-has changed are actually re-hashed.
+has changed are actually re-hashed. This is what makes re-running this
+tool against a large, mostly-unchanged backup cheap.
 
 Before scanning, every entry in the database is checked for existence on
 disk (regardless of --dir) and entries for files that no longer exist
 are dropped.
 
-Python 2's sqlite3 module refuses to bind non-ASCII 8-bit bytestrings as
-TEXT parameters (it raises "You must not use 8-bit bytestrings..."), so
-all filesystem paths are decoded to unicode -- via a unicode --root_dir/
---dir passed into os.walk, with a defensive per-name fallback decode for
-any individual entry os.walk still hands back as raw bytes -- before
-they are used as sqlite parameters or dict/set keys.
-
 Usage:
-    hash_dir2.7.py
-        -v 3
-        --root_dir /zoo/Pictures
-        --dir /zoo/Pictures/2024
-        --db ~/zoo.sqlite
+    tools/archive/catalog.py
+        --logtostderr --v=3
+        --root_dir /path/to/backup/Pictures
+        --dir /path/to/backup/Pictures/2024
+        --db ~/backup-catalog.sqlite
 """
 
-from __future__ import print_function
-
-import argparse
 import hashlib
-import logging
 import os
 import sqlite3
-import sys
+
+from absl import app
+from absl import flags
+from absl import logging
+
+FLAGS = flags.FLAGS
+
+flags.DEFINE_string("db", None, "Path to the sqlite database file.")
+flags.DEFINE_string(
+    "root_dir", None,
+    "Base directory that stored file paths are computed relative to.")
+flags.DEFINE_string(
+    "dir", None,
+    "Directory to scan for files. May be a subdirectory of --root_dir to "
+    "only (re)scan part of the tree. Defaults to --root_dir if not given.")
+flags.mark_flag_as_required("db")
+flags.mark_flag_as_required("root_dir")
 
 _HASH_CHUNK_SIZE = 1024 * 1024
-
-_VERBOSITY = 0
-
-_FS_ENCODING = sys.getfilesystemencoding() or "utf-8"
-
-
-def vlog(level, msg, *args):
-  if level <= _VERBOSITY:
-    logging.info(msg, *args)
-
-
-def fsdecode(value):
-  """Decode a filesystem path/name (str) to unicode.
-
-  Python 2's sqlite3 module rejects non-ASCII str parameters outright,
-  so anything that will be used as a sqlite TEXT value -- or compared
-  against/stored alongside one -- must be unicode first. Already-unicode
-  values are returned unchanged.
-  """
-  if isinstance(value, unicode):  # noqa: F821 (Python 2 builtin)
-    return value
-  try:
-    return value.decode(_FS_ENCODING)
-  except UnicodeDecodeError:
-    return value.decode(_FS_ENCODING, "replace")
 
 
 def create_tables(conn):
@@ -80,7 +66,7 @@ def create_tables(conn):
       "CREATE TABLE IF NOT EXISTS dir_mtimes ("
       "dirpath TEXT PRIMARY KEY, "
       "mtime REAL NOT NULL)")
-  columns = set(row[1] for row in conn.execute("PRAGMA table_info(hashes)"))
+  columns = {row[1] for row in conn.execute("PRAGMA table_info(hashes)")}
   if "mtime" not in columns:
     conn.execute("ALTER TABLE hashes ADD COLUMN mtime REAL")
 
@@ -109,14 +95,9 @@ def get_cached_file_mtime(conn, rel_path):
 
 
 def process_directory(conn, root_dir, dirpath, filenames):
-  # dirpath is already unicode (decoded by collect_hashes); root_dir is
-  # decoded once in main(). Decode each name up front so filepath is
-  # built from unicode throughout -- joining unicode with an undecoded,
-  # non-ASCII str would raise a UnicodeDecodeError.
   rel_dir = os.path.relpath(dirpath, root_dir)
 
-  for raw_name in filenames:
-    name = fsdecode(raw_name)
+  for name in filenames:
     filepath = os.path.join(dirpath, name)
     if not os.path.isfile(filepath):
       continue
@@ -129,10 +110,10 @@ def process_directory(conn, root_dir, dirpath, filenames):
 
     cached_mtime = get_cached_file_mtime(conn, rel_path)
     if cached_mtime is not None and cached_mtime == file_mtime:
-      vlog(2, "Skipping unchanged file %s", filepath)
+      logging.vlog(2, "Skipping unchanged file %s", filepath)
       continue
 
-    vlog(3, "Hashing %s", filepath)
+    logging.vlog(3, "Hashing %s", filepath)
     try:
       file_hash = hash_file(filepath)
     except OSError as e:
@@ -147,11 +128,10 @@ def process_directory(conn, root_dir, dirpath, filenames):
   # Drop stale entries for files that used to live directly in this
   # directory but have since been removed or renamed. Subdirectory entries
   # are left alone: they are handled when os.walk visits them.
-  current_names = set(fsdecode(n) for n in filenames)
+  current_names = set(filenames)
   if rel_dir == ".":
     rows = conn.execute(
-        "SELECT filename FROM hashes WHERE filename NOT GLOB '*%s*'"
-        % os.sep)
+        f"SELECT filename FROM hashes WHERE filename NOT GLOB '*{os.sep}*'")
     for (existing_path,) in rows.fetchall():
       if existing_path not in current_names:
         conn.execute("DELETE FROM hashes WHERE filename = ?", (existing_path,))
@@ -175,9 +155,8 @@ def fill_missing_mtimes(conn, root_dir, dirpath):
   rel_dir = os.path.relpath(dirpath, root_dir)
   if rel_dir == ".":
     rows = conn.execute(
-        "SELECT filename FROM hashes "
-        "WHERE filename NOT GLOB '*%s*' AND mtime IS NULL"
-        % os.sep).fetchall()
+        f"SELECT filename FROM hashes "
+        f"WHERE filename NOT GLOB '*{os.sep}*' AND mtime IS NULL").fetchall()
   else:
     prefix = rel_dir + os.sep
     rows = conn.execute(
@@ -192,24 +171,23 @@ def fill_missing_mtimes(conn, root_dir, dirpath):
     except OSError as e:
       logging.error("Skipping %s: %s", filepath, e)
       continue
-    vlog(2, "Filling in missing mtime for %s", filepath)
+    logging.vlog(2, "Filling in missing mtime for %s", filepath)
     conn.execute(
         "UPDATE hashes SET mtime = ? WHERE filename = ?",
         (file_mtime, rel_path))
 
 
 def collect_hashes(conn, root_dir, scan_dir):
-  for raw_dirpath, _, filenames in os.walk(scan_dir):
-    dirpath = fsdecode(raw_dirpath)
+  for dirpath, _, filenames in os.walk(scan_dir):
     current_mtime = os.stat(dirpath).st_mtime
     cached_mtime = get_cached_mtime(conn, dirpath)
     if cached_mtime is not None and cached_mtime == current_mtime:
-      vlog(1, "Skipping unchanged directory %s", dirpath)
+      logging.vlog(1, "Skipping unchanged directory %s", dirpath)
       fill_missing_mtimes(conn, root_dir, dirpath)
       conn.commit()
       continue
 
-    vlog(1, "Processing directory %s", dirpath)
+    logging.vlog(1, "Processing directory %s", dirpath)
     process_directory(conn, root_dir, dirpath, filenames)
 
     conn.execute(
@@ -217,25 +195,6 @@ def collect_hashes(conn, root_dir, scan_dir):
         "ON CONFLICT(dirpath) DO UPDATE SET mtime = excluded.mtime",
         (dirpath, current_mtime))
     conn.commit()
-
-
-def parse_args(argv):
-  parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("--db", required=True,
-                       help="Path to the sqlite database file.")
-  parser.add_argument(
-      "--root_dir", required=True,
-      help="Base directory that stored file paths are computed relative to.")
-  parser.add_argument(
-      "--dir", default=None,
-      help="Directory to scan for files. May be a subdirectory of "
-           "--root_dir to only (re)scan part of the tree. Defaults to "
-           "--root_dir if not given.")
-  parser.add_argument(
-      "-v", "--verbosity", type=int, default=0,
-      help="Verbosity level: 1 logs directory actions, 3 also logs "
-           "each file being hashed.")
-  return parser.parse_args(argv[1:])
 
 
 def remove_missing_files(conn, root_dir):
@@ -269,12 +228,12 @@ def remove_missing_files(conn, root_dir):
       dir_state[dirpath] = unchanged
 
     if unchanged:
-      vlog(7, "Skipping existence check for %s (unchanged directory)",
-           filepath)
+      logging.vlog(7, "Skipping existence check for %s (unchanged directory)",
+                   filepath)
       continue
 
     if not os.path.isfile(filepath):
-      vlog(1, "Removing entry for missing file %s", filepath)
+      logging.vlog(1, "Removing entry for missing file %s", filepath)
       conn.execute("DELETE FROM hashes WHERE filename = ?", (rel_path,))
       removed += 1
   conn.commit()
@@ -282,26 +241,20 @@ def remove_missing_files(conn, root_dir):
 
 
 def main(argv):
-  global _VERBOSITY
+  del argv  # Unused.
 
-  args = parse_args(argv)
-  _VERBOSITY = args.verbosity
+  scan_dir = FLAGS.dir if FLAGS.dir is not None else FLAGS.root_dir
 
-  logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-
-  db_path = fsdecode(args.db)
-  root_dir = fsdecode(args.root_dir)
-  scan_dir = fsdecode(args.dir) if args.dir is not None else root_dir
-
-  conn = sqlite3.connect(db_path)
+  conn = sqlite3.connect(FLAGS.db)
   try:
     create_tables(conn)
-    removed = remove_missing_files(conn, root_dir)
+    logging.info("Checking removed files...")
+    removed = remove_missing_files(conn, FLAGS.root_dir)
     logging.info("Removed %d entries for missing files", removed)
-    collect_hashes(conn, root_dir, scan_dir)
+    collect_hashes(conn, FLAGS.root_dir, scan_dir)
   finally:
     conn.close()
 
 
 if __name__ == "__main__":
-  main(sys.argv)
+  app.run(main)

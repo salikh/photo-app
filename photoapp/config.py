@@ -37,8 +37,8 @@ flags.DEFINE_string(
     "Path of the sqlite database. Default: <state_dir>/app.sqlite.")
 flags.DEFINE_string(
     "hashes_db", None,
-    "Optional hash_dir.py-format database whose hashes are reused by scans "
-    "while a file's mtime matches.")
+    "Optional tools/archive/catalog.py-format database whose hashes are reused by "
+    "scans while a file's mtime matches.")
 flags.DEFINE_boolean(
     "xmp_dry_run", False,
     "Compute and log XMP changes without writing any sidecar or database "

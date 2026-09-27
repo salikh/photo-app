@@ -9,7 +9,7 @@ This app touches three sqlite databases, only one of which it owns:
 | Database | Location | Read/write | Lifetime |
 |---|---|---|---|
 | [The app's state database](#the-apps-state-database) | `<state_dir>/app.sqlite` | read/write | permanent |
-| [`--hashes_db`](#--hashes_db-a-precomputed-hash-cache) | wherever `hash_dir.py` wrote it | read-only | permanent, optional |
+| [`--hashes_db`](#--hashes_db-a-precomputed-hash-cache) | wherever `tools/archive/catalog.py` wrote it | read-only | permanent, optional |
 | [`--metadata_db`](#--metadata_db-a-one-off-import-source) | wherever the user points it | read-only | one-off, not part of normal operation |
 
 ## The app's state database
@@ -129,7 +129,7 @@ an unfamiliar schema.
 
 ## `--hashes_db`: a precomputed hash cache
 
-An optional, external, read-only sqlite database in the format `hash_dir.py` writes, given via
+An optional, external, read-only sqlite database in the format `tools/archive/catalog.py` writes, given via
 `--hashes_db`. `fileinfo.load_precomputed_hashes` reads it once at startup; a scan reuses a file's
 precomputed hash instead of re-hashing it when the file's mtime still matches, which matters
 because hashing over the NAS is the slow part of a scan (see [scanning.md](scanning.md)). The app

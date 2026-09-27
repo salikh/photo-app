@@ -57,7 +57,10 @@ On a phone: swipe left/right for the next/previous picture, swipe up/down to rai
     photoapp/        backend (FastAPI): scan, grouping, xmp, ratings, curation, thumbs, jobs, api
     photoapp/static/ frontend (plain ES modules, no build step)
     tests/           unit and API tests; tests/e2e drives a real Chrome with Playwright
-    *.py             the original command line tools (hash_dir.py, file_metadata.py, ...)
+    tools/           standalone command line tools, not part of the running app
+    tools/archive/   compare this library against an older backup copy on another machine or
+                     drive: what's there that isn't here, and why (already rejected vs. lost vs.
+                     never seen) -- see tools/archive/README.md
 
 ## Tests
 

@@ -1,17 +1,27 @@
-"""One-shot import of ratings from image_metadata.py's output database.
+"""One-shot import of ratings from an external metadata database.
 
 Usage:
   python -m photoapp.import_ratings --metadata_db=~/metadata.db \
       --state_dir=... [--write_xmp] [--xmp_dry_run]
 
+--metadata_db is a sqlite3 database with one row per logical image in a table
+named `images`: `hash` (content hash, primary key), `filepath`, `rating`
+(-1 = reject, 0 = unrated, 1-5 = stars), `rating_source_path` (the specific
+file the rating came from, for logging) and `merged_paths` (a JSON list of
+every physical file merged into this row, e.g. a RAW+JPEG pair). An optional
+`rating_time` column gives when the rating was originally set (the mtime of
+the file it came from); rows without it import as time 0. This is the schema
+the retired `image_metadata.py` script (ticket 133) used to produce; nothing
+in this codebase still generates it, but a database already built in this
+shape, from any source, imports the same way.
+
 Rules:
   * Every row is remembered in rating_by_hash (for rename recovery).
-  * The newest rating wins (ticket 021). An imported rating carries the time it was
-    originally set (image_metadata.py's rating_time, the mtime of the file it came from;
-    0 when unknown) and is applied only if that is newer than the Photo's database time
-    and its newest sidecar. Otherwise the existing rating is kept, and reported when it
-    differs. An import without times therefore only fills Photos that have no dated
-    rating from a sidecar or the app.
+  * The newest rating wins (ticket 021). An imported rating carries its
+    `rating_time` and is applied only if that is newer than the Photo's
+    database time and its newest sidecar. Otherwise the existing rating is
+    kept, and reported when it differs. An import without times therefore
+    only fills Photos that have no dated rating from a sidecar or the app.
   * An applied rating is stored in the database with its own time (source 'import') and
     logged. Sidecars are written only with --write_xmp, and only for winning ratings.
 """
@@ -31,7 +41,7 @@ from photoapp import ratings
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string("metadata_db", None,
-                    "Database written by image_metadata.py.")
+                    "External ratings database; see this module's docstring for the schema.")
 flags.DEFINE_boolean("write_xmp", False,
                      "Also write imported ratings into sidecars.")
 

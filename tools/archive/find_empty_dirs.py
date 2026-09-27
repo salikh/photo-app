@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Generate a shell script that removes empty directory trees.
 
+Generic housekeeping, unrelated to hashing; relocated, not rewritten, by
+ticket 133 (was `find_empty_dirs.py` at the repo root). Handy after
+[137](../../docs/tickets/137.md)'s apply step has moved files off a backup
+copy and left empty directories behind.
+
 Descends into every subdirectory of --dir and finds every directory
 that is empty, or that transitively contains nothing but other such
 empty directories (no files anywhere in the subtree). For each one,
@@ -14,8 +19,8 @@ This tool only WRITES a shell script, to stdout. It never removes
 anything itself; review the generated script before running it.
 
 Usage:
-    find_empty_dirs.py
-        --dir /zoo/Pictures
+    tools/archive/find_empty_dirs.py
+        --dir /path/to/backup/Pictures
         > find_empty_dirs.sh
 """
 

@@ -1,6 +1,7 @@
 """Walk the pictures directory and keep the files/dir_mtimes tables current.
 
-Same rules as file_metadata.py: a directory whose mtime matches
+Same rules as tools/archive/catalog.py (and, before ticket 111, the now-retired
+`file_metadata.py` this scheme was first written for): a directory whose mtime matches
 dir_mtimes is skipped; within a rescanned directory a file whose mtime
 and size are unchanged is not re-read or re-hashed. Vanished files are
 marked missing=1, never deleted. All paths in the database are relative

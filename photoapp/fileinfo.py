@@ -1,7 +1,11 @@
-"""Pure per-file helpers shared by the scanner and the file_metadata.py CLI.
+"""Pure per-file helpers used by the scanner (hashing, mime/dimensions, EXIF).
 
-No absl flags are defined here, so this module is safe to import from
-anywhere (file_metadata.py defines required flags at import time).
+No absl flags are defined here, so this module is safe to import from anywhere.
+`hash_file`/`get_or_compute_hash` intentionally match the hashing scheme of
+tools/archive/catalog.py (sha224 over chunks) -- not shared code, since that
+tool has no dependency on this package, but kept in step so a hash computed by
+one is directly comparable to a hash computed by the other (see
+tools/archive/README.md).
 """
 
 import datetime
@@ -56,7 +60,7 @@ _EXIF_MODEL = 0x0110
 
 
 def hash_file(path):
-  """Same sha224-over-chunks hash as hash_dir.py's hash_file."""
+  """Same sha224-over-chunks hash as tools/archive/catalog.py's hash_file."""
   digest = hashlib.sha224()
   with open(path, "rb") as f:
     while True:
@@ -257,7 +261,7 @@ def read_image_metadata(filepath):
 
 
 def load_precomputed_hashes(db_path):
-  """Return {filename: (hash, mtime)} from a hash_dir.py-produced database."""
+  """Return {filename: (hash, mtime)} from a tools/archive/catalog.py-produced database."""
   conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
   try:
     return {

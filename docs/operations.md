@@ -13,7 +13,7 @@ are the flag names, see `photos.example.toml`); the command line wins over the f
 | `--thumbs_dir` | `<state_dir>/thumbs` | thumbnail cache (sizes are created on demand) |
 | `--state_dir` | `$XDG_DATA_HOME/photos` (`~/.local/share/photos`) | database, XMP backups, manual link log |
 | `--database_path` | `<state_dir>/app.sqlite` | the sqlite file, when it should live elsewhere |
-| `--hashes_db` | none | `hash_dir.py` database whose hashes are reused by scans |
+| `--hashes_db` | none | `tools/archive/catalog.py` database whose hashes are reused by scans |
 | `--xmp_dry_run` | off | compute and log XMP changes without writing anything |
 | `--new_raw_sidecar_style` | `full` | new RAW sidecars named `NAME.DNG.xmp` (`stem`: `NAME.xmp`) |
 | `--nightly_scan_hour` | 3 | local hour of the nightly rescan, -1 disables |

@@ -17,9 +17,9 @@ tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress on the app itself. Epic 131 (see Open tickets) is filed; 132 and 136 (its
-  question tickets) are answered, so 133-138 are all actionable in dependency order: 133 first
-  (reorganize `tools/archive/`), then 134/135, then 137 (depends on 135), then 138. Ticket 130
+- No work in progress on the app itself. Epic 131 (see Open tickets): 133 (retired the ad hoc
+  scripts, `tools/archive/`) is done; next is 134 (export this machine's catalog+decisions) and
+  135 (compare against a target copy's catalog), then 137 (depends on 135), then 138. Ticket 130
   (config file, install docs, fresh-install tests) is done; see `STATUS.md`. New requests should be
   filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
