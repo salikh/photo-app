@@ -27,7 +27,10 @@ pictures_dir = "~/Pictures"
 
 # --- Network -----------------------------------------------------------------------------------
 
-# There is no authentication: use 127.0.0.1 to keep the app to this machine, 0.0.0.0 for the LAN.
+# There is no authentication: use 127.0.0.1 to keep the app to this
+# machine, 0.0.0.0 for the LAN. Note: you may want to use an https
+# authenticating proxy in addition to this app to make the app
+# available on the internet.
 host = "0.0.0.0"
 port = 8080
 
@@ -36,15 +39,18 @@ port = 8080
 # Compute and log XMP changes without writing any sidecar. Good for a first session.
 xmp_dry_run = false
 
-# Naming of a NEW sidecar for a RAW original: "full" = NAME.DNG.xmp (darktable), "stem" = NAME.xmp.
+# Naming of a NEW sidecar for a RAW original: "full" = NAME.DNG.xmp
+# (darktable), "stem" = NAME.xmp (lightroom).
 new_raw_sidecar_style = "full"
 
-# Display-only: show a 1-star rating as unrated (darktable's import default is 1 star).
+# Display-only: show a 1-star rating as unrated (darktable's import
+# default is 1 star).
 one_star_is_unrated = false
 
-# Scans write index.json / <name>.json metadata caches into the library. Set false for a library
+# Scans write index.json / <name>.json metadata caches into the
+# library next to original photo files. Set false for a library
 # that must stay untouched apart from sidecars.
-write_metadata_json = true
+write_metadata_json = false
 
 # Local hour (0-23) of the nightly rescan, -1 disables.
 nightly_scan_hour = 3
