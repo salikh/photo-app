@@ -2,7 +2,6 @@
 
 import uvicorn
 from absl import app
-from absl import flags
 from absl import logging
 import logging as py_logging
 
@@ -13,22 +12,20 @@ from photoapp import load_worker
 from photoapp import manual_links
 from photoapp import scan
 
-FLAGS = flags.FLAGS
-
-
 def main(argv):
   if len(argv) != 1:
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
   for module in ["TiffImagePlugin.py"]:
     # Set the noisy module to WARNING or higher to silence its DEBUG/INFO logs
     py_logging.getLogger(module.strip()).setLevel(logging.WARNING)
-  conn = db.open_state(FLAGS.state_dir)
-  restored = manual_links.restore_if_empty(conn, FLAGS.state_dir)
+  settings = config.Settings.load()
+  logging.info("config file: %s; pictures %s, thumbnails %s", settings.config_file or "none",
+               settings.pictures_dir, settings.thumbs_dir)
+  conn = db.connect(settings.db_path)
+  restored = manual_links.restore_if_empty(conn, settings.state_dir)
   if restored:
     logging.info("restored %d manual link decisions", restored)
-  logging.info("database in %s, schema version %d", FLAGS.state_dir,
-               db.schema_version(conn))
-  settings = config.Settings.from_flags()
+  logging.info("database %s, schema version %d", settings.db_path, db.schema_version(conn))
   application = api.create_app(conn, settings)
   application.state.jobs.start()
   if settings.load_worker_enabled:
@@ -49,7 +46,9 @@ def main(argv):
     # button for an immediate scan regardless of this flag).
     scan.NightlyScan(application.state.background_jobs, settings.pictures_dir,
                      settings.nightly_scan_hour).start()
-  uvicorn.run(application, host=FLAGS.host, port=FLAGS.port)
+  shown = "localhost" if settings.host == "0.0.0.0" else settings.host
+  logging.info("Photos: http://%s:%d/", shown, settings.port)
+  uvicorn.run(application, host=settings.host, port=settings.port)
 
 
 if __name__ == "__main__":

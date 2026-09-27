@@ -88,8 +88,8 @@ def backfill(conn, pictures_dir, limit=None, report_seconds=30):
 def main(argv):
   if len(argv) != 1:
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
-  settings = config.Settings.from_flags()
-  conn = db.open_state(settings.state_dir, busy_timeout=120.0)
+  settings = config.Settings.load()
+  conn = db.connect(settings.db_path, busy_timeout=120.0)
   backfill(conn, settings.pictures_dir, FLAGS.backfill_limit, FLAGS.report_seconds)
 
 

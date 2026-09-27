@@ -2,18 +2,39 @@
 
 import dataclasses
 import os
+import sys
+import tomllib
 
 from absl import flags
 
+REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_ENV = "PHOTOS_CONFIG"
+
+
+def default_state_dir():
+  data_home = os.environ.get("XDG_DATA_HOME") or os.path.join("~", ".local", "share")
+  return os.path.join(data_home, "photos")
+
+
 flags.DEFINE_string(
-    "pictures_dir", "/zoo/Pictures",
+    "config", None,
+    "Config file (TOML; the keys are the flag names, see photos.example.toml). Default: "
+    f"${CONFIG_ENV}, else ./photos.toml, else ~/.config/photos/config.toml, else none. Values given "
+    "on the command line win over the file, the file over the built-in defaults. 'none' "
+    "disables the search.")
+flags.DEFINE_string(
+    "pictures_dir", "~/Pictures",
     "Photo library root. Read-only for the app, except XMP sidecars.")
 flags.DEFINE_string(
-    "thumbs_dir", "/zoo/Thumbs",
-    "Thumbnail cache root, with Thumb/Small/Medium/Huge/Tuned subdirectories.")
+    "thumbs_dir", None,
+    "Thumbnail cache root, with Thumb/Small/Medium/Huge/Tuned subdirectories. "
+    "Default: <state_dir>/thumbs.")
 flags.DEFINE_string(
-    "state_dir", os.path.expanduser("~/.local/share/photos"),
+    "state_dir", default_state_dir(),
     "Directory for the sqlite database, XMP backups and manual_links.jsonl.")
+flags.DEFINE_string(
+    "database_path", None,
+    "Path of the sqlite database. Default: <state_dir>/app.sqlite.")
 flags.DEFINE_string(
     "hashes_db", None,
     "Optional hash_dir.py-format database whose hashes are reused by scans "
@@ -73,12 +94,65 @@ flags.DEFINE_float(
     "be tuned from real observation.")
 
 
+class ConfigError(Exception):
+  pass
+
+
+def _expand(path):
+  """Absolute path with ~ and $VARS expanded (None stays None)."""
+  return os.path.abspath(os.path.expandvars(os.path.expanduser(path))) if path else None
+
+
+def find_config_file(explicit=None, environ=None, cwd=None):
+  """The config file to use, or None. An explicitly named file must exist."""
+  environ = os.environ if environ is None else environ
+  named = explicit or environ.get(CONFIG_ENV)
+  if named:
+    if named == "none":
+      return None
+    path = _expand(named)
+    if not os.path.isfile(path):
+      raise ConfigError(f"config file {path} does not exist")
+    return path
+  for path in (os.path.join(cwd or os.getcwd(), "photos.toml"),
+               os.path.join(os.path.expanduser("~"), ".config", "photos", "config.toml")):
+    if os.path.isfile(path):
+      return path
+  return None
+
+
+def apply_config_file(path, flag_values=None):
+  """Make the values of a TOML config file the defaults of the flags.
+
+  A flag given on the command line keeps its command-line value. Unknown keys and values of the wrong
+  type raise ConfigError.
+  """
+  fv = flag_values or flags.FLAGS
+  try:
+    with open(path, "rb") as f:
+      table = tomllib.load(f)
+  except (OSError, tomllib.TOMLDecodeError) as e:
+    raise ConfigError(f"cannot read config file {path}: {e}") from e
+  for key, value in table.items():
+    if key == "config" or key not in fv:
+      raise ConfigError(f"{path}: unknown setting '{key}' (keys are the flag names, "
+                        "see photos.example.toml)")
+    try:
+      fv.set_default(key, value)
+    except (flags.IllegalFlagValueError, ValueError, TypeError) as e:
+      raise ConfigError(f"{path}: bad value for '{key}': {value!r} ({e})") from e
+
+
 @dataclasses.dataclass
 class Settings:
   pictures_dir: str
   thumbs_dir: str
   state_dir: str
   hashes_db: str = None
+  database_path: str = None
+  host: str = "0.0.0.0"
+  port: int = 8080
+  config_file: str = None
   xmp_dry_run: bool = False
   new_raw_sidecar_style: str = "full"
   job_workers: int = 2
@@ -96,15 +170,39 @@ class Settings:
 
   @property
   def db_path(self):
-    return os.path.join(self.state_dir, "app.sqlite")
+    return self.database_path or os.path.join(self.state_dir, "app.sqlite")
+
+  def check_pictures_dir(self):
+    if not os.path.isdir(self.pictures_dir):
+      raise ConfigError(
+          f"pictures_dir {self.pictures_dir} is not a directory; set pictures_dir in the config "
+          "file or pass --pictures_dir=... (see docs/install.md)")
+
+  @classmethod
+  def load(cls, check_pictures_dir=True):
+    """Settings for an entry point: config file, then flags; exits with a message on a bad setup."""
+    f = flags.FLAGS
+    try:
+      path = find_config_file(f.config)
+      if path:
+        apply_config_file(path)
+      settings = cls.from_flags()
+      if check_pictures_dir:
+        settings.check_pictures_dir()
+    except ConfigError as e:
+      sys.exit(f"photos: {e}")
+    settings.config_file = path
+    return settings
 
   @classmethod
   def from_flags(cls):
     f = flags.FLAGS
+    state_dir = _expand(f.state_dir)
     return cls(
-        pictures_dir=os.path.abspath(f.pictures_dir),
-        thumbs_dir=os.path.abspath(f.thumbs_dir),
-        state_dir=os.path.abspath(f.state_dir), hashes_db=f.hashes_db,
+        pictures_dir=_expand(f.pictures_dir),
+        thumbs_dir=_expand(f.thumbs_dir) or os.path.join(state_dir, "thumbs"),
+        state_dir=state_dir, hashes_db=_expand(f.hashes_db), database_path=_expand(f.database_path),
+        host=f.host, port=f.port,
         xmp_dry_run=f.xmp_dry_run, new_raw_sidecar_style=f.new_raw_sidecar_style,
         job_workers=f.job_workers, nightly_scan_hour=f.nightly_scan_hour,
         scan_workers=f.scan_workers, busy_retry_seconds=f.busy_retry_seconds,

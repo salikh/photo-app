@@ -1,0 +1,56 @@
+# Configuration of the photo manager. Copy to one of
+#   ./photos.toml   (next to start.sh)
+#   ~/.config/photos/config.toml
+# or point to it with --config=FILE or $PHOTOS_CONFIG. The keys are the command line flags; a flag
+# given on the command line wins over this file. Every setting is optional; the values below are the
+# built-in defaults unless a comment says otherwise. "~" and $VARS are expanded in paths.
+
+# --- Where things live -------------------------------------------------------------------------
+
+# The photo library. The app reads it, and writes only XMP sidecars, the optional metadata cache
+# (see write_metadata_json), the Exported/ folder and the .trash/ folder.
+pictures_dir = "~/Pictures"
+
+# Thumbnail cache (Thumb/Small/Medium/Huge/PreviewDNG subfolders). Can be rebuilt; can be large.
+# Default: <state_dir>/thumbs. Put it on fast storage if the library is on a slow disk.
+# thumbs_dir = "/data/photo-thumbs"
+
+# Database, first-seen XMP backups and the manual link log. BACK THIS UP (see docs/operations.md).
+# Default: $XDG_DATA_HOME/photos, i.e. ~/.local/share/photos.
+# state_dir = "~/.local/share/photos"
+
+# The sqlite database file itself. Default: <state_dir>/app.sqlite.
+# database_path = "~/.local/share/photos/app.sqlite"
+
+# Optional: a hash_dir.py database whose file hashes scans reuse (speeds up the first scan).
+# hashes_db = "~/zoo.db"
+
+# --- Network -----------------------------------------------------------------------------------
+
+# There is no authentication: use 127.0.0.1 to keep the app to this machine, 0.0.0.0 for the LAN.
+host = "0.0.0.0"
+port = 8080
+
+# --- Behaviour ---------------------------------------------------------------------------------
+
+# Compute and log XMP changes without writing any sidecar. Good for a first session.
+xmp_dry_run = false
+
+# Naming of a NEW sidecar for a RAW original: "full" = NAME.DNG.xmp (darktable), "stem" = NAME.xmp.
+new_raw_sidecar_style = "full"
+
+# Display-only: show a 1-star rating as unrated (darktable's import default is 1 star).
+one_star_is_unrated = false
+
+# Scans write index.json / <name>.json metadata caches into the library. Set false for a library
+# that must stay untouched apart from sidecars.
+write_metadata_json = true
+
+# Local hour (0-23) of the nightly rescan, -1 disables.
+nightly_scan_hour = 3
+
+# --- Performance -------------------------------------------------------------------------------
+
+scan_workers = 8               # threads reading files during a scan
+job_workers = 2                # background RAW render threads
+load_worker_enabled = true     # fill in missing thumbnails when the machine is idle

@@ -145,8 +145,8 @@ def main(argv):
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
   if not FLAGS.metadata_db:
     raise app.UsageError("--metadata_db is required")
-  settings = config.Settings.from_flags()
-  conn = db_lib.open_state(settings.state_dir)
+  settings = config.Settings.load()
+  conn = db_lib.connect(settings.db_path)
   report = import_ratings(conn, settings, FLAGS.metadata_db, FLAGS.write_xmp)
   logging.info(
       "rows=%d unmatched=%d photos=%d applied=%d skipped_unrated=%d "

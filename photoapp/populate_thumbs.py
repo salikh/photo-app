@@ -51,8 +51,8 @@ def main(argv):
   if unknown or not sizes:
     raise app.UsageError(
         f"--sizes must be a non-empty subset of {list(thumbs.SIZES)}, got {FLAGS.sizes}")
-  settings = config.Settings.from_flags()
-  conn = db.open_state(settings.state_dir, busy_timeout=60.0)
+  settings = config.Settings.load()
+  conn = db.connect(settings.db_path, busy_timeout=60.0)
   populator = thumb_populate.Populator(
       settings.db_path, settings.pictures_dir, settings.thumbs_dir, sizes)
   queued = populator.enqueue_missing(conn, FLAGS.limit)

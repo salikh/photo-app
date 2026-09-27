@@ -101,7 +101,7 @@ def format_report(r):
 def main(argv):
   if len(argv) != 1:
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
-  conn = db.open_state(config.Settings.from_flags().state_dir)
+  conn = db.connect(config.Settings.load(check_pictures_dir=False).db_path)
   print(format_report(survey(conn)))
 
 

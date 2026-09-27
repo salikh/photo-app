@@ -1,10 +1,9 @@
-fastapi
-uvicorn
-lxml
-Pillow
-absl-py
-pytest
-httpx
-rawpy
-tifffile
-playwright
+# Runtime dependencies of the photo manager (Python 3.11 or newer). Tests: requirements-dev.txt.
+fastapi>=0.110
+uvicorn>=0.29
+lxml>=5.0
+Pillow>=10.0
+absl-py>=2.0
+numpy>=1.26
+rawpy>=0.21
+tifffile>=2024.1

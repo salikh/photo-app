@@ -191,8 +191,8 @@ def main(argv):
   for module in ["TiffImagePlugin.py"]:
     # Set the noisy module to WARNING or higher to silence its DEBUG/INFO logs
     py_logging.getLogger(module.strip()).setLevel(logging.WARNING)
-  settings = config.Settings.from_flags()
-  conn = db.open_state(settings.state_dir, busy_timeout=120.0)
+  settings = config.Settings.load()
+  conn = db.connect(settings.db_path, busy_timeout=120.0)
   run(conn, settings.pictures_dir, settings.thumbs_dir, FLAGS.dhash_distance)
 
 
