@@ -8,30 +8,28 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [131](docs/tickets/131.md) Epic: retire the ad hoc directory-management scripts, keep and
-  rebuild cross-copy archive comparison (children 132-138; 132 and 136 are question tickets and
-  block the rest)
 - [ ] [139](docs/tickets/139.md) Top-level README.md on the project's philosophy and assumptions --
-  needs a `grilling`-skill session with the user; deliberately delayed until epic 131 (and anything
-  filed after it) is done
+  needs a `grilling`-skill session with the user; deliberately delayed until every other currently
+  open ticket is done (right now, that just means this ticket is next)
 
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107) and
-tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
+All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
+(132-138) and tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress on the app itself. Epic 131 (see Open tickets): 133-135 and 137 are done
-  (`tools/archive/{catalog,import_sha224sum,find_empty_dirs,catalog_lib,compare,apply}.py`,
-  `python -m photoapp.export_catalog`); only 138 (`tools/archive/README.md` + doc updates) is left
-  before the epic itself is done. Ticket 139 (top-level philosophy README) is filed but explicitly
-  delayed until after that. Ticket 130 (config file, install docs, fresh-install tests) is done;
-  see `STATUS.md`. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress on the app itself. Epic 131 (retire the ad hoc scripts, cross-copy archive
+  comparison) is fully done — `tools/archive/{catalog,import_sha224sum,find_empty_dirs,catalog_lib,
+  compare,apply}.py`, `tools/archive/README.md`, `python -m photoapp.export_catalog`; see
+  `STATUS.md`. Ticket 139 (top-level philosophy README) is next, but it needs a `grilling`-skill
+  session with the user first, not more autonomous work. Ticket 130 (config file, install docs,
+  fresh-install tests) is done too; see `STATUS.md`. New requests should be filed as tickets in
+  `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
 - Config: `./photos.toml` (gitignored, holds the `/zoo` paths; template `photos.example.toml`) is picked up
   by `./start.sh` and every `python -m photoapp...` run from the checkout; use `--config=none` to ignore it.
-- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 380 tests, ~1 min) and
+- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 405 tests, ~1-2 min) and
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
   never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing.
@@ -56,7 +54,8 @@ context, the question, options if any, and an empty **Answer** section). The que
 closed and the blocked ticket continues (and its pointer moves to `STATUS.md`). A ticket is "actionable"
 when it has no open blocker.
 
-132 and 136 were answered 2026-09-27 (see `docs/tickets/132.md`/`136.md`) and unblocked 133/137.
+132 and 136 were answered 2026-09-27 (see `docs/tickets/132.md`/`136.md`) and unblocked 133/137
+(both now done; see `STATUS.md`).
 
 116 was answered 2026-09-25 (Thumb cropped to selected rect; loupe Medium/Huge full with dark shading; Small cropped in grid / shaded single; see `STATUS.md`) and unblocked 115. 103 was answered 2026-09-24 (Option C, a downsampled still-mosaiced DNG via rawpy+tifffile, refined
 from the user's initial Option B lean after checking what LibRaw-Wasm actually supports; see

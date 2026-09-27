@@ -156,6 +156,15 @@ Read-only on the library: opens each file just far enough to read its EXIF heade
 grouping, no thumbnail work. Only touches files with none of the three fields already set, so it's
 safe and cheap to rerun (`--backfill_limit=N` restricts a run to N files for a quick check).
 
+## Comparing against another copy of the library
+
+If an older backup of this library exists on another machine, drive, or disk image, `tools/archive/`
+has an incremental, hash-based way to find what's there that isn't here, and to tell "already
+rejected and deleted on purpose" apart from "lost some other way" and "never seen before" — see
+[tools/archive/README.md](../tools/archive/README.md) for the full workflow and a worked example.
+Every tool there is either read-only or prints a script for you to review before anything runs;
+`python -m photoapp.export_catalog` (this app's own half of that workflow) is read-only too.
+
 ## Hidden folders
 
 Folders whose name starts with a dot (`.nu`, `.thumbnails`, `.webaxs`, `.picasaoriginals`, `.comments`:

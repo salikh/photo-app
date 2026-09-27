@@ -256,3 +256,14 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 ## Packaging for other users (user request 2026-09-27, done)
 
 - [x] [130](docs/tickets/130.md) Config file + portable defaults, `docs/install.md`, split requirements, fresh-install integration tests
+
+## Archive tools: retire the ad hoc scripts, cross-copy comparison (user request 2026-09-27, done)
+
+- [x] [131](docs/tickets/131.md) Epic: retire the ad hoc directory-management scripts, keep and rebuild cross-copy archive comparison — done (132-138 all landed)
+- [x] [132](docs/tickets/132.md) Which legacy scripts survive, and where do they live? → `tools/archive/`: `catalog.py`, `import_sha224sum.py`, `find_empty_dirs.py` kept and relocated; the rest dropped as superseded; unblocked 133
+- [x] [133](docs/tickets/133.md) Reorganize surviving scripts into `tools/archive/`, delete the rest
+- [x] [134](docs/tickets/134.md) `photoapp/export_catalog.py`: export this machine's live catalog and durable per-hash decisions
+- [x] [135](docs/tickets/135.md) `tools/archive/compare.py`: four-way report (have / rejected / lost / new) against a target copy
+- [x] [136](docs/tickets/136.md) How automated should applying known reject/delete decisions to a different copy be? → review-script by default, `--apply`-gated for the two additive directions, never for target-copy deletion; no remote/SSH in v1; unblocked 137
+- [x] [137](docs/tickets/137.md) `tools/archive/apply.py`: act on a `compare.py` classification, per 136's answer
+- [x] [138](docs/tickets/138.md) `tools/archive/README.md` end-to-end walkthrough; `docs/operations.md` updated
