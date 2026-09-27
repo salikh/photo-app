@@ -35,13 +35,17 @@ Usage:
     tools/archive/compare.py --live=live.jsonl --target_db=backup.sqlite > report.txt
 """
 
-import json
-import sqlite3
+import os
 import sys
 
 from absl import app
 from absl import flags
 from absl import logging
+
+# tools/ is not a package (no __init__.py); make the sibling module importable regardless of the
+# working directory this script is invoked from.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import catalog_lib  # noqa: E402
 
 FLAGS = flags.FLAGS
 
@@ -56,94 +60,22 @@ flags.DEFINE_boolean(
 flags.mark_flag_as_required("live")
 flags.mark_flag_as_required("target_db")
 
-BUCKETS = ("have", "rejected", "lost", "new")
-
-
-def load_live(path):
-  """(file_hashes: set, decisions: {hash: {"rating":, "fav":, "rated_at":}}) from a ticket-134 export."""
-  file_hashes = set()
-  decisions = {}
-  with open(path) as f:
-    for line in f:
-      line = line.strip()
-      if not line:
-        continue
-      record = json.loads(line)
-      if record["type"] == "file":
-        file_hashes.add(record["hash"])
-      elif record["type"] == "decision":
-        decisions[record["hash"]] = {"rating": record["rating"], "fav": record["fav"],
-                                     "rated_at": record["rated_at"]}
-  return file_hashes, decisions
-
-
-def load_target(db_path):
-  """{filename: hash} from a catalog.py/import_sha224sum.py-format database."""
-  conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-  try:
-    return dict(conn.execute("SELECT filename, hash FROM hashes"))
-  finally:
-    conn.close()
-
-
-def classify(file_hash, file_hashes, decisions):
-  if file_hash in file_hashes:
-    return "have"
-  decision = decisions.get(file_hash)
-  if decision is None:
-    return "new"
-  return "rejected" if decision["rating"] == -1 else "lost"
-
-
-def compare(target_files, file_hashes, decisions):
-  """{bucket: [(filename, hash), ...]}, filename-sorted within each bucket."""
-  buckets = {b: [] for b in BUCKETS}
-  for filename, file_hash in sorted(target_files.items()):
-    buckets[classify(file_hash, file_hashes, decisions)].append((filename, file_hash))
-  return buckets
-
-
-def compare_reverse(target_files, file_hashes):
-  """Live hashes absent from the target copy at all, as a sorted list of hashes (a live hash may
-  correspond to several paths on this machine; the report is about content, not any one path)."""
-  target_hashes = set(target_files.values())
-  return sorted(file_hashes - target_hashes)
-
-
-def format_report(buckets):
-  lines = []
-  lines.append("# tools/archive/compare.py report")
-  for b in BUCKETS:
-    lines.append(f"# {b}: {len(buckets[b])}")
-  lines.append("#")
-  lines.append("# bucket\tpath\thash")
-  for b in BUCKETS:
-    for filename, file_hash in buckets[b]:
-      lines.append(f"{b}\t{filename}\t{file_hash}")
-  return "\n".join(lines) + "\n"
-
-
-def format_reverse_report(only_live_hashes):
-  lines = [f"# tools/archive/compare.py --reverse report: {len(only_live_hashes)} live hash(es) "
-          "absent from the target copy", "#"]
-  lines.extend(only_live_hashes)
-  return "\n".join(lines) + "\n"
-
 
 def main(argv):
   if len(argv) != 1:
     raise app.UsageError(f"unexpected arguments: {argv[1:]}")
-  file_hashes, decisions = load_live(FLAGS.live)
-  target_files = load_target(FLAGS.target_db)
+  file_hashes, decisions = catalog_lib.load_live(FLAGS.live)
+  target_files = catalog_lib.load_target(FLAGS.target_db)
   logging.info("live: %d file(s), %d decision(s); target: %d file(s)",
               len(file_hashes), len(decisions), len(target_files))
 
   if FLAGS.reverse:
-    report = format_reverse_report(compare_reverse(target_files, file_hashes))
+    report = catalog_lib.format_reverse_report(
+        catalog_lib.compare_reverse(target_files, file_hashes))
   else:
-    buckets = compare(target_files, file_hashes, decisions)
-    report = format_report(buckets)
-    for b in BUCKETS:
+    buckets = catalog_lib.compare(target_files, file_hashes, decisions)
+    report = catalog_lib.format_report(buckets)
+    for b in catalog_lib.BUCKETS:
       logging.info("%s: %d", b, len(buckets[b]))
 
   sys.stdout.write(report)

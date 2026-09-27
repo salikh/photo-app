@@ -20,11 +20,12 @@ tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress on the app itself. Epic 131 (see Open tickets): 133 (retired the ad hoc
-  scripts, `tools/archive/`), 134 (`python -m photoapp.export_catalog`) and 135
-  (`tools/archive/compare.py`) are done; next is 137 (apply/stage, per 136's answer), then 138
-  (`tools/archive/README.md`). Ticket 130 (config file, install docs, fresh-install tests) is
-  done; see `STATUS.md`. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress on the app itself. Epic 131 (see Open tickets): 133-135 and 137 are done
+  (`tools/archive/{catalog,import_sha224sum,find_empty_dirs,catalog_lib,compare,apply}.py`,
+  `python -m photoapp.export_catalog`); only 138 (`tools/archive/README.md` + doc updates) is left
+  before the epic itself is done. Ticket 139 (top-level philosophy README) is filed but explicitly
+  delayed until after that. Ticket 130 (config file, install docs, fresh-install tests) is done;
+  see `STATUS.md`. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

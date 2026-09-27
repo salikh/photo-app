@@ -262,7 +262,11 @@ def imports_of(paths):
       for name in names:
         found.setdefault(name.split(".")[0], path)
   return {m: p for m, p in found.items()
-          if m not in sys.stdlib_module_names and m not in ("photoapp", "tests")}
+          if m not in sys.stdlib_module_names
+          # "photoapp"/"tests": this repo's own packages. "catalog_lib": tools/archive/'s own
+          # flag-free module (ticket 137), imported directly by its tests via a sys.path append,
+          # not installed as a package -- not a third-party dependency either way.
+          and m not in ("photoapp", "tests", "catalog_lib")}
 
 
 def requirement_names(filename, seen=()):
