@@ -14,12 +14,11 @@ are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress. Ticket 139 (`PHILOSOPHY.md`, via a `grilling`-skill session) is done; see
-  `STATUS.md`. Epic 131 (retire the ad hoc scripts, cross-copy archive comparison) is done too —
-  `tools/archive/{catalog,import_sha224sum,find_empty_dirs,catalog_lib,compare,apply}.py`,
-  `tools/archive/README.md`, `python -m photoapp.export_catalog`. Ticket 130 (config file, install
-  docs, fresh-install tests) is done as well; see `STATUS.md`. New requests should be filed as
-  tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Ticket 139 (`PHILOSOPHY.md`, via a `grilling`-skill
+  session — read it first for the project's design philosophy and assumptions) and epic 131
+  (`tools/archive/`: compare/apply against an older backup copy of the library) are the most
+  recent completed work; see `STATUS.md` for those and everything before them. New requests
+  should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
