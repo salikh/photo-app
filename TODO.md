@@ -8,19 +8,19 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [130](docs/tickets/130.md) Organize the code for use by other users: configuration, install docs, dependencies, fresh-install tests
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket,
-epic 102 (103-107) and tickets 108-115, 117-124, 127 and 128 are done (see `STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107) and tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress. Ticket 128 (move/rename detection + thumbnail move) is done; see `STATUS.md`.
+- No work in progress. Ticket 130 (config file, install docs, fresh-install tests) is done; see `STATUS.md`.
   New requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
-- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 300 tests, ~30 s) and
+- Config: `./photos.toml` (gitignored, holds the `/zoo` paths; template `photos.example.toml`) is picked up
+  by `./start.sh` and every `python -m photoapp...` run from the checkout; use `--config=none` to ignore it.
+- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 380 tests, ~1 min) and
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
   never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing.

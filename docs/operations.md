@@ -2,13 +2,17 @@
 
 ## Running
 
-`./start.sh` (creates `.venv` on first run). Useful flags, all optional:
+`./start.sh` (creates `.venv` on first run; see [install.md](install.md) for a new installation). Every
+flag below can also be set in a TOML config file (`photos.toml`, `--config=FILE`, `$PHOTOS_CONFIG`; keys
+are the flag names, see `photos.example.toml`); the command line wins over the file. Useful flags, all optional:
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--pictures_dir` | `/zoo/Pictures` | the library; read-only except XMP sidecars and the Delete flow (ticket 072), which moves rejected photos' files to `.trash/` |
-| `--thumbs_dir` | `/zoo/Thumbs` | thumbnail cache (sizes are created on demand) |
-| `--state_dir` | `~/.local/share/photos` | database, XMP backups, manual link log |
+| `--config` | see above | the config file; `none` ignores `./photos.toml` and `~/.config/photos/config.toml` |
+| `--pictures_dir` | `~/Pictures` | the library; read-only except XMP sidecars and the Delete flow (ticket 072), which moves rejected photos' files to `.trash/` |
+| `--thumbs_dir` | `<state_dir>/thumbs` | thumbnail cache (sizes are created on demand) |
+| `--state_dir` | `$XDG_DATA_HOME/photos` (`~/.local/share/photos`) | database, XMP backups, manual link log |
+| `--database_path` | `<state_dir>/app.sqlite` | the sqlite file, when it should live elsewhere |
 | `--hashes_db` | none | `hash_dir.py` database whose hashes are reused by scans |
 | `--xmp_dry_run` | off | compute and log XMP changes without writing anything |
 | `--new_raw_sidecar_style` | `full` | new RAW sidecars named `NAME.DNG.xmp` (`stem`: `NAME.xmp`) |

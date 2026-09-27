@@ -1,13 +1,15 @@
 # Photo manager
 
-A single-user web app for culling and rating the photo library in `/zoo/Pictures`, reachable from
+A single-user web app for culling and rating the photo library (`pictures_dir`), reachable from
 any device on the LAN (desktop keyboard workflow and a phone-friendly swipe UI, dark theme).
 Ratings, favorites and keywords are written to XMP sidecars; the sqlite database is a rebuildable
 cache. Originals are never moved or deleted.
 
+    cp photos.example.toml photos.toml   # set pictures_dir (and optionally thumbs_dir, state_dir, ...)
     ./start.sh                      # http://localhost:8080/  (creates .venv on first run)
     ./start.sh --xmp_dry_run        # try it without writing anything
 
+- Installation and configuration for a new machine: [docs/install.md](docs/install.md)
 - Flags, safety rules and what to back up: [docs/operations.md](docs/operations.md)
 - Requirements and plan: [docs/reqs/](docs/reqs/), [docs/plans/](docs/plans/)
 - Findings about the real library: [docs/reqs/xmp-survey.md](docs/reqs/xmp-survey.md),
@@ -59,6 +61,7 @@ On a phone: swipe left/right for the next/previous picture, swipe up/down to rai
 
 ## Tests
 
+    .venv/bin/pip install -r requirements-dev.txt        # once
     .venv/bin/python -m pytest -q                       # everything (the browser tests take ~2 minutes)
     .venv/bin/python -m pytest -q --ignore=tests/e2e    # fast part
     XMP_SAMPLE_DIR=<copy of real *.xmp> pytest tests/test_xmp_real_sample.py

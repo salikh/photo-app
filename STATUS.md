@@ -252,3 +252,7 @@ question tickets are tracked in `TODO.md`, not here.
 Answered earlier: 053 (a single file's reject never rejects the pair while the other is picked; app rejects
 newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (remember previous stars), 042
 (`NAME.DNG.xmp`), 046 (swipe mapping), 049 (`--one_star_is_unrated`), 054 (hide dot folders).
+
+## Packaging for other users (user request 2026-09-27, done)
+
+- [x] [130](docs/tickets/130.md) Config file + portable defaults, `docs/install.md`, split requirements, fresh-install integration tests
