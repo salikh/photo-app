@@ -202,6 +202,29 @@ def test_dir_exists_endpoint(settings):
   assert c.get("/api/dirs/exists", params={"dir": "../escape"}).status_code == 400
 
 
+def test_rename_dir_endpoint(settings):
+  c = app_with_pair(settings)
+  d = settings.pictures_dir
+  k1 = pid(c, "y/K1.DNG")
+
+  r = c.post("/api/dirs/rename", json={"from": "y", "to": "z"})
+  assert r.status_code == 200, r.text
+  body = r.json()
+  assert body["old_dir"] == "y" and body["new_dir"] == "z" and body["files_moved"] == 4
+  assert not os.path.isdir(os.path.join(d, "y"))
+  assert os.path.isfile(os.path.join(d, "z", "K1.DNG"))
+  assert c.get(f"/api/photos/{k1}").json()["files"][0]["path"] == "z/K1.DNG"
+  assert sorted(j["target"] for j in c.app.state.background_jobs.list()
+               if j["kind"] == "scan_dir") == ["y", "z"]
+
+  # refuses an existing target
+  r2 = c.post("/api/dirs/rename", json={"from": "Exported", "to": "z"})
+  assert r2.status_code == 400
+  assert "already exists" in r2.json()["detail"]
+
+  assert c.post("/api/dirs/rename", json={"from": "../escape", "to": "elsewhere"}).status_code == 400
+
+
 def test_trash_file_endpoint(settings):
   # ticket 082: file-scoped, not rating-gated -- unlike /api/photos/trash above.
   c = app_with_pair(settings)

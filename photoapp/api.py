@@ -86,6 +86,11 @@ class MoveBody(pydantic.BaseModel):
   target: str
 
 
+class RenameDirBody(pydantic.BaseModel):
+  from_: str = pydantic.Field(alias="from")
+  to: str
+
+
 class RawSettingsBody(pydantic.BaseModel):
   bright: float | None = None
   wb_mode: str | None = None
@@ -641,6 +646,30 @@ def create_app(conn, settings):
     except ValueError as e:
       raise HTTPException(400, str(e))
     return {"exists": os.path.isdir(os.path.join(settings.pictures_dir, rel_dir))}
+
+  @app.post("/api/dirs/rename")
+  def rename_dir_route(body: RenameDirBody):
+    """Ticket 155: rename a whole directory -- a different operation from /api/move (that moves
+    individually chosen Photos into a shared destination; this renames the directory itself, one
+    os.rename, refusing outright if the target already exists rather than offering to create it).
+    Schedules a scan_dir job for both directories afterward, same as /api/move does for whatever
+    it actually touched."""
+    try:
+      old_dir = library._norm_dir(body.from_)
+      new_dir = library._norm_dir(body.to)
+    except ValueError as e:
+      raise HTTPException(400, str(e))
+
+    def attempt():
+      with app.state.db_lock:
+        try:
+          result = move_lib.rename_dir(app.state.db, settings, old_dir, new_dir)
+        except move_lib.MoveError as e:
+          raise HTTPException(400, str(e))
+        scan_jobs = [app.state.background_jobs.enqueue("scan_dir", target=d)
+                    for d in (old_dir, new_dir)]
+      return {**result, "scan_jobs": scan_jobs}
+    return run_db(attempt)
 
   @app.get("/api/photos")
   @db_route

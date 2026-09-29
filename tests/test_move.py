@@ -131,3 +131,91 @@ def test_move_photos_batch_reports_a_failure_without_stopping(conn, settings):
   result = move.move_photos(conn, settings, [999999, pid], "2025/keepers")
   assert result["errors"] == [{"photo_id": 999999, "error": "no such photo: 999999"}]
   assert len(result["moved"]) == 1 and result["moved"][0]["photo_id"] == pid
+
+
+# --- rename_dir (ticket 155) --------------------------------------------------
+
+def test_rename_dir_moves_everything_and_updates_paths(conn, settings):
+  pid = setup_pair(conn, settings, rel_dir="2024/trip")
+  d = settings.pictures_dir
+  touch(os.path.join(d, "2024/trip/sub", "nested.jpg"))
+  scan.scan(conn, d)
+
+  result = move.rename_dir(conn, settings, "2024/trip", "2024/vacation")
+  assert result == {"old_dir": "2024/trip", "new_dir": "2024/vacation", "files_moved": 3}
+
+  assert not os.path.isdir(os.path.join(d, "2024/trip"))
+  for rel in ("K1.DNG", "K1.JPG", "K1.DNG.xmp", "K1.JPG.xmp", "sub/nested.jpg"):
+    assert os.path.isfile(os.path.join(d, "2024/vacation", rel))
+
+  paths_now = {r["path"] for r in conn.execute("SELECT path FROM files")}
+  assert paths_now == {"2024/vacation/K1.DNG", "2024/vacation/K1.JPG",
+                       "2024/vacation/sub/nested.jpg"}
+  # the Photo/rating survived -- same row, just repointed, not a fresh insert
+  assert conn.execute("SELECT id FROM photos WHERE id = ?", (pid,)).fetchone()["id"] == pid
+
+
+def test_rename_dir_follows_cached_thumbnails(conn, settings):
+  from photoapp import thumbs
+  setup_pair(conn, settings, rel_dir="2024/trip")
+  fid = conn.execute("SELECT id FROM files WHERE path = '2024/trip/K1.JPG'").fetchone()[0]
+  made = thumbs.ensure(conn, settings.pictures_dir, settings.thumbs_dir, fid,
+                       "2024/trip/K1.JPG", "Thumb")
+  assert made is not None and os.path.isfile(made)
+  move.rename_dir(conn, settings, "2024/trip", "2024/vacation")
+  assert not os.path.exists(made)
+  moved_thumb = thumbs.lookup(settings.thumbs_dir, "Thumb", "2024/vacation/K1.JPG")
+  assert moved_thumb is not None and os.path.isfile(moved_thumb)
+
+
+def test_rename_dir_refuses_an_existing_target(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "2024/a", "x.jpg"))
+  touch(os.path.join(d, "2024/b", "y.jpg"))
+  scan.scan(conn, d)
+  try:
+    move.rename_dir(conn, settings, "2024/a", "2024/b")
+    assert False, "should have raised"
+  except move.MoveError as e:
+    assert "already exists" in str(e)
+  # untouched
+  assert os.path.isfile(os.path.join(d, "2024/a/x.jpg"))
+  assert os.path.isfile(os.path.join(d, "2024/b/y.jpg"))
+
+
+def test_rename_dir_refuses_into_its_own_subtree(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "2024", "x.jpg"))
+  scan.scan(conn, d)
+  try:
+    move.rename_dir(conn, settings, "2024", "2024/sub")
+    assert False, "should have raised"
+  except move.MoveError as e:
+    assert "inside the source" in str(e)
+
+
+def test_rename_dir_refuses_a_missing_source(conn, settings):
+  try:
+    move.rename_dir(conn, settings, "nope", "elsewhere")
+    assert False, "should have raised"
+  except move.MoveError as e:
+    assert "no such directory" in str(e)
+
+
+def test_rename_dir_refuses_the_same_source_and_target(conn, settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "2024", "x.jpg"))
+  scan.scan(conn, d)
+  try:
+    move.rename_dir(conn, settings, "2024", "2024")
+    assert False, "should have raised"
+  except move.MoveError as e:
+    assert "same" in str(e)
+
+
+def test_rename_dir_refuses_the_library_root(conn, settings):
+  try:
+    move.rename_dir(conn, settings, ".", "elsewhere")
+    assert False, "should have raised"
+  except move.MoveError as e:
+    assert "root" in str(e)

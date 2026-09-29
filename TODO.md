@@ -8,7 +8,11 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [155](docs/tickets/155.md) Folder rename button (user request 2026-09-29)
+- [ ] [155](docs/tickets/155.md) Folder rename button (user request 2026-09-29) — **backend done**
+      (`photoapp/move.py`'s `rename_dir`, `POST /api/dirs/rename`, tested); **frontend not
+      started**: `photoapp/static/rename.js` (two-step modal, following `move.js`'s shape), the
+      header "Rename" button (`app.js`, gated on `filter === 'all'`), e2e tests. Stopped here on a
+      usage-limit warning mid-session.
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
 (132-138), epic 144 (145-148), tickets 139-143, 149-154 and tickets 108-115, 117-124, 127, 128 and

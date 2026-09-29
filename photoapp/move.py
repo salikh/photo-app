@@ -12,6 +12,10 @@ its own sidecars (every xmp_sidecars row for that file_id, plus its ticket 111 p
 <name>.json) -- matching trash._move_file_and_sidecars's enumeration. A sidecar's *file* moves
 here; its `xmp_sidecars` table bookkeeping is deliberately left to the rescan the caller schedules
 afterward (see docs/design/move.md), the same as it would be for a move made outside this app.
+
+rename_dir (ticket 155) is a different operation living in the same module: renaming a whole
+directory, one `os.rename` for everything inside it at once, rather than moving individually
+chosen files to a shared destination. See its own docstring.
 """
 
 import os
@@ -159,3 +163,51 @@ def move_photos(conn, settings, photo_ids, dest_dir):
     except MoveError as e:
       errors.append({"photo_id": pid, "error": str(e)})
   return {"moved": moved, "errors": errors, "source_dirs": source_dirs}
+
+
+def rename_dir(conn, settings, old_rel_dir, new_rel_dir):
+  """Rename a whole directory (ticket 155) -- a different operation from move_photos above, not
+  built on it: every file, sidecar and per-file JSON cache under old_rel_dir moves in a single
+  `os.rename` of the directory itself, with no per-file collision handling needed (the target must
+  not already exist -- see the checks below), unlike move_photos's individually-resolved
+  destination paths. Raises MoveError for: old_rel_dir missing, new_rel_dir already existing,
+  new_rel_dir inside old_rel_dir's own subtree (os.rename would fail confusingly), or the two
+  being equal.
+
+  files.path is rewritten for every affected row in one bulk pass (a plain prefix replace -- exactly
+  which new path each old one maps to is never ambiguous the way a scan's hash-matching move
+  detection can be, so this doesn't wait for the rescan the caller schedules afterward, same
+  reasoning as move_photo). Cached thumbnails/PreviewDNG per file still reuse ticket 128's
+  `thumbs.move_thumbnails`/`raw_preview_dng.move` (a completely separate tree under thumbs_dir,
+  untouched by the source directory's own os.rename, so there's no move-ordering conflict).
+  xmp_sidecars table bookkeeping is left to the rescan, same division of labor as move_photo/
+  docs/design/move.md. Returns {"old_dir", "new_dir", "files_moved"}."""
+  old_abs = os.path.join(settings.pictures_dir, old_rel_dir)
+  new_abs = os.path.join(settings.pictures_dir, new_rel_dir)
+  if old_rel_dir == new_rel_dir:
+    raise MoveError("source and target are the same")
+  if old_rel_dir in ("", "."):
+    raise MoveError("cannot rename the library root")
+  if new_rel_dir == old_rel_dir or new_rel_dir.startswith(old_rel_dir + "/"):
+    raise MoveError("target is inside the source directory")
+  if not os.path.isdir(old_abs):
+    raise MoveError(f"no such directory: {old_rel_dir}")
+  if os.path.exists(new_abs):
+    raise MoveError(f"target already exists: {new_rel_dir}")
+
+  lo, hi = paths.subtree_range(old_rel_dir)
+  rows = conn.execute(
+      "SELECT id, path FROM files WHERE path >= ? AND path < ?", (lo, hi)).fetchall()
+
+  os.makedirs(os.path.dirname(new_abs), exist_ok=True)
+  os.rename(old_abs, new_abs)
+
+  for row in rows:
+    new_path = new_rel_dir + row["path"][len(old_rel_dir):]
+    conn.execute("UPDATE files SET path = ? WHERE id = ?", (new_path, row["id"]))
+    if settings.thumbs_dir:
+      thumbs.move_thumbnails(conn, settings.thumbs_dir, row["id"], row["path"], new_path)
+      raw_preview_dng.move(settings.thumbs_dir, row["path"], new_path)
+  conn.commit()
+  logging.info("rename_dir: %s -> %s (%d file(s))", old_rel_dir, new_rel_dir, len(rows))
+  return {"old_dir": old_rel_dir, "new_dir": new_rel_dir, "files_moved": len(rows)}
