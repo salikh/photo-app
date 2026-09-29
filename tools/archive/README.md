@@ -48,8 +48,18 @@ this tool catalogs is often one `photoapp` has already scanned, or a copy of one
 frequently already have a hash for each image, sparing a first-ever `catalog.py` run the (slow, for
 a large or network-mounted tree) cost of hashing it again. Whatever hash this tool computes is
 written back the same way, merged into any existing record so fields this tool doesn't itself
-compute (width, camera make, ...) survive. Off by default because, unlike `photoapp`'s own scanner,
-this tool's whole premise is a tree it doesn't own — writing into it is opt-in.
+compute survive. Off by default because, unlike `photoapp`'s own scanner, this tool's whole premise
+is a tree it doesn't own — writing into it is opt-in.
+
+`--metadata_json_fields=dimensions,exif` (empty by default, ticket 149) has `catalog.py` compute
+the rest of a `photoapp`-shaped record too, not just hash/mtime/bytesize: `dimensions`
+(`mime_type`/`width`/`height`) and/or `exif` (`exif_date`/`aperture`/`shutter_speed`/`iso`/
+`focal_length`/`camera_make`/`camera_model`), via the same `photoapp.fileinfo.read_image_metadata`
+call `photoapp`'s own scanner uses — both groups come from that one decode, so asking for either
+costs the same as asking for both; the flag only controls which fields land in the cache. Only
+takes effect together with `--write_metadata_json`, and only backfills a field for a file this run
+actually (re)hashes — same reasoning as that flag's own hash reuse never rechecking an unchanged
+file.
 
 ### `import_sha224sum.py`: bootstrap a catalog from a plain checksum listing
 

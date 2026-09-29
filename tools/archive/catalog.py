@@ -69,10 +69,53 @@ flags.DEFINE_boolean(
     "whatever hash this run computes so a later scan or catalog run can reuse it. "
     "Off by default -- unlike photoapp's own scanner, this tool's premise is a "
     "tree it doesn't own, so writing into it is opt-in.")
+flags.DEFINE_list(
+    "metadata_json_fields", [],
+    "Extra metadata field groups to also read/write in the --write_metadata_json cache, on top "
+    "of hash/mtime/bytesize (ticket 141): 'dimensions' (mime_type/width/height) and/or 'exif' "
+    "(exif_date/aperture/shutter_speed/iso/focal_length/camera_make/camera_model). Both groups "
+    "come from one photoapp.fileinfo.read_image_metadata() decode per file (the same call "
+    "photoapp's own scanner makes) -- requesting either costs the same as requesting both; the "
+    "split controls which fields land in the cache, not whether the file gets decoded. Has no "
+    "effect without --write_metadata_json. Empty (default) keeps ticket 141's hash-only "
+    "behavior. Only ever backfilled for a file this run actually (re)hashes -- an unchanged file "
+    "skipped by this tool's own mtime cache keeps whatever metadata it already has, same as "
+    "ticket 141's hash reuse never retroactively re-checks an unchanged file either.")
+flags.register_validator(
+    "metadata_json_fields",
+    lambda fields: set(fields) <= {"dimensions", "exif"},
+    message="metadata_json_fields may only contain 'dimensions' and/or 'exif'")
 flags.mark_flag_as_required("db")
 flags.mark_flag_as_required("root_dir")
 
 _HASH_CHUNK_SIZE = 1024 * 1024
+
+# metacache record keys read_image_metadata's return tuple maps to (in order), split into the two
+# --metadata_json_fields groups.
+_DIMENSION_KEYS = ("mime_type", "width", "height")
+_EXIF_KEYS = ("exif_date", "aperture", "shutter_speed", "iso", "focal_length", "camera_make",
+             "camera_model")
+_FIELD_GROUPS = {"dimensions": _DIMENSION_KEYS, "exif": _EXIF_KEYS}
+
+
+def expand_metadata_fields(groups):
+  """--metadata_json_fields' group names ('dimensions', 'exif') to the frozenset of actual
+  metacache record keys they cover -- process_directory/_read_extra_metadata work in terms of
+  keys, not group names, from here on."""
+  return frozenset(k for group in groups for k in _FIELD_GROUPS[group])
+
+
+def _read_extra_metadata(filepath, extra_fields):
+  """{key: value} for whichever of extra_fields (actual metacache keys, from
+  expand_metadata_fields) were requested -- one photoapp.fileinfo.read_image_metadata() decode
+  regardless of which subset is asked for."""
+  (mime_type, width, height, exif_date, aperture, shutter_speed, iso, focal_length, camera_make,
+   camera_model) = fileinfo.read_image_metadata(filepath)
+  values = dict(zip(
+      _DIMENSION_KEYS + _EXIF_KEYS,
+      (mime_type, width, height, exif_date, aperture, shutter_speed, iso, focal_length,
+       camera_make, camera_model)))
+  return {k: v for k, v in values.items() if k in extra_fields}
 
 
 def create_tables(conn):
@@ -113,7 +156,7 @@ def get_cached_file_mtime(conn, rel_path):
 
 
 def process_directory(conn, root_dir, dirpath, filenames, dir_mtime=None,
-                       write_metadata_json=False):
+                       write_metadata_json=False, extra_fields=frozenset()):
   """Hash whatever in filenames is new or changed; return the directory's mtime to record.
 
   With write_metadata_json, dir_mtime is the directory's mtime as read by the caller before this
@@ -180,11 +223,18 @@ def process_directory(conn, root_dir, dirpath, filenames, dir_mtime=None,
         (rel_path, file_hash, file_mtime))
 
     if records is not None and fileinfo.is_image(name):
-      # Merge, not replace: this tool has no EXIF extraction of its own, so a record photoapp
-      # already wrote keeps its other fields (width, aperture, ...) -- only the fields this tool
-      # actually knows are refreshed.
-      records[name] = {**records.get(name, {}), "hash": file_hash,
-                       "mtime": file_mtime, "bytesize": st.st_size}
+      # Merge, not replace: a record photoapp (or an earlier catalog.py run) already wrote keeps
+      # its other fields -- only hash/mtime/bytesize (always) and the requested extra_fields
+      # (ticket 149, only if not already present -- see the flag's own docstring) are refreshed.
+      cached_record = records.get(name, {})
+      extra = {}
+      if extra_fields and not extra_fields <= cached_record.keys():
+        try:
+          extra = _read_extra_metadata(filepath, extra_fields)
+        except Exception as e:
+          logging.error("Skipping metadata for %s: %s", filepath, e)
+      records[name] = {**cached_record, "hash": file_hash,
+                       "mtime": file_mtime, "bytesize": st.st_size, **extra}
 
   # Drop stale entries for files that used to live directly in this
   # directory but have since been removed or renamed. Subdirectory entries
@@ -242,7 +292,7 @@ def fill_missing_mtimes(conn, root_dir, dirpath):
         (file_mtime, rel_path))
 
 
-def collect_hashes(conn, root_dir, scan_dir, write_metadata_json=False):
+def collect_hashes(conn, root_dir, scan_dir, write_metadata_json=False, extra_fields=frozenset()):
   for dirpath, _, filenames in os.walk(scan_dir):
     current_mtime = os.stat(dirpath).st_mtime
     cached_mtime = get_cached_mtime(conn, dirpath)
@@ -257,7 +307,7 @@ def collect_hashes(conn, root_dir, scan_dir, write_metadata_json=False):
     # mtime this tool records must be process_directory's returned final value, not current_mtime
     # -- same reasoning as photoapp/scan.py's own scan.
     final_mtime = process_directory(conn, root_dir, dirpath, filenames, current_mtime,
-                                    write_metadata_json)
+                                    write_metadata_json, extra_fields)
 
     conn.execute(
         "INSERT INTO dir_mtimes (dirpath, mtime) VALUES (?, ?) "
@@ -320,7 +370,8 @@ def main(argv):
     logging.info("Checking removed files...")
     removed = remove_missing_files(conn, FLAGS.root_dir)
     logging.info("Removed %d entries for missing files", removed)
-    collect_hashes(conn, FLAGS.root_dir, scan_dir, FLAGS.write_metadata_json)
+    collect_hashes(conn, FLAGS.root_dir, scan_dir, FLAGS.write_metadata_json,
+                  expand_metadata_fields(FLAGS.metadata_json_fields))
   finally:
     conn.close()
 

@@ -317,3 +317,11 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [148](docs/tickets/148.md) `PHILOSOPHY.md`: "originals are never moved..." revised to "never
       automatically — only by explicit user action," naming both `.trash/` and the folder move as
       the two kinds
+
+## `catalog.py` full EXIF metadata (user request 2026-09-29, done)
+
+- [x] [149](docs/tickets/149.md) `--metadata_json_fields=dimensions,exif` (empty by default) has
+      `catalog.py --write_metadata_json` (ticket 141) also compute the rest of a `photoapp`-shaped
+      cache record via `fileinfo.read_image_metadata` — a group flag, not per-field booleans,
+      since both groups come from the same one decode; only backfills a field for a file this run
+      actually (re)hashes, same as 141's hash reuse never rechecking an unchanged file

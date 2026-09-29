@@ -8,25 +8,21 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [149](docs/tickets/149.md) `catalog.py --write_metadata_json` writes full EXIF metadata,
-      field set flag-controlled (user request 2026-09-29; implement now)
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
-(132-138), epic 144 (145-148), tickets 139-143 and tickets 108-115, 117-124, 127, 128 and 130 are
-done (see `STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149 and tickets
+108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress except ticket 149 (open, see above). Epic 144 (folder management: "Move to
-  folder", `photoapp/move.py`, the `link_exports` job kind, `PHILOSOPHY.md`'s file-operations
-  stance revised) is the most recent completed work; see `STATUS.md` for that and everything
-  before it. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Ticket 149 (`catalog.py --metadata_json_fields`) is the
+  most recent completed work; see `STATUS.md` for that and everything before it. New requests
+  should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
 - Config: `./photos.toml` (gitignored, holds the `/zoo` paths; template `photos.example.toml`) is picked up
   by `./start.sh` and every `python -m photoapp...` run from the checkout; use `--config=none` to ignore it.
-- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 433 tests, ~1-2 min) and
+- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 438 tests, ~1-2 min) and
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
   never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing.

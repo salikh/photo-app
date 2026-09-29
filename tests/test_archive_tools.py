@@ -9,6 +9,8 @@ import sqlite3
 import subprocess
 import sys
 
+from tests.conftest import make_jpeg
+
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOG = os.path.join(REPO, "tools", "archive", "catalog.py")
 IMPORT_SHA224SUM = os.path.join(REPO, "tools", "archive", "import_sha224sum.py")
@@ -173,6 +175,72 @@ def test_catalog_does_not_catalog_the_metadata_json_files_themselves(tmp_path):
   r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json"])
   assert r.returncode == 0, r.stderr
   assert set(hashes(db)) == {"a.jpg"}   # not index.json / a.jpg.json
+
+
+# --- ticket 149: --metadata_json_fields ----------------------------------------
+
+def test_catalog_default_metadata_json_fields_stays_hash_only(tmp_path):
+  root = tmp_path / "pics"
+  make_jpeg(str(root / "a.jpg"))
+  db = str(tmp_path / "catalog.sqlite")
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json"])
+  assert r.returncode == 0, r.stderr
+  record = load_records(root)["a.jpg"]
+  assert set(record) == {"hash", "mtime", "bytesize"}   # ticket 141 behavior, unchanged
+
+
+def test_catalog_metadata_json_fields_dimensions_only(tmp_path):
+  root = tmp_path / "pics"
+  make_jpeg(str(root / "a.jpg"), size=(30, 20))
+  db = str(tmp_path / "catalog.sqlite")
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json",
+                    "--metadata_json_fields=dimensions"])
+  assert r.returncode == 0, r.stderr
+  record = load_records(root)["a.jpg"]
+  assert record["width"] == 30 and record["height"] == 20 and record["mime_type"] == "image/jpeg"
+  assert "aperture" not in record and "exif_date" not in record   # exif group not requested
+
+
+def test_catalog_metadata_json_fields_exif(tmp_path):
+  root = tmp_path / "pics"
+  make_jpeg(str(root / "a.jpg"))
+  db = str(tmp_path / "catalog.sqlite")
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json",
+                    "--metadata_json_fields=exif"])
+  assert r.returncode == 0, r.stderr
+  record = load_records(root)["a.jpg"]
+  # make_jpeg's images carry no real EXIF, so these come back None -- the point is the *keys* are
+  # present (computed), unlike the dimensions group, which wasn't requested.
+  assert set(record) >= {"exif_date", "aperture", "shutter_speed", "iso", "focal_length",
+                         "camera_make", "camera_model"}
+  assert "width" not in record
+
+
+def test_catalog_metadata_json_fields_rejects_an_unknown_group(tmp_path):
+  root = tmp_path / "pics"
+  make_jpeg(str(root / "a.jpg"))
+  db = str(tmp_path / "catalog.sqlite")
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json",
+                    "--metadata_json_fields=nonsense"])
+  assert r.returncode != 0
+
+
+def test_catalog_metadata_json_fields_does_not_recompute_when_already_present(tmp_path):
+  root = tmp_path / "pics"
+  make_jpeg(str(root / "a.jpg"))
+  from photoapp import metacache
+  # A pre-existing record already has dimensions (with obviously-fake sentinel values) -- this
+  # run must leave them alone rather than re-decoding, whether or not its hash is reused.
+  metacache.write_dir(str(root), os.stat(str(root / "a.jpg")).st_mtime, {
+      "a.jpg": {"hash": "not-a-real-hash", "mtime": 1.0, "bytesize": 1,
+               "width": 999, "height": 999, "mime_type": "sentinel"}})
+  db = str(tmp_path / "catalog.sqlite")
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json",
+                    "--metadata_json_fields=dimensions"])
+  assert r.returncode == 0, r.stderr
+  record = load_records(root)["a.jpg"]
+  # the sentinel values survive: dimensions were already present, so this run never re-decoded
+  assert (record["width"], record["height"], record["mime_type"]) == (999, 999, "sentinel")
 
 
 def test_import_sha224sum_loads_a_plain_checksum_listing(tmp_path):
