@@ -276,12 +276,33 @@ def test_jobs_page_worker_status_auto_updates_from_active_to_idle(page, server):
   expect(worker_status).to_contain_text("Worker: Idle", timeout=5000)
 
 
+def test_attention_page_conflict_links_straight_to_the_photo(page, server):
+  # ticket 143: photoLink(path, photoId) opens the loupe on that exact photo, not just its folder.
+  ids = photo_ids(server)
+  path = server.app.state.db.execute(
+      "SELECT rf.path FROM photos p JOIN files rf ON rf.id = p.representative_file_id "
+      "WHERE p.id = ?", (ids[0],)).fetchone()[0]
+  server.app.state.db.execute("UPDATE photos SET conflict = 1 WHERE id = ?", (ids[0],))
+  server.app.state.db.commit()
+  page.goto(server.url + "/#!attention")
+  expect(page.get_by_role("heading", name="Sidecars that disagree (1)")).to_be_visible()
+  link = page.get_by_role("link", name=path)
+  expect(link).to_be_visible()
+  link.click()
+  expect(page.locator(".loupe")).to_be_visible()
+  expect(page).to_have_url(re.compile(rf"photo={ids[0]}"))
+
+
 def test_jobs_page_job_list_links_the_file_to_its_photo(page, server):
   # ticket 142: the Jobs page's per-job table shows the photo's path, linked to that photo.
   ids = photo_ids(server)
   fid, path = server.app.state.db.execute(
       "SELECT id, path FROM files WHERE photo_id = ?", (ids[0],)).fetchone()
-  job_id = server.app.state.jobs.enqueue("raw_render", fid)
+  # An unregistered kind ("e2e_failed" has no handler on any running queue) so nothing ever claims
+  # and processes this job for real -- app.state.jobs is live in this test server, and enqueuing a
+  # real kind like raw_render races its workers, which can claim and finish (fail, for a plain JPG)
+  # the job before this test's own UPDATE lands, overwriting the 'boom' error below.
+  job_id = server.app.state.jobs.enqueue("e2e_failed", fid)
   server.app.state.db.execute(
       "UPDATE jobs SET state = 'failed', error = 'boom' WHERE id = ?", (job_id,))
   server.app.state.db.commit()

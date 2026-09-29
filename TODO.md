@@ -8,18 +8,15 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [143](docs/tickets/143.md) Attention page links go straight to the photo, not its album
-      (user request 2026-09-29)
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
-(132-138), tickets 139-142 and tickets 108-115, 117-124, 127, 128 and 130 are done (see
-`STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107), epic 131 (132-138), tickets 139-143 and tickets 108-115, 117-124, 127, 128 and
+130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress, no open tickets. Ticket 142 (Jobs page's job list links to the photo) is the
-  most recent completed work; see `STATUS.md` for that and everything before it. New requests should be
-  filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Ticket 143 (Attention page links go straight to the photo)
+  is the most recent completed work; see `STATUS.md` for that and everything before it. New
+  requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

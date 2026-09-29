@@ -289,3 +289,8 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [142](docs/tickets/142.md) Jobs page's per-job table shows the photo's path instead of a
       bare `file_id`, linked to that exact photo (`JobQueue.list()` joins `files`; `pages.js`'s
       `photoLink` gained an optional `photoId` param, reused unchanged by Activity/Attention)
+- [x] [143](docs/tickets/143.md) Attention page's "Sidecars that disagree"/"...behind a newer
+      rating" links now open the exact photo (`photoLink(c.path, c.id)`, reusing 142's `photoId`
+      param — both rows already carried the photo id); also fixed a real race found along the way
+      in 142's own e2e test (a live job-queue worker could claim and finish the test's `raw_render`
+      job for real before the test's own status update landed)
