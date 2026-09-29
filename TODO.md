@@ -8,9 +8,12 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
-epic 102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-152 and tickets
-108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
+- [ ] [153](docs/tickets/153.md) `export_backfill` candidate matching misses the `xyz.DNG.jpg`
+      naming convention (user request 2026-09-29)
+
+All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
+(132-138), epic 144 (145-148), tickets 139-143, 149-152 and tickets 108-115, 117-124, 127, 128 and
+130 are done (see `STATUS.md`).
 
 ## Restart notes
 
