@@ -232,10 +232,17 @@ def create_app(conn, settings):
   @app.get("/api/jobs")
   @db_route
   def list_jobs(limit: int = 100):
+    """ticket 140: `scan` is the interactive rescan (app.state.scanner), reported separately from
+    `active`/`progress` (the shared jobs-table queues, unchanged from ticket 113/114) rather than
+    folded into that single aggregate line -- a real production library keeps its low-priority
+    populate_thumb queue busy for a long time (a large backlog of thumbnails), so a merged single
+    status line stays "Active" from that alone and a user watching a specific rescan can't tell
+    whether *their* operation is still running. Same shape /api/scan/status already returns."""
     return {"counts": app.state.jobs.counts(),
             "active": app.state.jobs.active(),
             "progress": app.state.jobs.progress(),
-            "jobs": app.state.jobs.list(min(limit, 500))}
+            "jobs": app.state.jobs.list(min(limit, 500)),
+            "scan": dataclasses.asdict(app.state.scanner.progress)}
 
   @app.get("/")
   def index():

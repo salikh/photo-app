@@ -60,3 +60,14 @@ interactive use** — that is `ionice -c3` correctly yielding to foreground I/O,
 job can be killed by the operating system's own memory-pressure reaping without losing work: `populate_file`
 never overwrites an existing thumbnail and the job queue's `enqueue` dedupes by (kind, file_id), so a killed and
 restarted run just picks up wherever it left off.
+
+## The interactive rescan is not a job-queue job
+
+The header's "Rescan" button (`POST /api/scan`) runs through `scan.ScanManager`, not `jobs.JobQueue` — it
+starts a thread immediately, ahead of anything queued, rather than waiting behind the shared `jobs` table's
+backlog. Ticket 140 gave `/api/jobs` a `scan` key (`app.state.scanner.progress`, unchanged shape from
+`/api/scan/status`) reported *separately* from `active`/`progress`, deliberately not merged into the same
+`Worker: Idle`/`Active — ...` line ticket 113 added: a real library's low-priority `populate_thumb` backlog
+can keep that line saying "Active" for a long time on its own, which would otherwise bury whether the user's
+own rescan specifically was still running. The Jobs page shows both lines (`Scan: ...` and `Worker: ...`),
+polling `/api/jobs` every 1.5s while open.

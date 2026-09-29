@@ -316,3 +316,47 @@ def test_api_scan_root_recursive_false_does_not_touch_a_year_directory(settings)
   assert scanned_paths(app) == {"loose.jpg"}
   status = client.get("/api/scan/status").json()
   assert not status["running"] and status["files_seen"] == 1
+
+
+# --- unified worker-status reporting, ticket 140 ------------------------------
+
+def test_scan_manager_sets_current_dir_and_started_at_for_a_plain_directory_scan(settings):
+  from photoapp import db
+  db.open_state(settings.state_dir).close()
+  build_years(settings.pictures_dir)
+  mgr = scan.ScanManager(settings.db_path, settings.pictures_dir)
+  mgr.start("2019", recursive=False)
+  # Set synchronously by start() itself, before the background thread does any work, so this is
+  # deterministic regardless of how fast the tiny test tree scans.
+  assert mgr.progress.current_dir == "2019" and mgr.progress.started_at
+  mgr.wait()
+  assert mgr.progress.current_dir is None    # cleared once the run is over
+
+
+def test_scan_manager_reports_the_whole_library_request_as_the_root(settings):
+  from photoapp import db
+  db.open_state(settings.state_dir).close()
+  build_years(settings.pictures_dir)
+  mgr = scan.ScanManager(settings.db_path, settings.pictures_dir)
+  mgr.start(None, recursive=True)
+  assert mgr.progress.current_dir == "."   # overwritten per top-level step once scan_all begins
+  mgr.wait()
+  assert mgr.progress.current_dir is None
+
+
+def test_api_jobs_reports_the_scanner_separately_from_the_shared_job_queues(settings):
+  # ticket 140: /api/jobs's `scan` key is the interactive rescan's own status, independent of
+  # `active`/`progress` (the shared jobs-table queues) -- so a busy background job queue can't
+  # bury whether the user's own rescan is still running, and vice versa.
+  from fastapi.testclient import TestClient
+  from photoapp import api, db
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  client = TestClient(app)
+  assert client.get("/api/jobs").json()["scan"]["running"] is False
+  app.state.scanner.progress = scan.Progress(
+      running=True, current_dir="2026-new", started_at="2000-01-01T00:00:00",
+      files_seen=5, files_processed=2)
+  data = client.get("/api/jobs").json()
+  assert data["active"] == {"busy": False, "running": []}   # unaffected by the scanner
+  assert data["scan"]["running"] is True and data["scan"]["current_dir"] == "2026-new"
+  assert data["scan"]["files_seen"] == 5 and data["scan"]["files_processed"] == 2

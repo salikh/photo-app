@@ -81,6 +81,17 @@ function workerStatusText(active) {
   return `Worker: Active — ${items.join('; ')}`;
 }
 
+// ticket 140: the interactive rescan (app.state.scanner) reported on its own line, separate from
+// the shared-queue Worker line above -- a real library's low-priority populate_thumb backlog can
+// keep that line saying "Active" for a long time on its own, which would otherwise bury whether
+// *this* rescan (the thing the user is actually watching) is still running.
+function scanStatusText(scan) {
+  if (!scan || !scan.running) return 'Scan: Idle';
+  const where = scan.current_dir && scan.current_dir !== '.' ? ` ${scan.current_dir}` : '';
+  const step = scan.steps_total ? `, step ${scan.steps_done}/${scan.steps_total}` : '';
+  return `Scan: Running${where} — ${scan.files_processed}/${scan.files_seen} files${step}`;
+}
+
 // ticket 114: the per-kind job counts as a three-level grouped header -- queued/running, then
 // done/failed for all time (effectively the retention window) and each shorter window.
 function jobsTable(kinds, p) {
@@ -108,12 +119,17 @@ function jobsTable(kinds, p) {
   return el('div', {class: 'table-wrap'}, el('table', {}, head, el('tbody', {}, rows)));
 }
 
-export async function jobsPage(main) {
-  const j = await get('/api/jobs');
+// ticket 140: the Jobs page is the one place worker status is shown, so it auto-refreshes rather
+// than requiring a manual reload -- polls at the same 1.5s cadence the old per-page scan poller
+// used. Stops once the user navigates to a different page: this is a single-page router with no
+// per-page unmount hook, so "is state.route still 'jobs'?" (set by app.js's render() before a
+// page's loader runs) is the existing way to detect that.
+function renderJobs(main, j) {
   const p = j.progress;
   const kinds = Object.keys(p.by_kind).sort();
   main.replaceChildren(
     el('h2', {text: 'Background jobs'}),
+    el('p', {class: 'status ' + (j.scan && j.scan.running ? 'ok' : ''), text: scanStatusText(j.scan)}),
     el('p', {class: 'status ' + (j.active && j.active.busy ? 'ok' : ''), text: workerStatusText(j.active)}),
     el('p', {class: 'status', text:
       `Total: ${p.total} (all time so far)   Incomplete: ${p.incomplete}`}),
@@ -122,6 +138,20 @@ export async function jobsPage(main) {
       el('td', {text: x.id}), el('td', {text: x.kind}), el('td', {text: x.file_id}),
       el('td', {class: x.state === 'failed' ? 'bad' : x.state === 'done' ? 'ok' : '', text: x.state}),
       el('td', {text: x.error || ''})))) : '');
+}
+
+export async function jobsPage(main) {
+  const tick = async () => {
+    if (state.route.page !== 'jobs') return;
+    let j;
+    try { j = await get('/api/jobs'); } catch (e) { /* transient; retry next tick */ }
+    // Re-check after the await: the user may have navigated to a different page while the
+    // request was in flight, and main is now that other page's element (ticket 140).
+    if (state.route.page !== 'jobs') return;
+    if (j) renderJobs(main, j);
+    setTimeout(tick, 1500);
+  };
+  await tick();
 }
 
 // ticket 072: review + confirm screen for moving a folder's rejected photos to Pictures/.trash.

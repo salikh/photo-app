@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import threading
 import time
 import urllib.request
 
@@ -250,8 +251,45 @@ def test_pages_activity_attention_usage_jobs(page, server):
   expect(page.locator("table")).to_contain_text("PreviewDNG")   # the on-disk RAW tuning cache
   page.goto(server.url + "/#!jobs")
   expect(page.get_by_role("heading", name="Background jobs")).to_be_visible()
-  expect(page.locator("p.status").first).to_contain_text("Worker:")   # ticket 113 status line
+  expect(page.locator("p.status", has_text="Scan:")).to_be_visible()      # ticket 140 status line
+  expect(page.locator("p.status", has_text="Worker:")).to_be_visible()    # ticket 113 status line
   expect(page.get_by_role("columnheader", name="Last minute")).to_be_visible()   # ticket 114
+
+
+def test_jobs_page_worker_status_auto_updates_from_active_to_idle(page, server):
+  # ticket 140: the Jobs page polls /api/jobs on its own, so a job that starts and finishes while
+  # the page is open should flip "Worker: Active" -> "Worker: Idle" without a reload.
+  started, release = threading.Event(), threading.Event()
+
+  def blocking(conn, job):
+    started.set()
+    assert release.wait(10)
+
+  server.app.state.jobs.add_handler("e2e_block", blocking)
+  page.goto(server.url + "/#!jobs")
+  worker_status = page.locator("p.status", has_text="Worker:")
+  expect(worker_status).to_contain_text("Worker: Idle")
+  server.app.state.jobs.enqueue("e2e_block", target="probe")
+  assert started.wait(5)
+  expect(worker_status).to_contain_text("Worker: Active")
+  release.set()
+  expect(worker_status).to_contain_text("Worker: Idle", timeout=5000)
+
+
+def test_jobs_page_shows_a_running_scan_and_clears_it_when_done(page, server):
+  # ticket 140: an interactive rescan (app.state.scanner) isn't a jobs-table row, so it's reported
+  # on its own "Scan: ..." line, separate from the shared-queue "Worker: ..." line -- check it
+  # drives its own Idle -> Running -> Idle transition.
+  from photoapp import scan
+  page.goto(server.url + "/#!jobs")
+  scan_status = page.locator("p.status", has_text="Scan:")
+  expect(scan_status).to_contain_text("Scan: Idle")
+  server.app.state.scanner.progress = scan.Progress(
+      running=True, current_dir="2024/trip",
+      started_at="2000-01-01T00:00:00")
+  expect(scan_status).to_contain_text("Scan: Running 2024/trip", timeout=5000)
+  server.app.state.scanner.progress.running = False
+  expect(scan_status).to_contain_text("Scan: Idle", timeout=5000)
 
 
 def test_zoom_loads_full_size_and_toggles(page, server):

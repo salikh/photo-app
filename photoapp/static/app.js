@@ -20,7 +20,6 @@ const PAGES = {activity: pages.activityPage, attention: pages.attentionPage,
 
 let header = null;
 let main = null;
-let scanTimer = null;
 
 function crumbs(route) {
   const parts = route.dir === '.' ? [] : route.dir.split('/');
@@ -108,7 +107,6 @@ function promptCustomTag(go) {
 
 function renderHeader(route) {
   const browsing = route.page === 'browse';
-  const scanStatus = el('span', {class: 'dim', id: 'scan-status'});
   const newHeader = el('header', {class: 'bar'},
     el('a', {class: 'title', href: '#/', text: 'Photos'}),
     browsing ? crumbs(route) : el('div', {class: 'crumbs'}, el('a', {href: href({}), text: '← folders'})),
@@ -135,7 +133,6 @@ function renderHeader(route) {
       ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir, route.recursive),
                 text: 'Delete', title: 'review and move these rejected photos to trash'}) : null,
     el('button', {text: 'Rescan', title: 'rescan this folder', onclick: () => rescan(route)}),
-    scanStatus,
     el('nav', {},
       el('a', {href: '#!activity', text: 'Activity'}), el('a', {href: '#!attention', text: 'Attention'}),
       el('a', {href: '#!usage', text: 'Thumbnails'}), el('a', {href: '#!jobs', text: 'Jobs'})));
@@ -151,33 +148,16 @@ function toggleSelecting() {
   if (!state.selecting) grid.clearSelection();
 }
 
+// ticket 140: progress is reported on the Jobs page (auto-updating there), not polled into a
+// header status span on whatever page the button happened to be clicked from.
 async function rescan(route) {
   try {
     const q = route.page === 'browse'
       ? '?dir=' + encodeURIComponent(route.dir) + '&recursive=' + (route.recursive ? '1' : '0')
       : '';
     const r = await post('/api/scan' + q);
-    if (!r.started) toast('a scan is already running');
-    pollScan();
+    toast(r.started ? 'rescan started — see the Jobs page for progress' : 'a scan is already running');
   } catch (e) { toast(e.message, true); }
-}
-
-function pollScan() {
-  clearTimeout(scanTimer);
-  const tick = async () => {
-    let s;
-    try { s = await get('/api/scan/status'); } catch (e) { return; }
-    const label = document.getElementById('scan-status');
-    if (s.running) {
-      if (label) label.textContent = `scanning… ${s.files_seen} files`;
-      scanTimer = setTimeout(tick, 1500);
-    } else {
-      if (label) label.textContent = '';
-      if (s.error) toast('scan failed: ' + s.error, true);
-      else if (s.files_processed || s.sidecars_processed) { toast(`scan done: ${s.files_processed} files, ${s.sidecars_processed} sidecars`); state.route = null; render(); }
-    }
-  };
-  tick();
 }
 
 let previous = null;

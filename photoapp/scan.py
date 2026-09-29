@@ -11,6 +11,7 @@ to the pictures dir with '/' separators.
 import collections
 import concurrent.futures
 import dataclasses
+import datetime
 import hashlib
 import json
 import os
@@ -40,7 +41,11 @@ class Progress:
   files_seen: int = 0
   files_processed: int = 0
   sidecars_processed: int = 0
-  current_dir: str = None    # top-level step being scanned (per-year scans)
+  current_dir: str = None    # directory currently being scanned: the top-level step during a
+                              # whole-library scan_all(), or the single requested directory for the
+                              # whole run otherwise (ticket 140; set/cleared by ScanManager only)
+  started_at: str = None     # ISO timestamp set by ScanManager.start() (ticket 140, for the
+                              # worker-status entry this run shows up as on the Jobs page)
   steps_done: int = 0
   steps_total: int = 0
   error: str = None
@@ -602,7 +607,9 @@ class ScanManager:
         scan_dir = os.path.normpath(os.path.join(self._pictures_dir, rel_dir))
         if not scan_dir.startswith(self._pictures_dir.rstrip("/") + "/"):
           raise ValueError("directory outside pictures_dir")
-      self.progress = Progress(running=True)
+      self.progress = Progress(
+          running=True, current_dir=rel_dir or ".",
+          started_at=datetime.datetime.now().isoformat(timespec="seconds"))
       self._thread = threading.Thread(
           target=self._run, args=(scan_dir, recursive, self.progress), daemon=True)
       self._thread.start()
@@ -620,6 +627,10 @@ class ScanManager:
              self._thumbs_dir, self._on_done, self._workers,
              recursive=recursive, metadata_cache=self._metadata_cache)
     finally:
+      # scan_all() already clears this itself per top-level step; a plain scan() never touches
+      # current_dir at all, so this is the one place that clears it for both paths uniformly once
+      # the run is over (ticket 140).
+      progress.current_dir = None
       conn.close()
 
   def wait(self):
@@ -629,7 +640,6 @@ class ScanManager:
 
 def seconds_until(hour, now):
   """Seconds from now (a datetime) until the next local HH:00."""
-  import datetime
   target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
   if target <= now:
     target += datetime.timedelta(days=1)
@@ -679,7 +689,6 @@ class NightlyScan:
     self._stop.set()
 
   def _loop(self):
-    import datetime
     while not self._stop.is_set():
       self._wait(seconds_until(self._hour, datetime.datetime.now()))
       if self._stop.is_set():
