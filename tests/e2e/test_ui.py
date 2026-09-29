@@ -1774,6 +1774,43 @@ def test_move_to_folder_cancel_at_create_confirm_moves_nothing(page, server):
   expect(page.locator(".cell")).to_have_count(6)                      # nothing removed from view
 
 
+def test_rename_button_renames_the_folder_and_follows_it(page, server):
+  # ticket 155: only offered on the unfiltered ("all") view.
+  d = server.pictures
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.get_by_role("button", name="Rename")).to_be_visible()
+  page.get_by_role("button", name="Rename", exact=True).click()
+  expect(page.locator(".confirm-card input")).to_have_value("2024/trip")
+  page.locator(".confirm-card input").fill("2024/vacation")
+  page.locator(".confirm-card button.danger").click()
+  expect(page.get_by_role("heading", name="Rename this folder?")).to_be_visible()
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("renamed to 2024/vacation")
+
+  assert not os.path.isdir(os.path.join(d, "2024/trip"))
+  assert os.path.isfile(os.path.join(d, "2024/vacation/IMG_0001.jpg"))
+  expect(page).to_have_url(re.compile(r"/2024/vacation$"))   # followed to the new folder
+  expect(page.locator(".cell")).to_have_count(6)
+
+
+def test_rename_button_refuses_an_existing_target(page, server):
+  d = server.pictures
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Rename", exact=True).click()
+  page.locator(".confirm-card input").fill("2024/home")   # already exists
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("already exists")
+  expect(page.get_by_role("heading", name="Rename this folder?")).to_have_count(0)
+
+  assert os.path.isdir(os.path.join(d, "2024/trip"))       # untouched
+  assert os.path.isdir(os.path.join(d, "2024/home"))
+
+
+def test_rename_button_hidden_under_a_rating_filter(page, server):
+  page.goto(server.url + "/#/2024/trip?filter=rejected")
+  expect(page.get_by_role("button", name="Rename")).to_have_count(0)
+
+
 def test_loupe_export_button_exports_only_that_photo(page, server):
   # The loupe's Export button acts as if this one photo were the only selection.
   open_loupe(page, server, index=1)                                        # IMG_0002

@@ -8,39 +8,32 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [155](docs/tickets/155.md) Folder rename button (user request 2026-09-29) — **backend done**
-      (`photoapp/move.py`'s `rename_dir`, `POST /api/dirs/rename`, tested); **frontend not
-      started**: `photoapp/static/rename.js` (two-step modal, following `move.js`'s shape), the
-      header "Rename" button (`app.js`, gated on `filter === 'all'`), e2e tests. Stopped here on a
-      usage-limit warning mid-session.
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
-(132-138), epic 144 (145-148), tickets 139-143, 149-154 and tickets 108-115, 117-124, 127, 128 and
-130 are done (see `STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-155 and tickets
+108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress, no open tickets. Ticket 154 (Files panel directory link, recursive-view
-  only) is the most recent completed work; see `STATUS.md` for that and everything before it. New
-  requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Ticket 155 (folder rename button) is the most recent
+  completed work; see `STATUS.md` for that and everything before it. New requests should be filed
+  as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
-- Config: `./photos.toml` (gitignored, holds the `/zoo` paths; template `photos.example.toml`) is picked up
-  by `./start.sh` and every `python -m photoapp...` run from the checkout; use `--config=none` to ignore it.
-- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 445 tests, ~1-2 min) and
+- Config: `./photos.toml` (gitignored, holds the `/zoo` paths; template `photos.example.toml`) is
+  picked up by `./start.sh` and every `python -m photoapp...` run from the checkout; use
+  `--config=none` to ignore it.
+- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 453 tests, ~1-2 min) and
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
   never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing.
 - The machine is often under memory pressure (a `./start.sh` instance of the app runs alongside).
   Known-flaky e2e tests, not regressions: `test_delete_this_file_button_shows_modal_and_moves_to_trash`
   and `test_delete_this_file_modal_cancel_leaves_file_untouched` (30 s click-stability timeout), and
-  occasionally the first test of a small `-k` selection (e.g. `test_raw_settings_are_provisional_
-  until_save`); rerun to confirm before chasing. `test_double_tap_zooms_to_the_tapped_point` fails
-  consistently (not flaky, same numbers every run) as of 2026-09-29 on this machine, confirmed via a
-  `git worktree` of a pre-140 commit -- a real bug, but pre-existing and unrelated to ticket 140/141,
-  not yet investigated. Full-size `rawpy.postprocess()` on the real DNG can take minutes under load
-  — use `half_size=True` for quick checks.
+  occasionally the first test of a small `-k` selection; rerun to confirm before chasing.
+  `test_double_tap_zooms_to_the_tapped_point` fails consistently (not flaky) as of 2026-09-29 on
+  this machine — a real, pre-existing bug, not yet investigated. Full-size `rawpy.postprocess()`
+  on the real DNG can take minutes under load — use `half_size=True` for quick checks.
 - RAW tuning architecture (epic 102, done): `raw_preview_dng.py` generates a downsampled mosaiced
   preview DNG (needs the source's real Make/Model and a `BlackLevelRepeatDim` tag, see its
   comments); `static/rawTuning.js` renders it locally with the vendored LibRaw-Wasm; `previews.py`

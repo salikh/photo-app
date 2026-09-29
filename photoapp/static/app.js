@@ -11,6 +11,7 @@ import {configure} from './rating.js';
 import * as filters from './filters.js';
 import * as help from './help.js';
 import * as exportAction from './export.js';
+import * as renameAction from './rename.js';
 
 const app = document.getElementById('app');
 const SORTS = [['date', 'date'], ['name', 'name']];
@@ -129,6 +130,11 @@ function renderHeader(route) {
     // via route.dir/route.recursive, same scope grid.loadFolder already used to populate it).
     browsing ? el('button', {text: 'Export', title: 'export photos to a folder',
                              onclick: () => exportAction.open()}) : null,
+    // Ticket 155: only offered for the unfiltered view -- the whole folder moves regardless of
+    // any active rating/tag filter, so showing this under a filter would be misleading.
+    browsing && route.filter === 'all' && route.dir !== '.'
+      ? el('button', {text: 'Rename', title: 'rename this folder',
+                      onclick: () => renameAction.open()}) : null,
     browsing && route.filter === 'rejected'
       ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir, route.recursive),
                 text: 'Delete', title: 'review and move these rejected photos to trash'}) : null,
