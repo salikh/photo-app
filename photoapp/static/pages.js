@@ -11,9 +11,11 @@ function table(headers, rows) {
     el('tbody', {}, rows)));
 }
 
-function photoLink(path) {
+// photoId (ticket 142) opens the loupe on that exact photo (matching loupe.js's "exported from"
+// link), instead of just its folder -- omitted, existing callers are unaffected.
+function photoLink(path, photoId) {
   const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '.';
-  return el('a', {href: href({dir}), text: path});
+  return el('a', {href: href({dir, photo: photoId}), text: path});
 }
 
 export async function activityPage(main) {
@@ -135,7 +137,8 @@ function renderJobs(main, j) {
       `Total: ${p.total} (all time so far)   Incomplete: ${p.incomplete}`}),
     kinds.length ? jobsTable(kinds, p) : el('p', {class: 'status', text: 'No jobs.'}),
     j.jobs.length ? table(['#', 'Kind', 'File', 'State', 'Error'], j.jobs.map((x) => el('tr', {},
-      el('td', {text: x.id}), el('td', {text: x.kind}), el('td', {text: x.file_id}),
+      el('td', {text: x.id}), el('td', {text: x.kind}),
+      el('td', {}, x.path ? photoLink(x.path, x.photo_id) : (x.target || x.file_id || '')),
       el('td', {class: x.state === 'failed' ? 'bad' : x.state === 'done' ? 'ok' : '', text: x.state}),
       el('td', {text: x.error || ''})))) : '');
 }

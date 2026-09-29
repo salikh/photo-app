@@ -286,3 +286,6 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       hash is still mtime/bytesize-valid, and writes back what it computes (merged into any
       existing record, since this tool has no EXIF extraction of its own); also fixed a bug this
       surfaced (`.json` cache files were never excluded from being cataloged as regular content)
+- [x] [142](docs/tickets/142.md) Jobs page's per-job table shows the photo's path instead of a
+      bare `file_id`, linked to that exact photo (`JobQueue.list()` joins `files`; `pages.js`'s
+      `photoLink` gained an optional `photoId` param, reused unchanged by Activity/Attention)

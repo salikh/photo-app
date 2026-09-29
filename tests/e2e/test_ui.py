@@ -276,6 +276,27 @@ def test_jobs_page_worker_status_auto_updates_from_active_to_idle(page, server):
   expect(worker_status).to_contain_text("Worker: Idle", timeout=5000)
 
 
+def test_jobs_page_job_list_links_the_file_to_its_photo(page, server):
+  # ticket 142: the Jobs page's per-job table shows the photo's path, linked to that photo.
+  ids = photo_ids(server)
+  fid, path = server.app.state.db.execute(
+      "SELECT id, path FROM files WHERE photo_id = ?", (ids[0],)).fetchone()
+  job_id = server.app.state.jobs.enqueue("raw_render", fid)
+  server.app.state.db.execute(
+      "UPDATE jobs SET state = 'failed', error = 'boom' WHERE id = ?", (job_id,))
+  server.app.state.db.commit()
+  page.goto(server.url + "/#!jobs")
+  # Scoped to the row carrying our error message: setup/background jobs may have already touched
+  # this same file earlier (e.g. populating its thumbnails), so its path/link can appear more than
+  # once in the recent-jobs list -- this is the one this test actually put there.
+  row = page.locator("tr", has_text="boom")
+  link = row.get_by_role("link")
+  expect(link).to_have_text(path)
+  link.click()
+  expect(page.locator(".loupe")).to_be_visible()
+  expect(page).to_have_url(re.compile(rf"photo={ids[0]}"))
+
+
 def test_jobs_page_shows_a_running_scan_and_clears_it_when_done(page, server):
   # ticket 140: an interactive rescan (app.state.scanner) isn't a jobs-table row, so it's reported
   # on its own "Scan: ..." line, separate from the shared-queue "Worker: ..." line -- check it

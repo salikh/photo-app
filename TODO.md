@@ -8,18 +8,14 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [142](docs/tickets/142.md) Jobs page's job list shows the photo's path, linked to the photo
-      (user request 2026-09-29)
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
-(132-138), tickets 139-141 and tickets 108-115, 117-124, 127, 128 and 130 are done (see
-`STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107), epic 131 (132-138), tickets 139-142 and tickets 108-115, 117-124, 127, 128 and
+130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress, no open tickets. Ticket 140 (unified worker/scan status on the Jobs page,
-  auto-updating) and 141 (`tools/archive/catalog.py --write_metadata_json`) are the most recent
-  completed work; see `STATUS.md` for those and everything before them. New requests should be
+- No work in progress, no open tickets. Ticket 142 (Jobs page's job list links to the photo) is the
+  most recent completed work; see `STATUS.md` for that and everything before it. New requests should be
   filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises

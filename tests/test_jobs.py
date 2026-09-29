@@ -214,6 +214,28 @@ def test_active_resolves_a_jobs_file_path(settings):
   assert a["running"][0]["path"] == "2020/a.jpg" and a["running"][0]["duration_seconds"] > 0
 
 
+def test_list_resolves_a_jobs_file_path_and_photo_id(settings):
+  # ticket 142: the Jobs page's per-job table links straight to the photo.
+  conn = db.open_state(settings.state_dir)
+  conn.execute("INSERT INTO files (id, path, mtime) VALUES (9, '2020/a.jpg', 1)")
+  conn.execute("INSERT INTO photos (id, original_file_id, representative_file_id) "
+              "VALUES (5, 9, 9)")
+  conn.execute("UPDATE files SET photo_id = 5 WHERE id = 9")
+  conn.commit()
+  q = jobs.JobQueue(settings.db_path, {"render": lambda c, j: None}, workers=1)
+  q.enqueue("render", 9)
+  row = q.list()[0]
+  assert row["path"] == "2020/a.jpg" and row["photo_id"] == 5
+
+
+def test_list_leaves_path_and_photo_id_null_for_a_target_scoped_job(settings):
+  db.open_state(settings.state_dir).close()
+  q = jobs.JobQueue(settings.db_path, {"scan_dir": lambda c, j: None}, workers=1)
+  q.enqueue("scan_dir", target="2020")
+  row = q.list()[0]
+  assert row["path"] is None and row["photo_id"] is None and row["target"] == "2020"
+
+
 def test_api_jobs_reports_active_state(settings):
   conn = db.open_state(settings.state_dir)
   app = api.create_app(conn, settings)

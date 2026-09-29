@@ -96,9 +96,13 @@ class JobQueue:
     return cur.lastrowid
 
   def list(self, limit=100):
+    """Every kind in the shared table (like active()/progress()), each row's file_id resolved to
+    its path/photo_id (ticket 142, for the Jobs page's File column to link straight to the photo)
+    -- both NULL for a target-scoped job (e.g. scan_dir) or a file_id whose row is gone."""
     with self._conn_lock:
       return [dict(r) for r in self._conn.execute(
-          "SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,))]
+          "SELECT j.*, f.path AS path, f.photo_id AS photo_id FROM jobs j"
+          " LEFT JOIN files f ON f.id = j.file_id ORDER BY j.id DESC LIMIT ?", (limit,))]
 
   def counts(self):
     with self._conn_lock:
