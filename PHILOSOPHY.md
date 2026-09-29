@@ -13,10 +13,14 @@ The library predates this app by years: a darktable-managed tree, not Lightroom 
 exports, and duplicate copies scattered across backups on other machines. A tool built for a tidy,
 single-source library would be wrong for this one on day one.
 
-So: **originals are never moved, renamed, or deleted.** The only writes this app makes into the
-library itself are XMP sidecars (atomically, after a first-seen backup) and, when a photo is
-rejected, a *move* into `.trash/` — never an unlink (see
-[docs/design/trash.md](docs/design/trash.md)). The sqlite
+So: **an original is never moved, renamed, or deleted by anything automatic — only by explicit,
+reviewable user action, and always as a move, never an unlink.** The only write this app makes on
+its own initiative is an XMP sidecar (atomically, after a first-seen backup); everything else that
+touches an original happens because a person clicked something that named exactly that action: a
+rejected photo moves into `.trash/` (see [docs/design/trash.md](docs/design/trash.md)), and a photo
+the user picks and drags to another folder moves there, sidecars and all (ticket 144, see
+[docs/design/move.md](docs/design/move.md)) — never a scan, a background job, or a heuristic
+deciding to relocate something on its own. The sqlite
 database is a deliberately rebuildable cache, not the source of truth; deleting it costs you
 nothing durable, because a rescan rebuilds it from the files and sidecars themselves. And
 decisions outlive their files: `rating_by_hash` remembers a rejected or kept photo's content hash
@@ -86,9 +90,9 @@ creep into this app.
 
 ## So, going forward
 
-A change that touches an original file earns the same scrutiny ticket 072's delete flow got before
-it shipped — reversible or additive by default, a real deletion only after it's been thought
-through in its own ticket. A design call that needs real judgment, not just engineering trade-offs,
+A change that touches an original file earns the same scrutiny ticket 072's delete flow (and ticket
+144's folder move) got before they shipped — reversible or additive by default, a real deletion
+only after it's been thought through in its own ticket. A design call that needs real judgment, not just engineering trade-offs,
 becomes a question ticket addressed to me, not a guess dressed up as a decision. And if a future
 ticket's Findings shift one of the stances above — not just add a feature, but actually change *why*
 this project is shaped the way it is — that ticket's implementation touches this file too, the same

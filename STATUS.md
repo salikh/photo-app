@@ -294,3 +294,26 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       param — both rows already carried the photo id); also fixed a real race found along the way
       in 142's own e2e test (a live job-queue worker could claim and finish the test's `raw_render`
       job for real before the test's own status update landed)
+
+## Epic 144: folder management — move photos to another folder (user request 2026-09-29, done)
+
+- [x] [144](docs/tickets/144.md) Epic: "Move to folder" on the selection bar — done (145-148 all
+      landed). A real, deliberate `PHILOSOPHY.md` stance change: an original can now be moved by
+      explicit user action, not just trashed
+- [x] [145](docs/tickets/145.md) Backend move engine: `photoapp/move.py` moves every live file of
+      a Photo (any role) plus its sidecars (xmp + ticket 111 json) into a destination folder,
+      repointing `files.path` and following cached thumbnails/PreviewDNG synchronously (ticket
+      128's own machinery) instead of relying on a rescan to rediscover the move; collisions get a
+      numeric suffix, sidecars renamed to match. `POST /api/move`, `GET /api/dirs/exists`.
+      `docs/design/move.md` written
+- [x] [146](docs/tickets/146.md) New `link_exports` job kind: `export_backfill.backfill_by_dhash`
+      gains `dir_prefix` to scope the existing dhash heuristic to one directory; scheduled by
+      `/api/move` whenever the destination is under `Exported/`
+- [x] [147](docs/tickets/147.md) "Move to folder" button and two-step modal
+      (`photoapp/static/move.js`) — existence pre-check decides whether to go straight to the move
+      or confirm creating the folder first; `removePhotos`/`clearSelection` passed in by `grid.js`
+      rather than imported, to avoid a circular import (the button lives in the selection bar,
+      unlike Export's header placement)
+- [x] [148](docs/tickets/148.md) `PHILOSOPHY.md`: "originals are never moved..." revised to "never
+      automatically — only by explicit user action," naming both `.trash/` and the folder move as
+      the two kinds

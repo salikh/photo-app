@@ -1657,6 +1657,63 @@ def test_export_applies_the_file_crop_end_to_end(page, server):
     assert im.format == "JPEG" and im.size == expected
 
 
+def test_move_to_folder_moves_the_selection_to_an_existing_folder(page, server):
+  # ticket 147: an existing target folder moves straight through, no create-confirm modal.
+  d = server.pictures
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").nth(1).click()
+  page.locator(".cell").nth(3).click()                                # IMG_0002, IMG_0004
+  page.locator(".selection-bar").get_by_role("button", name="Move to folder").click()
+  input_box = page.locator(".confirm-card input")
+  expect(input_box).to_have_value("2024/trip")                        # preselected with the dir
+  input_box.fill("2024/home")
+  page.locator(".confirm-card button.danger").click()
+  expect(page.locator("#toast")).to_contain_text("moved 2")
+  expect(page.locator(".confirm-modal")).to_have_count(0)             # no create-folder modal
+  expect(page.locator(".selection-bar")).to_have_count(0)             # selection cleared
+
+  assert not os.path.exists(os.path.join(d, "2024/trip/IMG_0002.jpg"))
+  assert os.path.isfile(os.path.join(d, "2024/home/IMG_0002.jpg"))
+  assert os.path.isfile(os.path.join(d, "2024/home/IMG_0004.jpg"))
+  expect(page.locator(".cell")).to_have_count(4)                      # 6 - 2 moved away
+
+
+def test_move_to_folder_confirms_creating_a_new_folder(page, server):
+  d = server.pictures
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").first.click()
+  page.locator(".selection-bar").get_by_role("button", name="Move to folder").click()
+  page.locator(".confirm-card input").fill("2024/keepers")
+  page.locator(".confirm-card button.danger").click()
+  expect(page.get_by_role("heading", name="Create this folder?")).to_be_visible()
+  assert not os.path.isdir(os.path.join(d, "2024/keepers"))           # not created yet
+
+  page.get_by_role("button", name="Create and move").click()
+  expect(page.locator("#toast")).to_contain_text("moved 1")
+  assert os.path.isdir(os.path.join(d, "2024/keepers"))
+  assert os.path.isfile(os.path.join(d, "2024/keepers/IMG_0001.jpg"))
+  expect(page.locator(".cell")).to_have_count(5)
+
+
+def test_move_to_folder_cancel_at_create_confirm_moves_nothing(page, server):
+  d = server.pictures
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").first.click()
+  page.locator(".selection-bar").get_by_role("button", name="Move to folder").click()
+  page.locator(".confirm-card input").fill("2024/never")
+  page.locator(".confirm-card button.danger").click()
+  expect(page.get_by_role("heading", name="Create this folder?")).to_be_visible()
+  page.get_by_role("button", name="Cancel").click()
+  expect(page.locator(".confirm-modal")).to_have_count(0)
+
+  assert not os.path.isdir(os.path.join(d, "2024/never"))
+  assert os.path.isfile(os.path.join(d, "2024/trip/IMG_0001.jpg"))    # untouched
+  expect(page.locator(".cell")).to_have_count(6)                      # nothing removed from view
+
+
 def test_loupe_export_button_exports_only_that_photo(page, server):
   # The loupe's Export button acts as if this one photo were the only selection.
   open_loupe(page, server, index=1)                                        # IMG_0002

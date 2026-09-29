@@ -6,6 +6,7 @@ import {href, hrefPage} from './route.js';
 import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {matches, scheduleCountsRefresh} from './filters.js';
+import * as moveAction from './move.js';
 
 const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
 
@@ -161,6 +162,10 @@ export function renderSelectionBar() {
     el('button', {text: '✖', title: 'reject', onclick: () => rate(REJECT)}),
     ...choices().map((r) => el('button', {text: r === 0 ? '☆' : String(r), title: 'rate ' + r, onclick: () => rate(r)})),
     n === 2 ? el('button', {text: 'Link 2nd as tuning of 1st', onclick: () => linkSelected(ids)}) : null,
+    // Ticket 147: available whenever anything is selected, unlike Delete below (not rating-gated
+    // -- moving a photo to another folder has no equivalent safety precondition).
+    el('button', {text: 'Move to folder', title: 'move selected photos to another folder',
+                  onclick: () => moveAction.open(ids, removePhotos, clearSelection)}),
     // Trashing is rating-gated server-side (trash.py's trash_photo: only a rejected Photo can be
     // moved to .trash, an intentional safety rail from ticket 072/081) -- only offer it here when
     // every selected Photo would actually be eligible, i.e. the Rejected filter is active, same
