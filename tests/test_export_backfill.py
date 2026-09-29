@@ -109,6 +109,110 @@ def test_tier2_matches_a_true_pair_and_rejects_a_true_non_match(settings, conn):
   assert linked["exported_from_file_id"] == file_id(conn, "2020/match.jpg")
 
 
+def test_tier2_breaks_an_exact_tie_in_favor_of_the_case_insensitive_name_match(settings, conn):
+  # ticket 151: the real-library-observed pattern -- a RAW's sibling JPEG and (a stand-in for) the
+  # RAW itself are equally close to the export (same visual content), but only the JPEG's full
+  # name (case-insensitively, extension included) matches the export's own filename exactly.
+  d = settings.pictures_dir
+  make_pattern_jpeg(os.path.join(d, "2020", "K1.jpg"), "left")     # stands in for the JPEG sibling
+  make_pattern_jpeg(os.path.join(d, "2020", "K1.jpeg"), "left")    # same content -- an exact tie
+  scan.scan(conn, d)
+  for rel in ("2020/K1.jpg", "2020/K1.jpeg"):
+    thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, rel), rel, "Small")
+  make_pattern_jpeg(os.path.join(d, "Exported", "K1.JPG"), "left")   # matches K1.jpg's name exactly
+  scan.scan(conn, d)
+  matched, unmatched = export_backfill.backfill_by_dhash(conn, d, settings.thumbs_dir)
+  assert (matched, unmatched) == (1, 0)
+  linked = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/K1.JPG'").fetchone()
+  assert linked["exported_from_file_id"] == file_id(conn, "2020/K1.jpg")
+
+
+def test_tier2_name_tie_break_also_requires_a_plausible_date(settings, conn):
+  # ticket 151 (the user's follow-up refinement): the name-match tie-break additionally requires
+  # the winning candidate's mtime to be plausibly close to the export's (or a shared year-like
+  # path component) -- a guard against a coincidental name+dhash tie between unrelated eras.
+  d = settings.pictures_dir
+  make_pattern_jpeg(os.path.join(d, "2020", "K1.jpg"), "left")     # the name-matching candidate
+  make_pattern_jpeg(os.path.join(d, "2020", "K1.jpeg"), "left")    # tied on dhash, not on name
+  # Push K1.jpg's mtime far into the past (1970) -- nowhere near "now" (the export's mtime below)
+  # and no shared year token with "Exported/K1.JPG" (which has none at all), so
+  # _dates_plausible genuinely fails for it.
+  far_mtime = 1_000_000
+  os.utime(os.path.join(d, "2020", "K1.jpg"), (far_mtime, far_mtime))
+  scan.scan(conn, d)
+  for rel in ("2020/K1.jpg", "2020/K1.jpeg"):
+    thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, rel), rel, "Small")
+  make_pattern_jpeg(os.path.join(d, "Exported", "K1.JPG"), "left")
+  scan.scan(conn, d)
+  matched, unmatched = export_backfill.backfill_by_dhash(conn, d, settings.thumbs_dir)
+  assert (matched, unmatched) == (0, 1)   # the date guard blocks the name-only tie-break
+  linked = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/K1.JPG'").fetchone()
+  assert linked["exported_from_file_id"] is None
+
+
+def test_tier2_name_tie_break_accepts_a_shared_year_path_despite_a_far_mtime(settings, conn):
+  # The OR condition: a shared year-like path component rescues a tie-break even when mtime alone
+  # would fail the plausibility check.
+  d = settings.pictures_dir
+  make_pattern_jpeg(os.path.join(d, "2020", "K1.jpg"), "left")
+  make_pattern_jpeg(os.path.join(d, "2020", "K1.jpeg"), "left")
+  far_mtime = 1_000_000
+  os.utime(os.path.join(d, "2020", "K1.jpg"), (far_mtime, far_mtime))
+  scan.scan(conn, d)
+  for rel in ("2020/K1.jpg", "2020/K1.jpeg"):
+    thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, rel), rel, "Small")
+  # This export's own path carries "2020" too, matching K1.jpg's directory year.
+  make_pattern_jpeg(os.path.join(d, "Exported", "2020", "K1.JPG"), "left")
+  scan.scan(conn, d)
+  matched, unmatched = export_backfill.backfill_by_dhash(conn, d, settings.thumbs_dir)
+  assert (matched, unmatched) == (1, 0)
+  linked = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/2020/K1.JPG'").fetchone()
+  assert linked["exported_from_file_id"] == file_id(conn, "2020/K1.jpg")
+
+
+def test_tier2_stays_ambiguous_when_both_tied_candidates_match_the_name(settings, conn):
+  # Two unrelated photos in different folders happen to share an exact filename (a real pattern
+  # seen in the library, e.g. camera-numbering resets across import batches) -- the name-match
+  # tie-break can't distinguish them either, since both match equally, so this must stay ambiguous
+  # rather than picking one arbitrarily.
+  d = settings.pictures_dir
+  make_pattern_jpeg(os.path.join(d, "2020", "dup.jpg"), "left")
+  make_pattern_jpeg(os.path.join(d, "2021", "dup.jpg"), "left")   # same name, same visual content
+  scan.scan(conn, d)
+  for rel in ("2020/dup.jpg", "2021/dup.jpg"):
+    thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, rel), rel, "Small")
+  make_pattern_jpeg(os.path.join(d, "Exported", "dup.jpg"), "left")
+  scan.scan(conn, d)
+  matched, unmatched = export_backfill.backfill_by_dhash(conn, d, settings.thumbs_dir)
+  assert (matched, unmatched) == (0, 1)
+  linked = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/dup.jpg'").fetchone()
+  assert linked["exported_from_file_id"] is None
+
+
+def test_tier2_name_match_never_overrides_a_worse_dhash_distance(settings, conn):
+  # ticket 151: "still guard on the dhash similarity" -- a name-matching candidate that is not
+  # visually close must not win just because its name matches; the closer, differently-named
+  # candidate (not a tie) still wins.
+  d = settings.pictures_dir
+  make_pattern_jpeg(os.path.join(d, "2020", "other.jpg"), "left")    # the true visual match
+  make_pattern_jpeg(os.path.join(d, "2020", "K1.jpg"), "right")      # matches the export's name,
+                                                                      # but visually different
+  scan.scan(conn, d)
+  for rel in ("2020/other.jpg", "2020/K1.jpg"):
+    thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, rel), rel, "Small")
+  make_pattern_jpeg(os.path.join(d, "Exported", "other-2.jpg"), "left")
+  scan.scan(conn, d)
+  matched, unmatched = export_backfill.backfill_by_dhash(conn, d, settings.thumbs_dir)
+  assert (matched, unmatched) == (1, 0)
+  linked = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/other-2.jpg'").fetchone()
+  assert linked["exported_from_file_id"] == file_id(conn, "2020/other.jpg")
+
+
 def test_tier2_dir_prefix_scopes_unresolved_to_one_directory(settings, conn):
   # ticket 146: link_exports_job scopes backfill_by_dhash to the directory a move just landed
   # files in, rather than the whole Exported/ subtree.

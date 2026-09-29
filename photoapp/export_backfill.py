@@ -19,7 +19,17 @@ entirely), narrow candidate originals by filename, then confirm with a dhash (di
 comparison -- an export is a re-encoded, possibly resized copy, so this looks for a close, not
 exact, match, computed against whatever preview size the candidate already has cached (never
 forces a fresh RAW render just to check). Only links when exactly one candidate is within the
-distance threshold; leaves it unlinked rather than guessing otherwise.
+distance threshold; leaves it unlinked rather than guessing otherwise. Ticket 151: measured
+against the real library, the single largest bucket of unresolved files is an *exact* dhash tie
+between a RAW file and its sibling JPEG (both equally close, since a RAW's embedded/rendered
+preview and its sibling JPEG often look identical to a difference hash) -- a tie is broken in
+favor of whichever tied candidate's filename matches the export's exactly, case-insensitively
+(extension included), since an export is made from the already-rendered file, not the RAW. Never
+overrides a worse distance -- only breaks a tie the hash already couldn't, and only when the
+matched candidate's mtime is also plausibly close to the export's own (or they share a year-like
+path component) -- a guard against a coincidental name+dhash tie between two unrelated photos from
+different eras (see _dates_plausible; the mtime side of this is calibrated against the real
+library's own already-linked pairs, not guessed).
 """
 
 import os
@@ -112,6 +122,34 @@ def _hamming(a, b):
   return sum(x != y for x, y in zip(a, b))
 
 
+# Ticket 151: how close in date two files need to be for a name-match tie-break to trust them as
+# the same photo -- measured against the real library's 3086 already-linked pairs (script, not
+# committed): mtime differences are tightly bimodal, 95.9% within 1 day (the vast majority
+# essentially the same moment -- an export made right after, or copied/migrated together with its
+# source) and 98.5% within a year; the remaining ~1.5% (up to ~4 years) are real correct links
+# whose mtime drifted for unrelated reasons (a re-save, a re-copy). A year is generous enough not
+# to reject those while still rejecting a coincidental match between clearly different eras.
+_DATE_CLOSE_SECONDS = 365 * 86400
+_YEAR_RE = re.compile(r"(19|20)\d{2}")
+
+
+def _dates_plausible(export_mtime, candidate_mtime, export_path, candidate_path):
+  """True if export_mtime/candidate_mtime are within _DATE_CLOSE_SECONDS of each other, or their
+  paths share a 4-digit year-like component. Checked empirically before relying on either signal
+  (ticket 151): mtime closeness is the reliable one for this library (see _DATE_CLOSE_SECONDS);
+  comparing path year-folders (either export-path-to-candidate-path, or export's own mtime-year to
+  the candidate's path) each matched only ~3-4% of the same known-correct pairs -- this library's
+  mtimes and Exported/ paths mostly reflect when a file was copied/migrated, not the photo's
+  original capture date, so an Exported/2018-.../2012/... export folder rarely lines up with its
+  2012/... source folder's year. Kept as a fallback OR anyway (the user's own suggested second
+  signal, and it costs nothing when it doesn't fire), not the primary check."""
+  if abs(export_mtime - candidate_mtime) <= _DATE_CLOSE_SECONDS:
+    return True
+  export_years = set(_YEAR_RE.findall(export_path))
+  candidate_years = set(_YEAR_RE.findall(candidate_path))
+  return bool(export_years & candidate_years)
+
+
 def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10, dir_prefix=None):
   """Tier 2. dir_prefix (ticket 146) scopes `unresolved` to one directory (e.g. right after a
   move lands files there) instead of the whole Exported/ subtree -- candidates (library_rows)
@@ -119,7 +157,7 @@ def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10, dir
   near where the export landed. Returns (matched, unmatched)."""
   exported_prefix = export.EXPORT_SUBDIR + "/"
   library_rows = conn.execute(
-      "SELECT id, path FROM files WHERE missing = 0 AND path != ? AND path NOT LIKE ?",
+      "SELECT id, path, mtime FROM files WHERE missing = 0 AND path != ? AND path NOT LIKE ?",
       (export.EXPORT_SUBDIR, exported_prefix + "%")).fetchall()
   by_stem = {}
   for row in library_rows:
@@ -131,7 +169,7 @@ def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10, dir
   else:
     scope_sql, scope_args = "(path = ? OR path LIKE ?)", (dir_prefix, dir_prefix + "/%")
   unresolved = conn.execute(
-      "SELECT id, path FROM files WHERE missing = 0 AND exported_from_file_id IS NULL "
+      "SELECT id, path, mtime FROM files WHERE missing = 0 AND exported_from_file_id IS NULL "
       f"AND {scope_sql}", scope_args).fetchall()
 
   matched = unmatched = 0
@@ -139,7 +177,7 @@ def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10, dir
     candidates = {}
     for stem in _candidate_stems(os.path.basename(r["path"])):
       for c in by_stem.get(stem, []):
-        candidates[c["id"]] = c["path"]
+        candidates[c["id"]] = (c["path"], c["mtime"])
     if not candidates:
       unmatched += 1
       logging.vlog(5, "tier 2: %s: no filename candidate", r["path"])
@@ -151,25 +189,44 @@ def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10, dir
       logging.warning("tier 2: %s: could not hash: %s", r["path"], e)
       continue
     results = []
-    for cid, cpath in candidates.items():
+    for cid, (cpath, cmtime) in candidates.items():
       found = thumbs.best_available(thumbs_dir, "Small", cpath)
       if not found:
         continue   # never force a fresh RAW render just to check a candidate
       try:
-        results.append((cid, _hamming(exported_hash, _dhash(found[1]))))
+        results.append((cid, cpath, cmtime, _hamming(exported_hash, _dhash(found[1]))))
       except Exception:
         continue
     if not results:
       unmatched += 1
       continue
-    results.sort(key=lambda t: t[1])
-    best_id, best_dist = results[0]
-    ambiguous = len(results) > 1 and results[1][1] == best_dist
+    results.sort(key=lambda t: t[3])
+    best_dist = results[0][3]
+    tied = [t for t in results if t[3] == best_dist]
+    best_id, best_path = results[0][0], results[0][1]
+    ambiguous = len(tied) > 1
+    if ambiguous:
+      # Ticket 151: a real, common case among exact ties -- a RAW file and its sibling JPEG both
+      # equally close to the export, but only one of them shares the export's exact filename
+      # (case-insensitively, extension included). Measured against the real library: virtually
+      # every such tie is exactly this RAW-vs-JPEG-sibling pattern, and the export's own name
+      # reliably points at the actual source (an export is made from the already-rendered JPEG,
+      # not the RAW). Still gated by the dhash distance below -- this only ever resolves a tie
+      # between candidates the hash already couldn't tell apart, never overrides a worse distance
+      # -- and by _dates_plausible, a guard against a coincidental name+dhash tie between two
+      # unrelated photos from different eras (not observed in the real data, but cheap to guard).
+      export_name = os.path.basename(r["path"]).lower()
+      name_matches = [t for t in tied if os.path.basename(t[1]).lower() == export_name
+                      and _dates_plausible(r["mtime"], t[2], r["path"], t[1])]
+      if len(name_matches) == 1:
+        ambiguous = False
+        best_id, best_path = name_matches[0][0], name_matches[0][1]
     if not ambiguous and best_dist <= distance_threshold:
       conn.execute("UPDATE files SET exported_from_file_id = ? WHERE id = ?",
                   (best_id, r["id"]))
       matched += 1
-      logging.vlog(5, "tier 2: %s <- file %d (distance %d)", r["path"], best_id, best_dist)
+      logging.vlog(5, "tier 2: %s <- file %d (%s, distance %d)",
+                   r["path"], best_id, best_path, best_dist)
     else:
       unmatched += 1
   conn.commit()
