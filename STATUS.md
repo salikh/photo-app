@@ -271,3 +271,18 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 ## Project philosophy (user request 2026-09-28, done)
 
 - [x] [139](docs/tickets/139.md) `PHILOSOPHY.md`, via a `grilling`-skill session (19 questions, two real corrections: no-auth is a boundary behind an external OAuth proxy, not a non-goal; multiple AI tools were used, not just Claude Code) — linked from `README.md` and `docs/design/README.md`
+
+## Worker/scan status and archive tooling (user requests 2026-09-29, done)
+
+- [x] [140](docs/tickets/140.md) Unified worker-status reporting on the Jobs page: `/api/jobs`
+      gains a `scan` key (the interactive rescan's own status, reported separately from the
+      shared-queue `Worker: ...` line so a busy background populate_thumb backlog can't bury
+      whether a specific rescan finished — a real design revision after the user found the first,
+      merged version stayed "Active" long after their rescan was actually done); the Jobs page
+      auto-refreshes every 1.5s instead of requiring a reload; the header's old `#scan-status`
+      span/`pollScan` are gone
+- [x] [141](docs/tickets/141.md) `tools/archive/catalog.py --write_metadata_json`: reuses
+      `photoapp`'s own `index.json`/`<name>.json` scan cache to skip re-hashing a file whose cached
+      hash is still mtime/bytesize-valid, and writes back what it computes (merged into any
+      existing record, since this tool has no EXIF extraction of its own); also fixed a bug this
+      surfaced (`.json` cache files were never excluded from being cataloged as regular content)

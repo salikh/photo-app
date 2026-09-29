@@ -16,7 +16,7 @@ touches.
 
 | Tool | Reads | Writes | What it's for |
 |---|---|---|---|
-| `catalog.py` | a directory tree | a sqlite hash catalog | incrementally hash a tree this app doesn't own |
+| `catalog.py` | a directory tree (+ its `index.json`/`<name>.json` scan cache with `--write_metadata_json`) | a sqlite hash catalog (+ that cache, with `--write_metadata_json`) | incrementally hash a tree this app doesn't own |
 | `import_sha224sum.py` | a `sha224sum` listing | a sqlite hash catalog | bootstrap a catalog without re-hashing, from a listing you already have |
 | `compare.py` | this machine's export + a target catalog | a report (stdout) | classify a target copy's files: have / rejected / lost / new |
 | `apply.py` | the same, + the target's own files | a script (stdout), or the copies themselves with `--apply` | act on `compare.py`'s classification |
@@ -41,6 +41,15 @@ subdirectory of `--root_dir` without touching the rest of the catalog.
 This is also the format `photoapp`'s own `--hashes_db` flag reads (see
 [docs/design/databases.md](../../docs/design/databases.md)) — a catalog built here can speed up a
 real scan of the same tree later, if that tree ever becomes a `pictures_dir`.
+
+`--write_metadata_json` (off by default) reads and writes `photoapp`'s own `index.json`/
+`<name>.json` scan cache (ticket 111, `photoapp/metacache.py`) alongside the sqlite catalog: a tree
+this tool catalogs is often one `photoapp` has already scanned, or a copy of one, so those files
+frequently already have a hash for each image, sparing a first-ever `catalog.py` run the (slow, for
+a large or network-mounted tree) cost of hashing it again. Whatever hash this tool computes is
+written back the same way, merged into any existing record so fields this tool doesn't itself
+compute (width, camera make, ...) survive. Off by default because, unlike `photoapp`'s own scanner,
+this tool's whole premise is a tree it doesn't own — writing into it is opt-in.
 
 ### `import_sha224sum.py`: bootstrap a catalog from a plain checksum listing
 

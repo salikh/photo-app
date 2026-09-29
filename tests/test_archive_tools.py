@@ -84,6 +84,97 @@ def test_catalog_scoped_dir_only_touches_that_subtree(tmp_path):
   assert hashes(db) == {"2024/b.jpg": sha224(b"two")}
 
 
+# --- ticket 141: --write_metadata_json ----------------------------------------
+
+def seed_index_json(dirpath, name, record):
+  """Write dirpath/index.json + dirpath/<name>.json exactly like photoapp/metacache.py would."""
+  from photoapp import metacache
+  metacache.write_dir(str(dirpath), os.stat(dirpath).st_mtime, {name: record})
+
+
+def load_records(dirpath):
+  from photoapp import metacache
+  return metacache.load_records(str(dirpath))
+
+
+def test_catalog_reuses_a_cached_hash_from_metadata_json_instead_of_hashing(tmp_path):
+  root = tmp_path / "pics"
+  path = write(str(root / "a.jpg"), b"real content")
+  st = os.stat(path)
+  fake_hash = "f" * 56   # distinguishable from sha224(b"real content")
+  seed_index_json(root, "a.jpg", {"hash": fake_hash, "mtime": st.st_mtime, "bytesize": st.st_size})
+  db = str(tmp_path / "catalog.sqlite")
+
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json", "--v=2"])
+  assert r.returncode == 0, r.stderr
+  assert hashes(db) == {"a.jpg": fake_hash}
+  assert "Reusing cached hash" in r.stderr
+
+
+def test_catalog_ignores_a_metadata_json_record_with_a_stale_mtime(tmp_path):
+  root = tmp_path / "pics"
+  path = write(str(root / "a.jpg"), b"real content")
+  fake_hash = "f" * 56
+  seed_index_json(root, "a.jpg", {"hash": fake_hash, "mtime": 1.0, "bytesize": 999})
+  db = str(tmp_path / "catalog.sqlite")
+
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json"])
+  assert r.returncode == 0, r.stderr
+  assert hashes(db) == {"a.jpg": sha224(b"real content")}
+
+
+def test_catalog_without_the_flag_ignores_metadata_json_entirely(tmp_path):
+  root = tmp_path / "pics"
+  write(str(root / "a.jpg"), b"real content")
+  fake_hash = "f" * 56
+  seed_index_json(root, "a.jpg", {"hash": fake_hash, "mtime": os.stat(root / "a.jpg").st_mtime,
+                                  "bytesize": os.stat(root / "a.jpg").st_size})
+  db = str(tmp_path / "catalog.sqlite")
+
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}"])   # no --write_metadata_json
+  assert r.returncode == 0, r.stderr
+  assert hashes(db) == {"a.jpg": sha224(b"real content")}   # computed for real, cache ignored
+
+
+def test_catalog_writes_a_freshly_computed_hash_back_into_metadata_json(tmp_path):
+  root = tmp_path / "pics"
+  path = write(str(root / "a.jpg"), b"real content")
+  db = str(tmp_path / "catalog.sqlite")
+
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json"])
+  assert r.returncode == 0, r.stderr
+  record = load_records(root)["a.jpg"]
+  assert record["hash"] == sha224(b"real content")
+  assert record["mtime"] == os.stat(path).st_mtime
+  assert record["bytesize"] == os.stat(path).st_size
+
+
+def test_catalog_write_preserves_exif_fields_it_did_not_itself_compute(tmp_path):
+  root = tmp_path / "pics"
+  path = write(str(root / "a.jpg"), b"real content")
+  # A stale-mtime record (forces a real re-hash) that still carries fields only photoapp's own
+  # scanner would have populated -- these must survive catalog.py's write.
+  seed_index_json(root, "a.jpg", {"hash": "f" * 56, "mtime": 1.0, "bytesize": 999,
+                                  "width": 640, "height": 480, "camera_make": "Pentax"})
+  db = str(tmp_path / "catalog.sqlite")
+
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json"])
+  assert r.returncode == 0, r.stderr
+  record = load_records(root)["a.jpg"]
+  assert record["hash"] == sha224(b"real content") and record["mtime"] == os.stat(path).st_mtime
+  assert record["width"] == 640 and record["camera_make"] == "Pentax"
+
+
+def test_catalog_does_not_catalog_the_metadata_json_files_themselves(tmp_path):
+  root = tmp_path / "pics"
+  write(str(root / "a.jpg"), b"real content")
+  db = str(tmp_path / "catalog.sqlite")
+
+  r = run(CATALOG, [f"--root_dir={root}", f"--db={db}", "--write_metadata_json"])
+  assert r.returncode == 0, r.stderr
+  assert set(hashes(db)) == {"a.jpg"}   # not index.json / a.jpg.json
+
+
 def test_import_sha224sum_loads_a_plain_checksum_listing(tmp_path):
   digest = sha224(b"hello")
   listing = tmp_path / "checksums.sha224"
