@@ -8,20 +8,15 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [154](docs/tickets/154.md) Files panel: the directory portion of a file's path becomes its
-      own link (user request 2026-09-29)
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
-(132-138), epic 144 (145-148), tickets 139-143, 149-153 and tickets 108-115, 117-124, 127, 128 and
-130 are done (see `STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-154 and tickets
+108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress, no open tickets. Tickets 151/153 (`export_backfill`'s dhash tie-break,
-  date-plausibility guard, and `xyz.DNG.jpg` naming-convention fix, all validated against the real
-  library: 648 of 1194 previously-unresolved exports now link) and 152 (Files panel "exported
-  from" link text) are the most recent completed work; see `STATUS.md` for those and everything
-  before them. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Ticket 154 (Files panel directory link, recursive-view
+  only) is the most recent completed work; see `STATUS.md` for that and everything before it. New
+  requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

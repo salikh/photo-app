@@ -351,3 +351,10 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       `xyz.JPG` as candidates for it before this; resolves to the RAW specifically, since that
       convention names the RAW, not the JPEG. Combined with 151: 648 of the original 1194
       unresolved exports now link, validated against the real library
+
+## Files panel directory link (user request 2026-09-29, done)
+
+- [x] [154](docs/tickets/154.md) The directory portion of a file's path in the loupe's Files panel
+      is now its own link (jump to that folder, keeping the current filter/sort) — but only when
+      already browsing recursively ("this folder + subfolders"), since otherwise a file's
+      directory is always the folder already being browsed

@@ -392,6 +392,32 @@ def test_files_panel_shows_camera_metadata(page, server):
   expect(page.locator(".files-panel .file")).to_contain_text("2024:06:01 12:00:00")
 
 
+def test_files_panel_directory_link_only_shown_when_browsing_recursively(page, server):
+  # ticket 154: the directory portion of a file's path becomes its own link, but only when the
+  # current view is recursive ("this folder + subfolders") -- otherwise it's always the same
+  # folder already being browsed, so it stays plain text.
+  ids = photo_ids(server)   # all in 2024/trip
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")   # non-recursive
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel .file .meta", has_text="2024/trip/IMG_0001.jpg")).to_be_visible()
+  expect(page.locator(".files-panel .file .meta a")).to_have_count(0)   # no link, non-recursive
+
+
+def test_files_panel_directory_link_jumps_to_that_folder_recursively(page, server):
+  photos = api(server, "/api/photos?dir=2024&recursive=1&sort=name")["photos"]
+  trip_photo = next(p for p in photos if p["path"].startswith("2024/trip/"))
+  page.goto(f"{server.url}/#/2024?recursive=1&photo={trip_photo['id']}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("i")
+  link = page.locator(".files-panel .file .meta").first.get_by_role("link")
+  expect(link).to_have_text("2024/trip")
+  link.click()
+  expect(page.locator(".loupe")).to_be_hidden()   # navigating away closes the loupe
+  assert "/2024/trip" in page.url and "recursive" not in page.url
+  expect(page.locator(".cell")).to_have_count(6)
+
+
 def test_files_panel_shows_the_file_byte_size(page, server):
   # ticket 150: a B/KB/MB-suffixed size, ~2 significant digits.
   ids = photo_ids(server)

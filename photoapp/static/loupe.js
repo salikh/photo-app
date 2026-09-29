@@ -1072,7 +1072,24 @@ async function openFiles() {
       onmouseleave: f.id === detail.representative_file_id ? null : hideRowPreview,
     },
       el('div', {text: f.path.split('/').pop() + '  ·  ' + f.role + (f.link_source === 'manual' ? ' (manual)' : '')}),
-      el('div', {class: 'meta', text: `${f.width || '?'}×${f.height || '?'}  ${fmtBytes(f.bytesize)}  ${f.path}` + (f.missing ? '  MISSING' : '')}),
+      (() => {
+        // Ticket 154: the directory portion of f.path becomes its own link (jump straight to
+        // that folder, non-recursive, keeping the current filter/sort -- "browsing a filtered
+        // view of a big tree and want to jump to where a file actually lives") -- but only in a
+        // recursive ("this folder + subfolders") view: in a non-recursive one a file's directory
+        // is always the folder already being browsed, so the link would be trivial. Falls back to
+        // the plain path (dir === null at the root, nothing to split off) unchanged either way.
+        const slash = f.path.lastIndexOf('/');
+        const dir = slash < 0 ? null : f.path.slice(0, slash);
+        const name = slash < 0 ? f.path : f.path.slice(slash + 1);
+        const pathParts = (state.route.recursive && dir)
+          ? [el('a', {href: href({dir, filter: state.route.filter, sort: state.route.sort}),
+                     text: dir}), '/' + name]
+          : [f.path];
+        return el('div', {class: 'meta'},
+          `${f.width || '?'}×${f.height || '?'}  ${fmtBytes(f.bytesize)}  `, ...pathParts,
+          f.missing ? '  MISSING' : '');
+      })(),
       // Ticket 099: a file exported (096/097) from another photo links back to it -- own Photo,
       // just cross-referenced, not merged into the source's file list.
       f.exported_from ? el('div', {class: 'meta'},
