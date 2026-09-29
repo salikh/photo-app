@@ -11,6 +11,8 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 - [ ] [151](docs/tickets/151.md) `link_exports`/`export_backfill` dhash heuristic: bonus for a
       same-name-different-case match, calibrated against the real library's dhash distribution
       (user request 2026-09-29)
+- [ ] [152](docs/tickets/152.md) Files panel's "exported from" link shows the source's relative
+      path (user request 2026-09-29)
 
 All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
 (132-138), epic 144 (145-148), tickets 139-143, 149, 150 and tickets 108-115, 117-124, 127, 128 and
