@@ -345,3 +345,9 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       that never touched the live database
 - [x] [152](docs/tickets/152.md) Files panel's "exported from" link now shows the source file's
       relative path as its text (was "`<dir>` (photo `<id>`)"); link target unchanged
+- [x] [153](docs/tickets/153.md) `export_backfill` also matches the `xyz.DNG.jpg` naming
+      convention (a JPEG export named by appending `.jpg` to its RAW sibling's full filename,
+      rather than replacing the extension) — `_candidate_stems` couldn't even find `xyz.DNG`/
+      `xyz.JPG` as candidates for it before this; resolves to the RAW specifically, since that
+      convention names the RAW, not the JPEG. Combined with 151: 648 of the original 1194
+      unresolved exports now link, validated against the real library

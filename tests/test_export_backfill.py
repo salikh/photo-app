@@ -6,6 +6,7 @@ from photoapp import export_backfill
 from photoapp import scan
 from photoapp import thumbs
 from tests.conftest import make_jpeg
+from tests.test_grouping import touch
 
 
 def make_pattern_jpeg(path, half):
@@ -171,6 +172,35 @@ def test_tier2_name_tie_break_accepts_a_shared_year_path_despite_a_far_mtime(set
   linked = conn.execute(
       "SELECT exported_from_file_id FROM files WHERE path = 'Exported/2020/K1.JPG'").fetchone()
   assert linked["exported_from_file_id"] == file_id(conn, "2020/K1.jpg")
+
+
+def test_candidate_stems_includes_the_double_extension_convention():
+  # ticket 153: "xyz.DNG.jpg" also ties on the plain "xyz" stem (xyz.DNG/xyz.JPG's own), on top
+  # of the pre-existing "xyz.dng" (splitext's plain result).
+  assert list(export_backfill._candidate_stems("xyz.DNG.jpg")) == ["xyz.dng", "xyz"]
+  assert list(export_backfill._candidate_stems("xyz.JPG")) == ["xyz"]   # non-RAW: unaffected
+
+
+def test_tier2_resolves_the_double_extension_convention_to_the_raw(settings, conn):
+  # ticket 153: an export literally named after its RAW sibling's full filename (K___1293.DNG.jpg
+  # in the real library) previously found no candidates at all -- now it's found, ties against its
+  # JPEG sibling on dhash, and _name_matches resolves the tie to the RAW specifically (the JPEG
+  # sibling's plain name doesn't match this convention either way).
+  d = settings.pictures_dir
+  touch(os.path.join(d, "2020", "xyz.DNG"))
+  make_pattern_jpeg(os.path.join(d, "2020", "xyz.JPG"), "left")
+  scan.scan(conn, d)
+  # The RAW's own Small cache, written directly (never actually rendered from real RAW bytes) --
+  # backfill_by_dhash only ever reads an existing cached preview, never forces a fresh render.
+  make_pattern_jpeg(thumbs.thumb_path(settings.thumbs_dir, "Small", "2020/xyz.DNG"), "left")
+  thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, "2020/xyz.JPG"), "2020/xyz.JPG", "Small")
+  make_pattern_jpeg(os.path.join(d, "Exported", "xyz.DNG.jpg"), "left")
+  scan.scan(conn, d)
+  matched, unmatched = export_backfill.backfill_by_dhash(conn, d, settings.thumbs_dir)
+  assert (matched, unmatched) == (1, 0)
+  linked = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/xyz.DNG.jpg'").fetchone()
+  assert linked["exported_from_file_id"] == file_id(conn, "2020/xyz.DNG")
 
 
 def test_tier2_stays_ambiguous_when_both_tied_candidates_match_the_name(settings, conn):

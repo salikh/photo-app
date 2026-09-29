@@ -44,6 +44,7 @@ from PIL import Image
 from photoapp import config  # noqa: F401  (defines the shared flags)
 from photoapp import db
 from photoapp import export
+from photoapp import fileinfo
 from photoapp import thumbs
 
 FLAGS = flags.FLAGS
@@ -101,6 +102,13 @@ def _candidate_stems(name):
   stripped = _SUFFIX_RE.sub("", stem)
   if stripped != stem:
     yield stripped
+  # Ticket 153: "xyz.DNG.jpg" -- a JPEG export literally named after its RAW sibling's full
+  # filename, appending .jpg rather than replacing the extension (a real, common convention in
+  # this library) -- splitext above only strips the outer .jpg, leaving "xyz.dng", which never
+  # equals "xyz" (xyz.DNG/xyz.JPG's own stem). Strip a RAW extension found there too, so it ties.
+  inner_stem, inner_ext = os.path.splitext(stem)
+  if inner_ext in fileinfo.RAW_EXTENSIONS:
+    yield inner_stem
 
 
 def _dhash(path, hash_size=8):
@@ -120,6 +128,15 @@ def _dhash(path, hash_size=8):
 
 def _hamming(a, b):
   return sum(x != y for x, y in zip(a, b))
+
+
+def _name_matches(export_name, candidate_name):
+  """True if candidate_name (a tied dhash candidate) is what named the export, ticket 151/153:
+  either the same name, case-insensitively (an export made from the already-rendered file usually
+  keeps its name) or candidate_name + ".jpg" case-insensitively (the "xyz.DNG.jpg" convention --
+  a JPEG export literally named after its RAW sibling's full filename)."""
+  export_name, candidate_name = export_name.lower(), candidate_name.lower()
+  return export_name == candidate_name or export_name == candidate_name + ".jpg"
 
 
 # Ticket 151: how close in date two files need to be for a name-match tie-break to trust them as
@@ -206,17 +223,17 @@ def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10, dir
     best_id, best_path = results[0][0], results[0][1]
     ambiguous = len(tied) > 1
     if ambiguous:
-      # Ticket 151: a real, common case among exact ties -- a RAW file and its sibling JPEG both
-      # equally close to the export, but only one of them shares the export's exact filename
-      # (case-insensitively, extension included). Measured against the real library: virtually
-      # every such tie is exactly this RAW-vs-JPEG-sibling pattern, and the export's own name
-      # reliably points at the actual source (an export is made from the already-rendered JPEG,
-      # not the RAW). Still gated by the dhash distance below -- this only ever resolves a tie
-      # between candidates the hash already couldn't tell apart, never overrides a worse distance
-      # -- and by _dates_plausible, a guard against a coincidental name+dhash tie between two
-      # unrelated photos from different eras (not observed in the real data, but cheap to guard).
-      export_name = os.path.basename(r["path"]).lower()
-      name_matches = [t for t in tied if os.path.basename(t[1]).lower() == export_name
+      # Ticket 151/153: a real, common case among exact ties -- a RAW file and its sibling JPEG
+      # both equally close to the export, but only one of them is what the export's own filename
+      # points at, per _name_matches (either an exact match -- an export made from the
+      # already-rendered JPEG usually keeps its name -- or the "xyz.DNG.jpg" convention, which
+      # points at the RAW instead). Still gated by the dhash distance below -- this only ever
+      # resolves a tie between candidates the hash already couldn't tell apart, never overrides a
+      # worse distance -- and by _dates_plausible, a guard against a coincidental name+dhash tie
+      # between two unrelated photos from different eras (not observed in the real data, but cheap
+      # to guard).
+      export_name = os.path.basename(r["path"])
+      name_matches = [t for t in tied if _name_matches(export_name, os.path.basename(t[1]))
                       and _dates_plausible(r["mtime"], t[2], r["path"], t[1])]
       if len(name_matches) == 1:
         ambiguous = False

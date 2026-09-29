@@ -8,26 +8,23 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-- [ ] [153](docs/tickets/153.md) `export_backfill` candidate matching misses the `xyz.DNG.jpg`
-      naming convention (user request 2026-09-29)
-
-All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
-(132-138), epic 144 (145-148), tickets 139-143, 149-152 and tickets 108-115, 117-124, 127, 128 and
-130 are done (see `STATUS.md`).
+*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
+epic 102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-153 and tickets
+108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- No work in progress, no open tickets. Ticket 151 (`export_backfill`'s dhash tie-break +
-  date-plausibility guard, validated against the real library: 453 of 1194 previously-unresolved
-  exports now link) and 152 (Files panel "exported from" link text) are the most recent completed
-  work; see `STATUS.md` for those and everything before them. New requests should be filed as
-  tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Tickets 151/153 (`export_backfill`'s dhash tie-break,
+  date-plausibility guard, and `xyz.DNG.jpg` naming-convention fix, all validated against the real
+  library: 648 of 1194 previously-unresolved exports now link) and 152 (Files panel "exported
+  from" link text) are the most recent completed work; see `STATUS.md` for those and everything
+  before them. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
 - Config: `./photos.toml` (gitignored, holds the `/zoo` paths; template `photos.example.toml`) is picked up
   by `./start.sh` and every `python -m photoapp...` run from the checkout; use `--config=none` to ignore it.
-- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 443 tests, ~1-2 min) and
+- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 445 tests, ~1-2 min) and
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
   never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing.
