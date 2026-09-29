@@ -2,7 +2,7 @@
 // preloading, tunings panel. The list of photos is state.photos.
 
 import {get, post, imgUrl, setRevision, seedRevisions} from './api.js';
-import {el, toast, isTyping, enqueue, retryImage, setChildren} from './util.js';
+import {el, toast, isTyping, enqueue, retryImage, setChildren, fmtBytes} from './util.js';
 import {href} from './route.js';
 import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
@@ -1072,7 +1072,7 @@ async function openFiles() {
       onmouseleave: f.id === detail.representative_file_id ? null : hideRowPreview,
     },
       el('div', {text: f.path.split('/').pop() + '  ·  ' + f.role + (f.link_source === 'manual' ? ' (manual)' : '')}),
-      el('div', {class: 'meta', text: `${f.width || '?'}×${f.height || '?'}  ${f.path}` + (f.missing ? '  MISSING' : '')}),
+      el('div', {class: 'meta', text: `${f.width || '?'}×${f.height || '?'}  ${fmtBytes(f.bytesize)}  ${f.path}` + (f.missing ? '  MISSING' : '')}),
       // Ticket 099: a file exported (096/097) from another photo links back to it -- own Photo,
       // just cross-referenced, not merged into the source's file list.
       f.exported_from ? el('div', {class: 'meta'},

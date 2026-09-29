@@ -325,3 +325,9 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       cache record via `fileinfo.read_image_metadata` — a group flag, not per-field booleans,
       since both groups come from the same one decode; only backfills a field for a file this run
       actually (re)hashes, same as 141's hash reuse never rechecking an unchanged file
+
+## Files panel byte size (user request 2026-09-29, done)
+
+- [x] [150](docs/tickets/150.md) The loupe's Files panel shows each file's byte size
+      (`util.js`'s existing `fmtBytes`, reused as-is — no backend change, `bytesize` was already
+      selected by `library.photo_detail`)

@@ -392,6 +392,19 @@ def test_files_panel_shows_camera_metadata(page, server):
   expect(page.locator(".files-panel .file")).to_contain_text("2024:06:01 12:00:00")
 
 
+def test_files_panel_shows_the_file_byte_size(page, server):
+  # ticket 150: a B/KB/MB-suffixed size, ~2 significant digits.
+  ids = photo_ids(server)
+  fid = server.app.state.db.execute(
+      "SELECT id FROM files WHERE photo_id = ?", (ids[0],)).fetchone()[0]
+  server.app.state.db.execute("UPDATE files SET bytesize = 2613000 WHERE id = ?", (fid,))
+  server.app.state.db.commit()
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel .file")).to_contain_text("2.5 MB")
+
+
 def test_files_panel_recenters_image_without_obstruction(page, server):
   # ticket 121: opening the files/tuning panel recenters the image so it is not obstructed
   # by the side panel. Both img.main and the flip / tuning overlay (img.tuning / img.row-preview)
