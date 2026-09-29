@@ -10,8 +10,8 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 - [ ] [144](docs/tickets/144.md) Epic: folder management — move photos to another folder (user
       request 2026-09-29)
-  - [ ] [145](docs/tickets/145.md) Backend move engine, `POST /api/move`, `GET /api/dirs/exists`
-  - [ ] [146](docs/tickets/146.md) New `link_exports` job kind
+  - [x] [145](docs/tickets/145.md) Backend move engine, `POST /api/move`, `GET /api/dirs/exists`
+  - [x] [146](docs/tickets/146.md) New `link_exports` job kind
   - [ ] [147](docs/tickets/147.md) "Move to folder" button and modal
   - [ ] [148](docs/tickets/148.md) `PHILOSOPHY.md` update
 - [ ] [149](docs/tickets/149.md) `catalog.py --write_metadata_json` writes full EXIF metadata,

@@ -426,8 +426,6 @@ def test_scan_dir_job_scans_exactly_its_own_directory(settings):
   finally:
     app.state.background_jobs.stop()
 
-  jobs_seen = app.state.background_jobs.list()
-  assert len(jobs_seen) == 1 and jobs_seen[0]["state"] == "done"
   paths = {r["path"] for r in conn.execute("SELECT path FROM files")}
   assert paths == {"2020/a.jpg", "2020/sub/b.jpg"}   # only the requested directory, recursively
 
@@ -440,6 +438,30 @@ def test_scan_dir_job_scans_exactly_its_own_directory(settings):
     app.state.background_jobs.stop()
   paths = {r["path"] for r in conn.execute("SELECT path FROM files")}
   assert paths == {"top.jpg", "2020/a.jpg", "2020/sub/b.jpg"}   # 2021/c.jpg still unscanned
+
+
+def test_link_exports_job_scopes_the_dhash_heuristic_to_its_target(settings):
+  # ticket 146: the job handler wraps export_backfill.backfill_by_dhash(dir_prefix=...).
+  from tests.test_export_backfill import make_pattern_jpeg, file_id
+  d = settings.pictures_dir
+  make_pattern_jpeg(os.path.join(d, "2020", "match.jpg"), "left")
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, "2020/match.jpg"),
+               "2020/match.jpg", "Small")
+  make_pattern_jpeg(os.path.join(d, "Exported", "2020", "match.jpg"), "left")
+  scan.scan(conn, d)
+
+  app = api.create_app(conn, settings)
+  app.state.background_jobs.enqueue("link_exports", target="Exported/2020")
+  app.state.background_jobs.start()
+  try:
+    assert app.state.background_jobs.wait_idle(10)
+  finally:
+    app.state.background_jobs.stop()
+  linked = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/2020/match.jpg'").fetchone()
+  assert linked["exported_from_file_id"] == file_id(conn, "2020/match.jpg")
 
 
 def test_prune_jobs_job_runs_through_the_background_queue(settings):

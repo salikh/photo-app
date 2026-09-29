@@ -112,8 +112,11 @@ def _hamming(a, b):
   return sum(x != y for x, y in zip(a, b))
 
 
-def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10):
-  """Tier 2. Returns (matched, unmatched)."""
+def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10, dir_prefix=None):
+  """Tier 2. dir_prefix (ticket 146) scopes `unresolved` to one directory (e.g. right after a
+  move lands files there) instead of the whole Exported/ subtree -- candidates (library_rows)
+  stay unscoped either way, since an export's original can be anywhere in the library, not just
+  near where the export landed. Returns (matched, unmatched)."""
   exported_prefix = export.EXPORT_SUBDIR + "/"
   library_rows = conn.execute(
       "SELECT id, path FROM files WHERE missing = 0 AND path != ? AND path NOT LIKE ?",
@@ -123,10 +126,13 @@ def backfill_by_dhash(conn, pictures_dir, thumbs_dir, distance_threshold=10):
     for stem in _candidate_stems(os.path.basename(row["path"])):
       by_stem.setdefault(stem, []).append(row)
 
+  if dir_prefix is None:
+    scope_sql, scope_args = "(path = ? OR path LIKE ?)", (export.EXPORT_SUBDIR, exported_prefix + "%")
+  else:
+    scope_sql, scope_args = "(path = ? OR path LIKE ?)", (dir_prefix, dir_prefix + "/%")
   unresolved = conn.execute(
       "SELECT id, path FROM files WHERE missing = 0 AND exported_from_file_id IS NULL "
-      "AND (path = ? OR path LIKE ?)",
-      (export.EXPORT_SUBDIR, exported_prefix + "%")).fetchall()
+      f"AND {scope_sql}", scope_args).fetchall()
 
   matched = unmatched = 0
   for r in unresolved:

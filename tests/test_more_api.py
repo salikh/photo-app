@@ -143,6 +143,65 @@ def test_trash_photos_endpoint(settings):
   assert c.post("/api/photos/trash", json={"ids": []}).status_code == 400
 
 
+def test_move_endpoint(settings):
+  c = app_with_pair(settings)
+  d = settings.pictures_dir
+  k1 = pid(c, "y/K1.DNG")
+  a = pid(c, "y/a.jpg")
+
+  r = c.post("/api/move", json={"ids": [k1, a, 99999], "target": "keepers"})
+  assert r.status_code == 200
+  body = r.json()
+  assert len(body["moved"]) == 2
+  by_pid = {m["photo_id"]: m for m in body["moved"]}
+  moved_from = sorted(m["from"] for m in by_pid[k1]["moved"])
+  assert moved_from == ["y/K1.DNG", "y/K1.JPG"]   # app_with_pair gives K1 no xmp sidecar
+  assert sorted(m["from"] for m in by_pid[a]["moved"]) == ["y/a.jpg", "y/a.jpg.xmp"]
+  assert body["errors"] == [{"photo_id": 99999, "error": "no such photo: 99999"}]
+
+  assert not os.path.exists(os.path.join(d, "y", "K1.DNG"))
+  assert os.path.isfile(os.path.join(d, "keepers", "K1.DNG"))
+  assert c.get(f"/api/photos/{k1}").json()["files"][0]["path"] == "keepers/K1.DNG"
+
+  # one scan_dir job per distinct directory actually touched (source "y" + dest "keepers"), no
+  # link_exports job (the target doesn't start with Exported)
+  assert sorted(j["target"] for j in c.app.state.background_jobs.list() if j["kind"] == "scan_dir"
+               ) == ["keepers", "y"]
+  assert body["link_exports_job"] is None
+
+  assert c.post("/api/move", json={"ids": [], "target": "x"}).status_code == 400
+  assert c.post("/api/move", json={"ids": [a], "target": "../escape"}).status_code == 400
+
+
+def test_move_endpoint_schedules_link_exports_for_an_exported_subdir_target(settings):
+  c = app_with_pair(settings)
+  a = pid(c, "y/a.jpg")
+  r = c.post("/api/move", json={"ids": [a], "target": "Exported/2020"})
+  assert r.status_code == 200
+  body = r.json()
+  assert body["link_exports_job"] is not None
+  job = next(j for j in c.app.state.background_jobs.list() if j["id"] == body["link_exports_job"])
+  assert job["kind"] == "link_exports" and job["target"] == "Exported/2020"
+
+
+def test_move_endpoint_creates_the_destination_folder(settings):
+  c = app_with_pair(settings)
+  d = settings.pictures_dir
+  a = pid(c, "y/a.jpg")
+  assert not os.path.isdir(os.path.join(d, "brand-new"))
+  c.post("/api/move", json={"ids": [a], "target": "brand-new"})
+  assert os.path.isdir(os.path.join(d, "brand-new"))
+  assert os.path.isfile(os.path.join(d, "brand-new", "a.jpg"))
+
+
+def test_dir_exists_endpoint(settings):
+  c = app_with_pair(settings)
+  assert c.get("/api/dirs/exists", params={"dir": "y"}).json() == {"exists": True}
+  assert c.get("/api/dirs/exists", params={"dir": "nope"}).json() == {"exists": False}
+  assert c.get("/api/dirs/exists", params={"dir": "."}).json() == {"exists": True}
+  assert c.get("/api/dirs/exists", params={"dir": "../escape"}).status_code == 400
+
+
 def test_trash_file_endpoint(settings):
   # ticket 082: file-scoped, not rating-gated -- unlike /api/photos/trash above.
   c = app_with_pair(settings)

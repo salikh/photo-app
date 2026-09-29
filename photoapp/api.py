@@ -23,11 +23,13 @@ from photoapp import curation
 from photoapp import crop as crop_lib
 from photoapp import db as db_lib
 from photoapp import export
+from photoapp import export_backfill
 from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import jobs
 from photoapp import library
 from photoapp import manual_links
+from photoapp import move as move_lib
 from photoapp import previews
 from photoapp import raw_preview_dng
 from photoapp import recovery
@@ -76,6 +78,11 @@ class TagsBody(pydantic.BaseModel):
 class ExportBody(pydantic.BaseModel):
   ids: list[int]
   dir: str
+  target: str
+
+
+class MoveBody(pydantic.BaseModel):
+  ids: list[int]
   target: str
 
 
@@ -229,6 +236,17 @@ def create_app(conn, settings):
 
   app.state.background_jobs.add_handler("purge_trash", purge_trash_job)
 
+  def link_exports_job(conn, job):
+    """ticket 146: export_backfill's tier-2 dhash heuristic, scoped to job['target'] -- scheduled
+    right after a move (ticket 145) lands photos somewhere under Exported/, since those files
+    reached there without going through export.py's own real-time linking (ticket 099)."""
+    matched, unmatched = export_backfill.backfill_by_dhash(
+        conn, settings.pictures_dir, settings.thumbs_dir, dir_prefix=job["target"])
+    logging.vlog(3, "link_exports %s: matched %d, left %d unmatched",
+                 job["target"], matched, unmatched)
+
+  app.state.background_jobs.add_handler("link_exports", link_exports_job)
+
   @app.get("/api/jobs")
   @db_route
   def list_jobs(limit: int = 100):
@@ -372,6 +390,36 @@ def create_app(conn, settings):
           queued.append({"photo_id": r["photo_id"], "job_id": job_id})
       missing = sorted(set(body.ids) - {r["photo_id"] for r in rows})
       return {"queued": queued, "missing": missing}
+    return run_db(attempt)
+
+  @app.post("/api/move")
+  def start_move(body: MoveBody):
+    """Ticket 145: move every live file of each Photo in body.ids (and its sidecars) into
+    body.target, a directory inside pictures_dir (always created if it doesn't exist yet -- the
+    frontend's create-folder modal is the only confirmation gate, not re-asked here, the same
+    division of concerns trash_photos_route draws between server-enforced safety and client-owned
+    UX). Runs synchronously (a same-filesystem rename is fast, unlike a render-and-copy export),
+    then schedules a low-priority scan_dir job for every directory actually touched (ticket 076's
+    existing kind) and, if the destination is under Exported/, a link_exports job (ticket 146)."""
+    if not body.ids or len(body.ids) > 2000:
+      raise HTTPException(400, "give between 1 and 2000 photo ids")
+    try:
+      target = library._norm_dir(body.target)
+    except ValueError as e:
+      raise HTTPException(400, str(e))
+
+    def attempt():
+      with app.state.db_lock:
+        dest_abs = os.path.join(settings.pictures_dir, target)
+        os.makedirs(dest_abs, exist_ok=True)
+        result = move_lib.move_photos(app.state.db, settings, body.ids, target)
+        scan_jobs = [app.state.background_jobs.enqueue("scan_dir", target=d)
+                    for d in sorted(result["source_dirs"] | {target})]
+        link_exports_job = None
+        if target == export.EXPORT_SUBDIR or target.startswith(export.EXPORT_SUBDIR + "/"):
+          link_exports_job = app.state.background_jobs.enqueue("link_exports", target=target)
+      return {"moved": result["moved"], "errors": result["errors"],
+              "scan_jobs": scan_jobs, "link_exports_job": link_exports_job}
     return run_db(attempt)
 
   @app.post("/api/activity/batch/{batch_id}/undo")
@@ -582,6 +630,17 @@ def create_app(conn, settings):
   @db_route
   def dirs(path: str = "."):
     return read(library.list_dirs, path)
+
+  @app.get("/api/dirs/exists")
+  def dir_exists(dir: str = "."):
+    """Ticket 145: lets the frontend ask before committing to a request the user hasn't confirmed
+    yet (the "create this folder?" modal) -- a dedicated, read-only check rather than a TOCTOU-
+    prone error-string dance on /api/move itself."""
+    try:
+      rel_dir = library._norm_dir(dir)
+    except ValueError as e:
+      raise HTTPException(400, str(e))
+    return {"exists": os.path.isdir(os.path.join(settings.pictures_dir, rel_dir))}
 
   @app.get("/api/photos")
   @db_route

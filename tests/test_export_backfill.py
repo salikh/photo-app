@@ -109,6 +109,28 @@ def test_tier2_matches_a_true_pair_and_rejects_a_true_non_match(settings, conn):
   assert linked["exported_from_file_id"] == file_id(conn, "2020/match.jpg")
 
 
+def test_tier2_dir_prefix_scopes_unresolved_to_one_directory(settings, conn):
+  # ticket 146: link_exports_job scopes backfill_by_dhash to the directory a move just landed
+  # files in, rather than the whole Exported/ subtree.
+  d = settings.pictures_dir
+  make_pattern_jpeg(os.path.join(d, "2020", "match.jpg"), "left")
+  scan.scan(conn, d)
+  thumbs.ensure(conn, d, settings.thumbs_dir, file_id(conn, "2020/match.jpg"),
+               "2020/match.jpg", "Small")
+  make_pattern_jpeg(os.path.join(d, "Exported", "2020", "match.jpg"), "left")
+  make_pattern_jpeg(os.path.join(d, "Exported", "2021", "match.jpg"), "left")
+  scan.scan(conn, d)
+  matched, unmatched = export_backfill.backfill_by_dhash(
+      conn, d, settings.thumbs_dir, dir_prefix="Exported/2020")
+  assert (matched, unmatched) == (1, 0)
+  linked_2020 = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/2020/match.jpg'").fetchone()
+  linked_2021 = conn.execute(
+      "SELECT exported_from_file_id FROM files WHERE path = 'Exported/2021/match.jpg'").fetchone()
+  assert linked_2020["exported_from_file_id"] is not None
+  assert linked_2021["exported_from_file_id"] is None   # out of scope, left untouched
+
+
 def test_tier2_leaves_unmatched_without_a_filename_candidate(settings, conn):
   d = settings.pictures_dir
   make_pattern_jpeg(os.path.join(d, "Exported", "mystery.jpg"), "left")

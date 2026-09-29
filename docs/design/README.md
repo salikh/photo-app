@@ -27,6 +27,9 @@ anticipated — each such departure is called out explicitly.
   table, and why the state database is separate from the library and split the way it is
 - [trash.md](trash.md) — why deleting a rejected photo is a move into `.trash/`, not a delete, and why
   `.trash/` must never be scanned (a real bug this avoided, confirmed with a test before the fix)
+- [move.md](move.md) — moving photos to another library folder: why it repoints `files.path` and
+  cached artifacts synchronously instead of relying on a rescan to rediscover the move, and why
+  collisions and the `Exported/`-destination export-link job work the way they do
 
 ## Bugs worth knowing about specifically
 
