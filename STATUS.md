@@ -331,3 +331,17 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [150](docs/tickets/150.md) The loupe's Files panel shows each file's byte size
       (`util.js`'s existing `fmtBytes`, reused as-is — no backend change, `bytesize` was already
       selected by `library.photo_detail`)
+
+## Export-link heuristic tuning and Files panel link text (user requests 2026-09-29, done)
+
+- [x] [151](docs/tickets/151.md) `export_backfill.backfill_by_dhash` breaks an exact-dhash-tie in
+      favor of a candidate whose filename matches the export's case-insensitively (extension
+      included) — the dominant real cause of unresolved exports, a RAW/JPEG sibling tie — gated by
+      a date-plausibility check (mtime within a year, or a shared year-like path component; mtime
+      is the reliable signal for this library, year-folder matching empirically is not, ~4% vs
+      ~96%). Measured against the real library throughout, not guessed: dhash distributions on
+      known-correct pairs, why 1194 exports stayed unresolved, mtime-vs-year-folder reliability,
+      and a full-scale validation (453 of 1194 now link) via a read-only/scratch-copy analysis
+      that never touched the live database
+- [x] [152](docs/tickets/152.md) Files panel's "exported from" link now shows the source file's
+      relative path as its text (was "`<dir>` (photo `<id>`)"); link target unchanged

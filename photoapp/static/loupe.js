@@ -1077,7 +1077,7 @@ async function openFiles() {
       // just cross-referenced, not merged into the source's file list.
       f.exported_from ? el('div', {class: 'meta'},
         'exported from: ', el('a', {href: href({dir: f.exported_from.dir, photo: f.exported_from.photo_id}),
-                                    text: f.exported_from.dir + ' (photo ' + f.exported_from.photo_id + ')'})) : null,
+                                    text: f.exported_from.path})) : null,
       cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
       f.is_raw && !f.missing ? rawSettingsControls(f) : null,
       el('div', {class: 'row'},

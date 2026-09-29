@@ -405,6 +405,27 @@ def test_files_panel_shows_the_file_byte_size(page, server):
   expect(page.locator(".files-panel .file")).to_contain_text("2.5 MB")
 
 
+def test_files_panel_exported_from_link_shows_the_source_path(page, server):
+  # ticket 152: link text is the source file's relative path, not "<dir> (photo <id>)"; the link
+  # target (dir + photo_id) is unchanged.
+  ids = photo_ids(server)
+  export_fid, source_fid = [
+      server.app.state.db.execute(
+          "SELECT id FROM files WHERE photo_id = ?", (pid,)).fetchone()[0]
+      for pid in ids[:2]]
+  source_path = server.app.state.db.execute(
+      "SELECT path FROM files WHERE id = ?", (source_fid,)).fetchone()[0]
+  server.app.state.db.execute(
+      "UPDATE files SET exported_from_file_id = ? WHERE id = ?", (source_fid, export_fid))
+  server.app.state.db.commit()
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("i")
+  link = page.locator(".files-panel .file", has_text="exported from").get_by_role("link")
+  expect(link).to_have_text(source_path)
+  expect(link).to_have_attribute("href", re.compile(rf"photo={ids[1]}$"))
+
+
 def test_files_panel_recenters_image_without_obstruction(page, server):
   # ticket 121: opening the files/tuning panel recenters the image so it is not obstructed
   # by the side panel. Both img.main and the flip / tuning overlay (img.tuning / img.row-preview)

@@ -271,12 +271,13 @@ def photo_detail(conn, photo_id):
   for f in files:
     f["is_raw"] = fileinfo.is_raw(f["path"])   # ticket 085: only a RAW file gets settings sliders
     # Ticket 099: "exported from" jump-to-original -- dir + photo_id of the source Photo, so the
-    # frontend can build a link the same shape route.href already takes.
+    # frontend can build a link the same shape route.href already takes. Ticket 152: path too, for
+    # the link's display text (dir alone read as "<dir> (photo <id>)", not a real path).
     if f["exported_from_file_id"] is not None:
       src = conn.execute("SELECT path, photo_id FROM files WHERE id = ?",
                          (f["exported_from_file_id"],)).fetchone()
       f["exported_from"] = (
-          {"dir": paths.dirname(src["path"]), "photo_id": src["photo_id"]}
+          {"dir": paths.dirname(src["path"]), "photo_id": src["photo_id"], "path": src["path"]}
           if src is not None and src["photo_id"] is not None else None)
     else:
       f["exported_from"] = None

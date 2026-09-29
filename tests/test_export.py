@@ -227,7 +227,7 @@ def test_export_into_the_library_is_imported_and_linked_to_the_source(settings):
   exported_photo_id = photos_here[0]["id"]
   detail = c.get(f"/api/photos/{exported_photo_id}").json()
   exported_from = detail["files"][0]["exported_from"]
-  assert exported_from == {"dir": "2020", "photo_id": source_photo_id}
+  assert exported_from == {"dir": "2020", "photo_id": source_photo_id, "path": "2020/a.jpg"}
   # The source's own Photo is untouched -- still its own, single-file entry, not merged.
   assert len(c.get("/api/photos", params={"dir": "2020"}).json()["photos"]) == 1
 
