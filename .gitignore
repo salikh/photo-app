@@ -7,3 +7,4 @@ __pycache__/
 *.pyc
 !/requirements.txt
 /photos.toml
+*.jsonl
