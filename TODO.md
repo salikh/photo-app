@@ -8,9 +8,12 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* All ten build-order epics, v1 filtering, every cross-cutting ticket,
-epic 102 (103-107), epic 131 (132-138), tickets 139-142 and tickets 108-115, 117-124, 127, 128 and
-130 are done (see `STATUS.md`).
+- [ ] [143](docs/tickets/143.md) Attention page links go straight to the photo, not its album
+      (user request 2026-09-29)
+
+All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
+(132-138), tickets 139-142 and tickets 108-115, 117-124, 127, 128 and 130 are done (see
+`STATUS.md`).
 
 ## Restart notes
 
