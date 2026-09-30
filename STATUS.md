@@ -384,3 +384,20 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       computes `lens_model` too; flag help and `tools/archive/README.md` updated
 - [x] [159](docs/tickets/159.md) `loupe.js`'s `cameraMetaText` shows the lens between the camera
       and the focal length, in the existing per-file Files-panel metadata line
+
+## PEF (Pentax RAW) support (user request 2026-09-30, done)
+
+- [x] [160](docs/tickets/160.md) Epic: `.PEF` was already RAW everywhere else (dimensions,
+      thumbnails, client tuning); the gap was EXIF — Pillow cannot open a PEF, so all 147 real PEF
+      rows had NULL date/camera/lens/exposure. A TIFF IFD fallback reader, stale-record
+      re-extraction and a full-EXIF backfill close it
+- [x] [161](docs/tickets/161.md) `fileinfo.read_exif_from_tiff` reads a file's IFD0 + Exif sub-IFD
+      directly (byte order from the header) when `Image.open` fails and the file is RAW, reusing
+      `parse_exif_date`/`_exif_rational_to_float`/`_exif_str`; covered by a synthetic big-endian
+      PEF-shaped TIFF and a `REAL_PEF`-gated test
+- [x] [162](docs/tickets/162.md) `metacache.record_is_stale` spots a pre-fix RAW record
+      (`image/x-raw` with no EXIF) so `index_lacks_keys`/`_scan_files` re-read it once instead of
+      reusing all-None forever
+- [x] [163](docs/tickets/163.md) `backfill_exif` now uses `read_image_metadata` (fallback included)
+      and writes the full EXIF set, so existing PEF rows fill immediately; `docs/operations.md`
+      updated

@@ -8,25 +8,16 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-Epic 160 (PEF / Pentax RAW support), user request 2026-09-30:
-
-- [ ] [160](docs/tickets/160.md) Epic: PEF support — Pillow cannot open a PEF, so all of its EXIF
-      (date, camera, lens, exposure) is NULL; add a TIFF IFD fallback reader and backfill
-- [ ] [161](docs/tickets/161.md) Fallback EXIF reader (`fileinfo.read_exif_from_tiff`) wired into
-      `read_image_metadata` for RAW files Pillow cannot open
-- [ ] [162](docs/tickets/162.md) Re-extract stale `image/x-raw` cache records so a scan self-heals
-      existing PEF rows (`metacache.record_is_stale`)
-- [ ] [163](docs/tickets/163.md) `backfill_exif` fills the full EXIF set (works for PEF) + docs
-
-Everything else — epic 156 (lens metadata, 157-159), the ten build-order epics, v1 filtering, every
-cross-cutting ticket, epic 102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143,
-149-155 and tickets 108-115, 117-124, 127, 128 and 130 — is done (see `STATUS.md`).
+*No open tickets right now.* Epic 160 (PEF support, tickets 161-163) is done — see `STATUS.md`.
+Epic 156 (lens metadata, 157-159), the ten build-order epics, v1 filtering, every cross-cutting
+ticket, epic 102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-155 and
+tickets 108-115, 117-124, 127, 128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- Work in progress: epic 160 (PEF support), tickets 161-163 open. Epic 156 (lens metadata,
-  157-159) is the most recent completed work; see `STATUS.md` for that and everything before it.
-  New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Epic 160 (PEF support, tickets 161-163) is the most recent
+  completed work; see `STATUS.md` for that and everything before it. New requests should be filed as
+  tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
@@ -36,7 +27,8 @@ cross-cutting ticket, epic 102 (103-107), epic 131 (132-138), epic 144 (145-148)
 - Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 453 tests, ~1-2 min) and
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
-  never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing.
+  never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing. `REAL_PEF` is a real
+  Pentax PEF (e.g. `/zoo/Pictures/2008/2008-02 Asuka/PEF/IMGP5482.PEF`), also usable read-only.
 - The machine is often under memory pressure (a `./start.sh` instance of the app runs alongside).
   Known-flaky e2e tests, not regressions: `test_delete_this_file_button_shows_modal_and_moves_to_trash`
   and `test_delete_this_file_modal_cancel_leaves_file_untouched` (30 s click-stability timeout), and
