@@ -1,0 +1,18 @@
+# ExifTool — Pentax lens-type table (vendored data)
+
+`photoapp/pentax_lens.py`'s `LENS_TYPES` table is generated from ExifTool's
+`Image::ExifTool::Pentax` `%pentaxLensTypes` (ExifTool 13.55), which maps the two-byte Pentax
+MakerNote `LensType` code to a lens name. ExifTool does not store this in the image; it is
+ExifTool's own compiled data, without which a Pentax RAW's lens can only be shown as a number.
+
+Upstream: <https://exiftool.org/>
+
+Copyright (c) 2003-2026, Phil Harvey (philharvey66 at gmail.com)
+
+> This library is free software; you can redistribute it and/or modify it under the same terms as
+> Perl itself.
+
+Perl's terms are, at the recipient's option, either the GNU General Public License (version 1 or
+later) or the Artistic License. The Artistic License text is reproduced at
+[`Artistic.txt`](Artistic.txt). Only the lens-name table is derived from ExifTool; no ExifTool code
+is included or executed.

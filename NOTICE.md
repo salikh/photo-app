@@ -30,3 +30,16 @@ installed from PyPI, not vendored into this repo) for the same reason: Pillow ca
 decode RAW files correctly (see the photo-manager project notes). `rawpy` bundles its own
 copy of the LibRaw LGPL license in its distribution; no separate action is needed here
 since it is a regular pip dependency, not code copied into this repository.
+
+## ExifTool (vendored lens-name data)
+
+`photoapp/pentax_lens.py`'s `LENS_TYPES` table is generated from ExifTool's
+`Image::ExifTool::Pentax` `%pentaxLensTypes` data (ExifTool 13.55), which resolves the
+two-byte Pentax MakerNote `LensType` code to a lens name — data ExifTool itself compiles
+(the camera does not store the name; see ticket 164). ExifTool is
+[Copyright (c) 2003-2026 Phil Harvey](https://exiftool.org/) and is distributed under the
+same terms as Perl itself: the GNU General Public License (version 1 or later) or the
+Artistic License. The notice is reproduced at
+[`third_party_licenses/ExifTool.txt`](third_party_licenses/ExifTool.txt) and the Artistic
+License text at
+[`third_party_licenses/Artistic.txt`](third_party_licenses/Artistic.txt).
