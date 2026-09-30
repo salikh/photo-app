@@ -77,8 +77,23 @@ def has_all_keys(record, required_keys=REQUIRED_KEYS):
   return all(k in record for k in required_keys)
 
 
+def record_is_stale(record):
+  """True if a cache record must be re-read once because it predates an extraction fix.
+
+  Ticket 162: a RAW file Pillow cannot identify (a Pentax PEF) was cached before ticket 161's TIFF
+  IFD fallback, so its record has every REQUIRED_KEYS key -- all None -- and the generic
+  ``image/x-raw`` mime; ``has_all_keys`` passes and a scan would reuse it forever. Keyed on the
+  record, not the filename, so any similarly-unreadable RAW heals the same way. After one re-read
+  the record either carries real values (no longer stale) or is genuinely EXIF-less (re-read
+  cheaply on later scans -- only such records, and there are few).
+  """
+  return (record.get("mime_type") == "image/x-raw"
+          and record.get("exif_date") is None
+          and record.get("camera_make") is None)
+
+
 def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
-  """True if any of names lacks a complete record in dirpath's index.json.
+  """True if any of names lacks a complete record in dirpath's index.json, or has a stale one.
 
   A directory with no image names returns False (nothing to cache). If it has
   image names but no index.json at all, every one of them "lacks" a record, so
@@ -88,7 +103,8 @@ def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
   if not names:
     return False
   records = load_records(dirpath)
-  return any(not has_all_keys(records.get(n, {}), required_keys) for n in names)
+  return any(not has_all_keys(records.get(n, {}), required_keys)
+             or record_is_stale(records.get(n, {})) for n in names)
 
 
 def write_record(dirpath, name, record):

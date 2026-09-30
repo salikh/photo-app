@@ -8,6 +8,7 @@ from photoapp import fileinfo
 from photoapp import metacache
 from photoapp import scan
 from tests.conftest import make_jpeg
+from tests.conftest import write_synthetic_pef
 
 
 def files(conn):
@@ -193,3 +194,48 @@ def test_stale_per_file_json_is_removed(conn, settings):
   assert not os.path.exists(b + ".json")
   assert set(files(conn)) == {"a.jpg", "b.jpg"}
   assert files(conn)["b.jpg"]["missing"] == 1
+
+
+def test_record_is_stale_only_for_generic_raw_with_no_exif():
+  # ticket 162 unit: the "Pillow could not read this RAW" signature, and that ordinary records are
+  # not stale.
+  assert metacache.record_is_stale(
+      {"mime_type": "image/x-raw", "exif_date": None, "camera_make": None})
+  assert not metacache.record_is_stale(
+      {"mime_type": "image/x-raw", "exif_date": "2020-01-01 00:00:00", "camera_make": None})
+  assert not metacache.record_is_stale(
+      {"mime_type": "image/jpeg", "exif_date": None, "camera_make": None})
+  assert not metacache.record_is_stale({})
+
+
+def test_stale_raw_record_is_reprocessed_and_reextracted(conn, settings, monkeypatch):
+  # ticket 162: a PEF cached before the ticket 161 fallback (every key present, all None, generic
+  # raw mime) is stale, so an otherwise-unchanged directory is reprocessed and that one record is
+  # re-read with the fallback.
+  d = settings.pictures_dir
+  write_synthetic_pef(os.path.join(d, "a.PEF"))
+  scan.scan(conn, d, metadata_cache=True)
+  assert files(conn)["a.PEF"]["camera_make"] == "PENTAX Corporation"
+
+  index = read_index(d)
+  rec = index["files"]["a.PEF"]
+  rec["mime_type"] = "image/x-raw"     # how a real Pillow-unreadable RAW is cached
+  for k in ("exif_date", "aperture", "shutter_speed", "iso", "focal_length",
+            "camera_make", "camera_model", "lens_model"):
+    rec[k] = None
+  with open(os.path.join(d, "index.json"), "w") as f:
+    json.dump(index, f)
+  # Make the directory look unchanged, so only the stale record can trigger reprocessing.
+  os.utime(d, (12345, 12345))
+  conn.execute("UPDATE dir_mtimes SET mtime = 12345 WHERE dirpath = '.'")
+  conn.commit()
+
+  calls = []
+  real = fileinfo.read_image_metadata
+  monkeypatch.setattr(fileinfo, "read_image_metadata",
+                      lambda p_: calls.append(p_) or real(p_))
+  p = scan.scan(conn, d, metadata_cache=True)
+  assert calls == [os.path.join(d, "a.PEF")]        # only the stale record was re-read
+  assert p.files_processed == 1
+  assert files(conn)["a.PEF"]["camera_make"] == "PENTAX Corporation"
+  assert read_index(d)["files"]["a.PEF"]["camera_make"] == "PENTAX Corporation"

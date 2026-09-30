@@ -198,7 +198,8 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
       cached = existing.get(name)
       cache_valid = (cached is not None and cached.get("mtime") == st.st_mtime
                      and cached.get("bytesize") == st.st_size)
-      if cache_valid and metacache.has_all_keys(cached):
+      if (cache_valid and metacache.has_all_keys(cached)
+          and not metacache.record_is_stale(cached)):
         return name, rel_path, dict(cached), False
       # Valid but incomplete (a key added later), or no usable record: re-read the metadata.
       (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
@@ -398,6 +399,8 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
         (rel_dir,)).fetchone()
     # Ticket 111: an unchanged directory still needs reprocessing when its metadata cache lacks a
     # key added since it was written (e.g. focal_length), so that record can be backfilled.
+    # Ticket 162: likewise for a stale record that predates an extraction fix (a PEF cached before
+    # the TIFF EXIF fallback), so it is re-read once instead of reused all-None forever.
     if (row is not None and row["mtime"] == mtime
         and not (metadata_cache and metacache.index_lacks_keys(dirpath, images))):
       progress.dirs_skipped += 1
