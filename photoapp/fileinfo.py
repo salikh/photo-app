@@ -21,6 +21,8 @@ from absl import logging
 from PIL import Image
 from PIL import TiffImagePlugin
 
+from photoapp import pentax_lens
+
 Image.init()  # populates Image.MIME
 
 # Same set of genuine-image extensions as metadata_db.py (duplicated rather
@@ -61,6 +63,14 @@ _EXIF_FOCAL_LENGTH = 0x920A
 _EXIF_MAKE = 0x010F
 _EXIF_MODEL = 0x0110
 _EXIF_LENS_MODEL = 0xA434
+
+# Ticket 166: Pentax keeps the lens in its MakerNote as a two-byte LensType code rather than the
+# standard LensModel tag. For a DNG the MakerNote is IFD0's DNGPrivateData (0xC634); for a PEF (and
+# everything else) it is the Exif sub-IFD's MakerNote (0x927C). Inside, tag 0x003F (LensRec) holds
+# the code in its first two bytes.
+_PENTAX_DNG_PRIVATE_DATA = 0xC634
+_PENTAX_MAKERNOTE = 0x927C
+_PENTAX_LENS_TAG = 0x003F
 
 
 def hash_file(path):
@@ -210,6 +220,80 @@ def _read_tiff_ifd(f, offset, byteorder):
   return ifd
 
 
+def _pentax_lens_code(makernote):
+  """(series, lens_id) from a Pentax MakerNote's LensType, or None (ticket 166).
+
+  Handles both MakerNote headers seen in the library: "PENTAX \\0" (offset 10, DNG DNGPrivateData)
+  and "AOC\\0" (offset 6, PEF MakerNote), each followed by an MM/II byte-order marker and a standard
+  IFD whose tag 0x003F (LensRec) starts with the two code bytes.
+  """
+  if makernote[:8] == b"PENTAX \x00":
+    header = 8
+  elif makernote[:4] == b"AOC\x00":
+    header = 4
+  else:
+    return None
+  order = makernote[header:header + 2]
+  if order == b"MM":
+    endian = ">"
+  elif order == b"II":
+    endian = "<"
+  else:
+    return None
+  start = header + 2
+  try:
+    count = struct.unpack(endian + "H", makernote[start:start + 2])[0]
+  except struct.error:
+    return None
+  for i in range(count):
+    entry = start + 2 + i * 12
+    if entry + 12 > len(makernote):
+      break
+    tag, value_type, value_count = struct.unpack(endian + "HHI", makernote[entry:entry + 8])
+    if tag != _PENTAX_LENS_TAG:
+      continue
+    value = makernote[entry + 8:entry + 12]
+    offset = struct.unpack(endian + "I", value)[0]
+    if value_type == 7 and value_count > 4 and offset + 2 <= len(makernote):
+      value = makernote[offset:offset + 4]   # LensRec stored out of line (offsets are from the start)
+    return (value[0], value[1]) if len(value) >= 2 else None
+  return None
+
+
+def read_pentax_lens(filepath):
+  """The lens name from a Pentax MakerNote's LensType code, or None (ticket 166).
+
+  A Pentax file usually has no standard EXIF LensModel tag; the lens is a two-byte code in its
+  MakerNote (DNGPrivateData for a DNG, MakerNote for a PEF), decoded with the vendored ExifTool
+  table in photoapp/pentax_lens.py. Any failure (not a TIFF, no Pentax MakerNote, a code the table
+  does not know) is just None, matching the other EXIF readers' contract.
+  """
+  try:
+    with open(filepath, "rb") as f:
+      header = f.read(8)
+      if len(header) < 8:
+        return None
+      if header[:2] == b"II":
+        byteorder = "<"
+      elif header[:2] == b"MM":
+        byteorder = ">"
+      else:
+        return None
+      ifd0 = _read_tiff_ifd(f, struct.unpack(byteorder + "I", header[4:8])[0], byteorder)
+      makernote = ifd0.get(_PENTAX_DNG_PRIVATE_DATA)
+      if not makernote:
+        exif_offset = ifd0.get(_EXIF_IFD_POINTER)
+        if exif_offset:
+          makernote = _read_tiff_ifd(f, exif_offset, byteorder).get(_PENTAX_MAKERNOTE)
+  except Exception as e:
+    logging.vlog(3, "Could not read Pentax MakerNote from %s: %s", filepath, e)
+    return None
+  if not makernote:
+    return None
+  code = _pentax_lens_code(makernote)
+  return pentax_lens.decode(*code) if code is not None else None
+
+
 def read_exif_from_tiff(filepath):
   """Fallback EXIF for a RAW file Pillow cannot open (ticket 161: Pentax PEF).
 
@@ -311,6 +395,8 @@ def read_image_metadata(filepath):
   EXIF parse (tickets 083/111/156; same reason exif_date already works for RAW: the EXIF header
   parses even when the image data does not). A RAW file Pillow cannot open at all (ticket 161: a
   Pentax PEF) falls back to read_exif_from_tiff, so its EXIF is read from the TIFF IFDs instead.
+  When the standard LensModel tag is absent (every Pentax file here), the lens is read from the
+  MakerNote's coded LensType and decoded with the vendored ExifTool table (ticket 166).
   """
   mime_type = width = height = exif_date = aperture = shutter_speed = iso = None
   focal_length = camera_make = camera_model = lens_model = None
@@ -331,6 +417,8 @@ def read_image_metadata(filepath):
     raw_size = read_raw_size(filepath)
     if raw_size is not None:
       width, height, mime_type = raw_size
+    if lens_model is None:
+      lens_model = read_pentax_lens(filepath)
   return (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
           focal_length, camera_make, camera_model, lens_model)
 

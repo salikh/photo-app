@@ -116,6 +116,13 @@ def test_pef_exif_fallback_reads_the_tiff_directly(tmp_path):
   assert fileinfo.read_exif_from_tiff(str(tmp_path / "nope.PEF")) == (None,) * 8
 
 
+def test_read_pentax_lens_is_none_for_a_non_pentax_file(tmp_path):
+  # ticket 166: a plain JPEG has no Pentax MakerNote; the reader returns None, never raises.
+  jpg = str(tmp_path / "a.jpg")
+  make_jpeg(jpg)
+  assert fileinfo.read_pentax_lens(jpg) is None
+
+
 REAL_PEF = os.environ.get("REAL_PEF")
 
 
@@ -130,6 +137,8 @@ def test_real_pef_exif_fallback():
   assert aperture is None or isinstance(aperture, float)
   assert shutter_speed is None or isinstance(shutter_speed, float)
   assert iso is None or isinstance(iso, int)
+  # ticket 166: the lens comes from the MakerNote LensType (no standard LensModel in a PEF).
+  assert fileinfo.read_pentax_lens(REAL_PEF) == "smc PENTAX-DA 18-55mm F3.5-5.6 AL"
 
 
 REAL_DNG = os.environ.get("REAL_DNG")
@@ -142,6 +151,15 @@ def test_real_dng_dimensions_preview_and_thumbnails(tmp_path):
   assert mime == "image/x-adobe-dng" and max(w, h) > 1000
   out = thumbs.render(REAL_DNG, str(tmp_path / "t.jpg"), 300)
   assert max(Image.open(out).size) == 300
+
+
+@pytest.mark.skipif(not REAL_DNG or not os.path.exists(REAL_DNG or ""),
+                    reason="REAL_DNG not set")
+def test_real_dng_pentax_lens_from_makernote():
+  # ticket 166: a DNG with no standard LensModel -- the lens is the MakerNote LensType code,
+  # decoded with the vendored ExifTool table, in read_image_metadata and on its own.
+  assert fileinfo.read_pentax_lens(REAL_DNG) == "smc PENTAX-DA 35mm F2.4 AL"
+  assert fileinfo.read_image_metadata(REAL_DNG)[-1] == "smc PENTAX-DA 35mm F2.4 AL"
 
 
 @pytest.mark.skipif(not REAL_DNG or not os.path.exists(REAL_DNG or ""),
