@@ -8,25 +8,16 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-Epic 156 (lens metadata), user request 2026-09-30:
-
-- [ ] [156](docs/tickets/156.md) Epic: lens metadata — extract from EXIF, store to the per-file
-      `.json` cache and a `files.lens_model` column, show in the loupe's Files pane
-- [ ] [157](docs/tickets/157.md) Backend: `fileinfo` lens extraction, `files.lens_model`
-      migration, `scan.py` upsert/move, `metacache.REQUIRED_KEYS`, `library.photo_detail`
-- [ ] [158](docs/tickets/158.md) `catalog.py --metadata_json_fields=exif` includes the lens;
-      README note
-- [ ] [159](docs/tickets/159.md) Loupe Files panel shows the lens next to the camera metadata
-
-Everything else — the ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102
-(103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-155 and tickets 108-115,
-117-124, 127, 128 and 130 — is done (see `STATUS.md`).
+*No open tickets right now.* Epic 156 (lens metadata, tickets 157-159) is done — see `STATUS.md`.
+All ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131
+(132-138), epic 144 (145-148), tickets 139-143, 149-155 and tickets 108-115, 117-124, 127, 128 and
+130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- Work in progress: epic 156 (lens metadata), tickets 157-159 open. Ticket 155 (folder rename
-  button) is the most recent completed work; see `STATUS.md` for that and everything before it.
-  New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Epic 156 (lens metadata, tickets 157-159) is the most
+  recent completed work; see `STATUS.md` for that and everything before it. New requests should be
+  filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).

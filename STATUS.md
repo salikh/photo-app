@@ -368,3 +368,19 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       whole-subtree rename has no hash-matching ambiguity, just a certain prefix replace. Refuses
       an already-existing target outright (no create-or-merge option, unlike the per-Photo move);
       follows the browser to the renamed folder on success
+
+## Lens metadata (user request 2026-09-30, done)
+
+- [x] [156](docs/tickets/156.md) Epic: the lens used with the picture — extract the EXIF
+      `LensModel` tag, store it in the per-file `<name>.json`/`index.json` scan cache and a new
+      `files.lens_model` column, and show it in the loupe's Files pane. No new endpoint, job kind,
+      or backfill script: the scan cache's `REQUIRED_KEYS` mechanism (ticket 111) backfills
+      existing files on the next scan
+- [x] [157](docs/tickets/157.md) Backend: `fileinfo.read_lens_metadata`/`read_image_metadata` gain
+      `lens_model` (Exif sub-IFD `LensModel` 0xA434); migration adds `files.lens_model TEXT`;
+      `scan.py` (`_upsert_file`/`_scan_files`/`import_single_file`/`_apply_move`),
+      `metacache.REQUIRED_KEYS` and `library.photo_detail` carry it
+- [x] [158](docs/tickets/158.md) `tools/archive/catalog.py`'s `--metadata_json_fields=exif` group
+      computes `lens_model` too; flag help and `tools/archive/README.md` updated
+- [x] [159](docs/tickets/159.md) `loupe.js`'s `cameraMetaText` shows the lens between the camera
+      and the focal length, in the existing per-file Files-panel metadata line

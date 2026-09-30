@@ -156,6 +156,11 @@ Read-only on the library: opens each file just far enough to read its EXIF heade
 grouping, no thumbnail work. Only touches files with none of the three fields already set, so it's
 safe and cheap to rerun (`--backfill_limit=N` restricts a run to N files for a quick check).
 
+Focal length and camera make/model (ticket 111) and the lens used (ticket 156) are backfilled instead
+by the scan itself: with the default `--write_metadata_json`, adding a new field to
+`photoapp/metacache.py`'s `REQUIRED_KEYS` makes the next scan reprocess every directory whose
+`index.json` predates it and re-read just those files. No separate command is needed for them.
+
 ## Comparing against another copy of the library
 
 If an older backup of this library exists on another machine, drive, or disk image, `tools/archive/`
