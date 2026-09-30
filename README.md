@@ -70,5 +70,6 @@ On a phone: swipe left/right for the next/previous picture, swipe up/down to rai
     .venv/bin/python -m pytest -q --ignore=tests/e2e    # fast part
     XMP_SAMPLE_DIR=<copy of real *.xmp> pytest tests/test_xmp_real_sample.py
     REAL_DNG=<path to a .DNG> pytest tests/test_previews.py
+    REAL_PEF=<path to a .PEF> pytest tests/test_previews.py
 
 The browser tests need Google Chrome installed (Playwright uses it directly, nothing to download).

@@ -8,6 +8,7 @@ from photoapp import fileinfo
 from photoapp import previews
 from photoapp import thumbs
 from tests.conftest import make_jpeg
+from tests.conftest import write_synthetic_pef
 from tests.test_grouping import touch
 
 
@@ -87,6 +88,48 @@ def test_camera_metadata_absent_without_exif(tmp_path):
       fileinfo.read_image_metadata(jpg)
   assert (aperture, shutter_speed, iso) == (None, None, None)
   assert (focal, make, model, lens_model) == (None, None, None, None)
+
+
+def test_pef_exif_fallback_when_pillow_cannot_open(tmp_path, monkeypatch):
+  # ticket 161: a PEF is a TIFF Pillow refuses to identify; read_image_metadata reads its EXIF from
+  # the TIFF IFDs instead (Image.open forced to fail exactly as it does for a real PEF).
+  pef = str(tmp_path / "a.PEF")
+  write_synthetic_pef(pef)
+  def cannot_open(*_args, **_kwargs):
+    raise ValueError("cannot identify image file")
+  monkeypatch.setattr(Image, "open", cannot_open)
+  _, _, _, date, aperture, shutter_speed, iso, focal, make, model, lens = \
+      fileinfo.read_image_metadata(pef)
+  assert date == "2008-02-16 18:29:00"
+  assert (aperture, shutter_speed, iso) == (4.5, 0.125, 200)
+  assert (focal, make, model) == (43.0, "PENTAX Corporation", "PENTAX *ist DL")
+  assert lens == "smc PENTAX-DA 18-55mm"
+
+
+def test_pef_exif_fallback_reads_the_tiff_directly(tmp_path):
+  # ticket 161: the fallback on its own, no Pillow involved.
+  pef = str(tmp_path / "a.PEF")
+  write_synthetic_pef(pef)
+  assert fileinfo.read_exif_from_tiff(pef) == (
+      "2008-02-16 18:29:00", 4.5, 0.125, 200, 43.0, "PENTAX Corporation", "PENTAX *ist DL",
+      "smc PENTAX-DA 18-55mm")
+  assert fileinfo.read_exif_from_tiff(str(tmp_path / "nope.PEF")) == (None,) * 8
+
+
+REAL_PEF = os.environ.get("REAL_PEF")
+
+
+@pytest.mark.skipif(not REAL_PEF or not os.path.exists(REAL_PEF or ""),
+                    reason="REAL_PEF not set")
+def test_real_pef_exif_fallback():
+  # ticket 161: a real PEF (big-endian, and one Pillow cannot open at all) still yields its EXIF.
+  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens = \
+      fileinfo.read_image_metadata(REAL_PEF)
+  assert mime == "image/x-raw" and w and h
+  assert date is not None and make is not None
+  assert aperture is None or isinstance(aperture, float)
+  assert shutter_speed is None or isinstance(shutter_speed, float)
+  assert iso is None or isinstance(iso, int)
 
 
 REAL_DNG = os.environ.get("REAL_DNG")

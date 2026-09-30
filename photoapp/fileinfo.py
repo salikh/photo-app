@@ -14,10 +14,12 @@ import mimetypes
 import os
 import re
 import sqlite3
+import struct
 
 from absl import logging
 
 from PIL import Image
+from PIL import TiffImagePlugin
 
 Image.init()  # populates Image.MIME
 
@@ -199,6 +201,71 @@ def read_lens_metadata(img):
           _exif_str(sub_ifd.get(_EXIF_LENS_MODEL, exif.get(_EXIF_LENS_MODEL))))
 
 
+def _read_tiff_ifd(f, offset, byteorder):
+  """Parse the TIFF IFD at offset with PIL's own small IFD reader."""
+  ifd = TiffImagePlugin.ImageFileDirectory_v2()
+  ifd._endian = byteorder
+  f.seek(offset)
+  ifd.load(f)
+  return ifd
+
+
+def read_exif_from_tiff(filepath):
+  """Fallback EXIF for a RAW file Pillow cannot open (ticket 161: Pentax PEF).
+
+  Returns (exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,
+  lens_model) -- the same values read_exif_date/read_camera_metadata/read_lens_metadata give an
+  open PIL image, or all None if filepath is not a readable TIFF.
+
+  A PEF is a Pentax-compressed TIFF: Pillow refuses to identify it (it cannot decode the pixel
+  strip), but its EXIF lives in ordinary TIFF IFDs, so reading IFD0 and the Exif sub-IFD directly
+  gets everything without touching the image data. Byte order comes from the file header (II/MM).
+  """
+  none = (None,) * 8
+  try:
+    with open(filepath, "rb") as f:
+      header = f.read(8)
+      if len(header) < 8:
+        return none
+      order = header[:2]
+      if order == b"II":
+        byteorder = "<"
+      elif order == b"MM":
+        byteorder = ">"
+      else:
+        return none
+      ifd0 = _read_tiff_ifd(f, struct.unpack(byteorder + "I", header[4:8])[0], byteorder)
+      sub_offset = ifd0.get(_EXIF_IFD_POINTER)
+      sub_ifd = _read_tiff_ifd(f, sub_offset, byteorder) if sub_offset else {}
+  except Exception as e:
+    logging.vlog(3, "Could not read TIFF EXIF from %s: %s", filepath, e)
+    return none
+
+  def pick(tag):
+    # DateTimeOriginal/Digitized and the camera tags live in the Exif sub-IFD; DateTime/Make/Model
+    # in IFD0 (same split read_exif_date/read_camera_metadata/read_lens_metadata already assume).
+    return sub_ifd.get(tag, ifd0.get(tag))
+
+  aperture = pick(_EXIF_FNUMBER)
+  shutter_speed = pick(_EXIF_EXPOSURE_TIME)
+  iso = pick(_EXIF_ISO)
+  focal_length = pick(_EXIF_FOCAL_LENGTH)
+  exif_date = None
+  for date_tag, offset_tag in _EXIF_DATE_TAGS:
+    result = parse_exif_date(pick(date_tag), pick(offset_tag))
+    if result is not None:
+      exif_date = result
+      break
+  return (
+      exif_date,
+      _exif_rational_to_float(aperture) if aperture is not None else None,
+      _exif_rational_to_float(shutter_speed) if shutter_speed is not None else None,
+      int(iso) if iso is not None else None,
+      _exif_rational_to_float(focal_length) if focal_length is not None else None,
+      _exif_str(ifd0.get(_EXIF_MAKE)), _exif_str(ifd0.get(_EXIF_MODEL)),
+      _exif_str(pick(_EXIF_LENS_MODEL)))
+
+
 def read_exif_date_from_path(filepath):
   try:
     with Image.open(filepath) as img:
@@ -242,7 +309,8 @@ def read_image_metadata(filepath):
   image has no EXIF, or lacks that specific tag. RAW files get their real dimensions from LibRaw
   (see read_raw_size), not Pillow's IFD0 thumbnail -- but camera metadata still comes from Pillow's
   EXIF parse (tickets 083/111/156; same reason exif_date already works for RAW: the EXIF header
-  parses even when the image data does not).
+  parses even when the image data does not). A RAW file Pillow cannot open at all (ticket 161: a
+  Pentax PEF) falls back to read_exif_from_tiff, so its EXIF is read from the TIFF IFDs instead.
   """
   mime_type = width = height = exif_date = aperture = shutter_speed = iso = None
   focal_length = camera_make = camera_model = lens_model = None
@@ -256,6 +324,9 @@ def read_image_metadata(filepath):
   except Exception as e:
     logging.warning("Could not decode image %s: %s", filepath, e)
     mime_type, _ = mimetypes.guess_type(filepath)
+    if is_raw(filepath):
+      (exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,
+       lens_model) = read_exif_from_tiff(filepath)
   if is_raw(filepath):
     raw_size = read_raw_size(filepath)
     if raw_size is not None:
