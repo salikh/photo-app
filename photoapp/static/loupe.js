@@ -549,10 +549,13 @@ function formatShutterSpeed(s) {
   return s >= 1 ? (Math.round(s * 10) / 10) + 's' : '1/' + Math.round(1 / s) + 's';
 }
 
-function formatFocalLength(mm) {
-  if (mm == null) return null;
-  const r = Math.round(mm);
-  return r + 'mm';
+// Ticket 170/172: the real focal length, with its 35mm full-frame equivalent in parentheses when
+// the camera recorded one, e.g. "35mm (52mm)".
+function formatFocalLength(mm, mm35) {
+  const real = mm == null ? null : Math.round(mm) + 'mm';
+  const equiv = mm35 == null ? null : Math.round(mm35) + 'mm';
+  if (real && equiv) return real + ' (' + equiv + ')';
+  return real || equiv;
 }
 
 // Corporate noise words dropped from a camera Make before it is shown (ticket 168), so a Make of
@@ -586,7 +589,7 @@ function formatCamera(make, model) {
 // exif_date, one line, omitting whatever's absent.
 function cameraMetaText(f) {
   const parts = [formatCamera(f.camera_make, f.camera_model), f.lens_model,
-                  formatFocalLength(f.focal_length),
+                  formatFocalLength(f.focal_length, f.focal_length_35mm),
                   formatAperture(f.aperture), formatShutterSpeed(f.shutter_speed),
                   f.iso != null ? 'ISO ' + Math.round(f.iso) : null, f.exif_date]
       .filter((p) => p != null);
