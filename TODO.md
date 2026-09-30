@@ -8,17 +8,27 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* Ticket 168 (Files-pane camera-make dedup) is done — see `STATUS.md`.
-Epic 164 (Pentax lens type, 165-167), epic 160 (PEF support, 161-163), epic 156 (lens metadata,
-157-159), the ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107),
-epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-155 and tickets 108-115, 117-124, 127,
-128 and 130 are done (see `STATUS.md`).
+Epic 169 (35mm-equivalent focal length), user request 2026-09-30:
+
+- [ ] [169](docs/tickets/169.md) Epic: show `NNmm (MMmm)` in the Files pane — new `focal_length_35mm`
+      field/column from EXIF 0xA405
+- [ ] [170](docs/tickets/170.md) `fileinfo` extraction (Pillow + TIFF fallback), `files.
+      focal_length_35mm` migration, `scan`/`library`/`catalog` wiring
+- [ ] [171](docs/tickets/171.md) Cheap `read_focal_length_35mm` + `record_lacks_focal_length_35mm` scan patch so
+      existing rows fill without a full RAW re-read
+- [ ] [172](docs/tickets/172.md) Files-pane `formatFocalLength(mm, mm35)` → `35mm (52mm)`
+
+Everything else — ticket 168 (Files-pane camera-make dedup), epic 164 (Pentax lens type, 165-167),
+epic 160 (PEF support, 161-163), epic 156 (lens metadata, 157-159), the ten build-order epics, v1
+filtering, every cross-cutting ticket, epic 102 (103-107), epic 131 (132-138), epic 144 (145-148),
+tickets 139-143, 149-155 and tickets 108-115, 117-124, 127, 128 and 130 — is done (see
+`STATUS.md`).
 
 ## Restart notes
 
-- No work in progress, no open tickets. Ticket 168 (Files-pane camera-make dedup) is the most
-  recent completed work; see `STATUS.md` for that and everything before it. New requests should be
-  filed as tickets in `docs/tickets/NNN.md` first.
+- Work in progress: epic 169 (35mm-equivalent focal length), tickets 170-172 open. Ticket 168
+  (Files-pane camera-make dedup) is the most recent completed work; see `STATUS.md` for that and
+  everything before it. New requests should be filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
