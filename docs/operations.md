@@ -143,23 +143,28 @@ one step:
 N Photos. Nothing is logged to the activity log for a pure sync (nothing actually changed, so
 there is nothing to undo) — only the sidecar bytes and the `conflict` flag change.
 
-## Backfilling camera metadata (aperture, shutter speed, ISO)
+## Backfilling EXIF metadata (date, camera, lens)
 
 As of ticket 083, every scan reads a file's EXIF for aperture, shutter speed and ISO alongside the
-date it already read. A file scanned *before* that ticket won't have them until it changes and gets
-rescanned — to fill them in for the whole library without waiting for that or forcing a full
-rescan (scanning is I/O-latency bound and slow, see "Scanning the library" above), run:
+date it already read (focal length, camera make/model and the lens followed in tickets 111/156). A
+file scanned *before* one of those won't have the new fields until it changes and gets rescanned —
+to fill them in for the whole library without waiting for that or forcing a full rescan (scanning
+is I/O-latency bound and slow, see "Scanning the library" above), run:
 
     python -m photoapp.backfill_exif
 
-Read-only on the library: opens each file just far enough to read its EXIF header, no hashing, no
-grouping, no thumbnail work. Only touches files with none of the three fields already set, so it's
-safe and cheap to rerun (`--backfill_limit=N` restricts a run to N files for a quick check).
+Read-only on the library: opens each file just far enough to read its EXIF, no hashing, no grouping,
+no thumbnail work. It writes the whole EXIF set (`exif_date`, `aperture`, `shutter_speed`, `iso`,
+`focal_length`, `camera_make`, `camera_model`, `lens_model`), so it also fills a Pentax PEF, whose
+EXIF Pillow cannot read and ticket 161 reads from the TIFF IFDs instead. Only touches files with no
+camera metadata already, so it's safe and cheap to rerun (`--backfill_limit=N` restricts a run to N
+files for a quick check).
 
-Focal length and camera make/model (ticket 111) and the lens used (ticket 156) are backfilled instead
-by the scan itself: with the default `--write_metadata_json`, adding a new field to
-`photoapp/metacache.py`'s `REQUIRED_KEYS` makes the next scan reprocess every directory whose
-`index.json` predates it and re-read just those files. No separate command is needed for them.
+A scan fills these fields itself too: with the default `--write_metadata_json`, adding a new field
+to `photoapp/metacache.py`'s `REQUIRED_KEYS` makes the next scan reprocess every directory whose
+`index.json` predates it and re-read just those files; ticket 162's stale-record rule does the same
+for a PEF record written before ticket 161's fallback existed. So a scan alone is enough if you
+don't mind waiting for it.
 
 ## Comparing against another copy of the library
 

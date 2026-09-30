@@ -8,6 +8,7 @@ from photoapp import backfill_exif
 from photoapp import db
 from photoapp import scan
 from tests.conftest import make_jpeg
+from tests.conftest import write_synthetic_pef
 
 
 def make_exif_jpeg(path, aperture=2.8, shutter=(1, 250), iso=400, size=(30, 20)):
@@ -69,6 +70,29 @@ def test_backfill_does_not_touch_already_populated_files(conn, settings):
 
   updated, unchanged, errors = backfill_exif.backfill(conn, d)
   assert (updated, unchanged, errors) == (0, 0, 0)   # nothing needed backfilling
+
+
+def test_backfill_fills_pef_exif_via_the_tiff_fallback(conn, settings):
+  # ticket 163: a PEF (Pillow cannot open it) is backfilled from ticket 161's TIFF IFD fallback,
+  # including the date/camera/lens fields the old camera-trio-only backfill never wrote.
+  d = settings.pictures_dir
+  write_synthetic_pef(os.path.join(d, "a.PEF"))
+  scan.scan(conn, d)
+  conn.execute(
+      "UPDATE files SET exif_date = NULL, aperture = NULL, shutter_speed = NULL, iso = NULL,"
+      " focal_length = NULL, camera_make = NULL, camera_model = NULL, lens_model = NULL")
+  conn.commit()
+
+  updated, unchanged, errors = backfill_exif.backfill(conn, d)
+  assert (updated, unchanged, errors) == (1, 0, 0)
+  row = conn.execute(
+      "SELECT exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,"
+      " lens_model FROM files WHERE path = 'a.PEF'").fetchone()
+  assert row["exif_date"] == "2008-02-16 18:29:00"
+  assert (row["aperture"], row["shutter_speed"], row["iso"]) == (4.5, 0.125, 200)
+  assert (row["focal_length"], row["camera_make"], row["camera_model"]) == (
+      43.0, "PENTAX Corporation", "PENTAX *ist DL")
+  assert row["lens_model"] == "smc PENTAX-DA 18-55mm"
 
 
 def test_backfill_respects_limit(conn, settings):
