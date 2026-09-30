@@ -59,7 +59,9 @@ _EXIF_ISO = 0x8827
 
 # Ticket 111: focal length (FocalLength, Exif sub-IFD) and camera make/model (Make/Model, IFD0).
 # Ticket 156 adds LensModel (Exif sub-IFD) -- the lens used with the picture.
+# Ticket 170 adds FocalLengthIn35mmFilm (Exif sub-IFD) -- the full-frame-equivalent focal length.
 _EXIF_FOCAL_LENGTH = 0x920A
+_EXIF_FOCAL_LENGTH_35MM = 0xA405
 _EXIF_MAKE = 0x010F
 _EXIF_MODEL = 0x0110
 _EXIF_LENS_MODEL = 0xA434
@@ -190,25 +192,29 @@ def read_camera_metadata(img):
 
 
 def read_lens_metadata(img):
-  """Return (focal_length, camera_make, camera_model, lens_model) of an open PIL image.
+  """Return (focal_length, camera_make, camera_model, lens_model, focal_length_35mm) of an open PIL
+  image.
 
   focal_length is in millimetres (a float, from the EXIF FocalLength rational in the Exif
   sub-IFD); camera_make/model are the Make/Model strings from IFD0; lens_model is the LensModel
-  string (ticket 156) from the Exif sub-IFD, the lens used with the picture. Any of the four is
-  None if that tag is absent; all four are None if there is no EXIF at all. Works for RAW files
-  for the same reason read_camera_metadata does (ticket 111)."""
+  string (ticket 156) from the Exif sub-IFD, the lens used with the picture; focal_length_35mm is
+  the FocalLengthIn35mmFilm integer (ticket 170), the full-frame-equivalent focal length. Any of
+  the five is None if that tag is absent; all five are None if there is no EXIF at all. Works for
+  RAW files for the same reason read_camera_metadata does (ticket 111)."""
   try:
     exif = img.getexif()
     if not exif:
-      return None, None, None, None
+      return None, None, None, None, None
     sub_ifd = exif.get_ifd(_EXIF_IFD_POINTER)
   except Exception as e:
     logging.vlog(3, "Could not read EXIF: %s", e)
-    return None, None, None, None
+    return None, None, None, None, None
   focal_length = sub_ifd.get(_EXIF_FOCAL_LENGTH)
+  focal_length_35mm = sub_ifd.get(_EXIF_FOCAL_LENGTH_35MM)
   return (_exif_rational_to_float(focal_length) if focal_length is not None else None,
           _exif_str(exif.get(_EXIF_MAKE)), _exif_str(exif.get(_EXIF_MODEL)),
-          _exif_str(sub_ifd.get(_EXIF_LENS_MODEL, exif.get(_EXIF_LENS_MODEL))))
+          _exif_str(sub_ifd.get(_EXIF_LENS_MODEL, exif.get(_EXIF_LENS_MODEL))),
+          int(focal_length_35mm) if focal_length_35mm is not None else None)
 
 
 def _read_tiff_ifd(f, offset, byteorder):
@@ -294,18 +300,36 @@ def read_pentax_lens(filepath):
   return pentax_lens.decode(*code) if code is not None else None
 
 
+def read_focal_length_35mm(filepath):
+  """The 35mm full-frame-equivalent focal length (EXIF FocalLengthIn35mmFilm, 0xA405), or None.
+
+  A cheap EXIF-only read -- no RAW decode or hashing -- for the scan's cache patch (ticket 171):
+  Pillow for a file it can open, read_exif_from_tiff for a PEF (which Pillow cannot). The value is
+  an integer number of millimetres.
+  """
+  try:
+    with Image.open(filepath) as img:
+      value = img.getexif().get_ifd(_EXIF_IFD_POINTER).get(_EXIF_FOCAL_LENGTH_35MM)
+      return int(value) if value is not None else None
+  except Exception as e:
+    logging.vlog(3, "Could not read 35mm focal length from %s: %s", filepath, e)
+  if is_raw(filepath):
+    return read_exif_from_tiff(filepath)[8]   # focal_length_35mm is the last of the nine
+  return None
+
+
 def read_exif_from_tiff(filepath):
   """Fallback EXIF for a RAW file Pillow cannot open (ticket 161: Pentax PEF).
 
   Returns (exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,
-  lens_model) -- the same values read_exif_date/read_camera_metadata/read_lens_metadata give an
-  open PIL image, or all None if filepath is not a readable TIFF.
+  lens_model, focal_length_35mm) -- the same values read_exif_date/read_camera_metadata/
+  read_lens_metadata give an open PIL image, or all None if filepath is not a readable TIFF.
 
   A PEF is a Pentax-compressed TIFF: Pillow refuses to identify it (it cannot decode the pixel
   strip), but its EXIF lives in ordinary TIFF IFDs, so reading IFD0 and the Exif sub-IFD directly
   gets everything without touching the image data. Byte order comes from the file header (II/MM).
   """
-  none = (None,) * 8
+  none = (None,) * 9
   try:
     with open(filepath, "rb") as f:
       header = f.read(8)
@@ -334,6 +358,7 @@ def read_exif_from_tiff(filepath):
   shutter_speed = pick(_EXIF_EXPOSURE_TIME)
   iso = pick(_EXIF_ISO)
   focal_length = pick(_EXIF_FOCAL_LENGTH)
+  focal_length_35mm = pick(_EXIF_FOCAL_LENGTH_35MM)
   exif_date = None
   for date_tag, offset_tag in _EXIF_DATE_TAGS:
     result = parse_exif_date(pick(date_tag), pick(offset_tag))
@@ -347,7 +372,8 @@ def read_exif_from_tiff(filepath):
       int(iso) if iso is not None else None,
       _exif_rational_to_float(focal_length) if focal_length is not None else None,
       _exif_str(ifd0.get(_EXIF_MAKE)), _exif_str(ifd0.get(_EXIF_MODEL)),
-      _exif_str(pick(_EXIF_LENS_MODEL)))
+      _exif_str(pick(_EXIF_LENS_MODEL)),
+      int(focal_length_35mm) if focal_length_35mm is not None else None)
 
 
 def read_exif_date_from_path(filepath):
@@ -385,34 +411,34 @@ def read_raw_size(filepath):
 
 def read_image_metadata(filepath):
   """Return (mime_type, width, height, exif_date, aperture, shutter_speed, iso, focal_length,
-  camera_make, camera_model, lens_model) for filepath.
+  camera_make, camera_model, lens_model, focal_length_35mm) for filepath.
 
-  width/height/exif_date/aperture/shutter_speed/iso/focal_length/camera_make/camera_model/
-  lens_model are None, and mime_type falls back to a best-effort guess from the extension, when the
-  file cannot be decoded (e.g. RAW formats LibRaw does not know). Any EXIF field is also None if the
-  image has no EXIF, or lacks that specific tag. RAW files get their real dimensions from LibRaw
-  (see read_raw_size), not Pillow's IFD0 thumbnail -- but camera metadata still comes from Pillow's
-  EXIF parse (tickets 083/111/156; same reason exif_date already works for RAW: the EXIF header
-  parses even when the image data does not). A RAW file Pillow cannot open at all (ticket 161: a
-  Pentax PEF) falls back to read_exif_from_tiff, so its EXIF is read from the TIFF IFDs instead.
-  When the standard LensModel tag is absent (every Pentax file here), the lens is read from the
-  MakerNote's coded LensType and decoded with the vendored ExifTool table (ticket 166).
+  All but mime_type are None, and mime_type falls back to a best-effort guess from the extension,
+  when the file cannot be decoded (e.g. RAW formats LibRaw does not know). Any EXIF field is also
+  None if the image has no EXIF, or lacks that specific tag. RAW files get their real dimensions
+  from LibRaw (see read_raw_size), not Pillow's IFD0 thumbnail -- but camera metadata still comes
+  from Pillow's EXIF parse (tickets 083/111/156/170; same reason exif_date already works for RAW:
+  the EXIF header parses even when the image data does not). A RAW file Pillow cannot open at all
+  (ticket 161: a Pentax PEF) falls back to read_exif_from_tiff, so its EXIF is read from the TIFF
+  IFDs instead. When the standard LensModel tag is absent (every Pentax file here), the lens is read
+  from the MakerNote's coded LensType and decoded with the vendored ExifTool table (ticket 166).
   """
   mime_type = width = height = exif_date = aperture = shutter_speed = iso = None
-  focal_length = camera_make = camera_model = lens_model = None
+  focal_length = camera_make = camera_model = lens_model = focal_length_35mm = None
   try:
     with Image.open(filepath) as img:
       width, height = img.size
       mime_type = Image.MIME.get(img.format)
       exif_date = read_exif_date(img)
       aperture, shutter_speed, iso = read_camera_metadata(img)
-      focal_length, camera_make, camera_model, lens_model = read_lens_metadata(img)
+      focal_length, camera_make, camera_model, lens_model, focal_length_35mm = \
+          read_lens_metadata(img)
   except Exception as e:
     logging.warning("Could not decode image %s: %s", filepath, e)
     mime_type, _ = mimetypes.guess_type(filepath)
     if is_raw(filepath):
       (exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,
-       lens_model) = read_exif_from_tiff(filepath)
+       lens_model, focal_length_35mm) = read_exif_from_tiff(filepath)
   if is_raw(filepath):
     raw_size = read_raw_size(filepath)
     if raw_size is not None:
@@ -420,7 +446,7 @@ def read_image_metadata(filepath):
     if lens_model is None:
       lens_model = read_pentax_lens(filepath)
   return (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
-          focal_length, camera_make, camera_model, lens_model)
+          focal_length, camera_make, camera_model, lens_model, focal_length_35mm)
 
 
 def load_precomputed_hashes(db_path):

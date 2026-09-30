@@ -212,7 +212,7 @@ def test_catalog_metadata_json_fields_exif(tmp_path):
   # make_jpeg's images carry no real EXIF, so these come back None -- the point is the *keys* are
   # present (computed), unlike the dimensions group, which wasn't requested.
   assert set(record) >= {"exif_date", "aperture", "shutter_speed", "iso", "focal_length",
-                         "camera_make", "camera_model", "lens_model"}
+                         "camera_make", "camera_model", "lens_model", "focal_length_35mm"}
   assert "width" not in record
 
 

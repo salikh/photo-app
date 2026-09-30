@@ -54,7 +54,7 @@ is a tree it doesn't own — writing into it is opt-in.
 `--metadata_json_fields=dimensions,exif` (empty by default, ticket 149) has `catalog.py` compute
 the rest of a `photoapp`-shaped record too, not just hash/mtime/bytesize: `dimensions`
 (`mime_type`/`width`/`height`) and/or `exif` (`exif_date`/`aperture`/`shutter_speed`/`iso`/
-`focal_length`/`camera_make`/`camera_model`/`lens_model`), via the same
+`focal_length`/`camera_make`/`camera_model`/`lens_model`/`focal_length_35mm`), via the same
 `photoapp.fileinfo.read_image_metadata`
 call `photoapp`'s own scanner uses — both groups come from that one decode, so asking for either
 costs the same as asking for both; the flag only controls which fields land in the cache. Only

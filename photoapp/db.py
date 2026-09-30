@@ -277,6 +277,13 @@ MIGRATIONS = [
     -- scan reprocess directories whose cache predates it (ticket 111's own mechanism).
     ALTER TABLE files ADD COLUMN lens_model TEXT;
     """,
+    """
+    -- Ticket 170: the 35mm full-frame-equivalent focal length, from the EXIF
+    -- FocalLengthIn35mmFilm tag (0xA405, Exif sub-IFD), an integer number of millimetres.
+    -- NULL when the file has no EXIF or no such tag. Existing rows are filled by the cheap
+    -- focal_length_35mm probe on the next scan (tickets 169/171), not a forced RAW re-read.
+    ALTER TABLE files ADD COLUMN focal_length_35mm INTEGER;
+    """,
 ]
 
 

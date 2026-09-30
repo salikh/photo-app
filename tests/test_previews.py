@@ -36,7 +36,7 @@ def test_undecodable_raw_yields_no_size_no_preview_and_unsupported(tmp_path):
   assert previews.render(raw) is None
   with pytest.raises(thumbs.Unsupported):
     thumbs.render(raw, str(tmp_path / "o.jpg"), 300)
-  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens_model = \
+  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens_model, mm35 = \
       fileinfo.read_image_metadata(raw)
   assert (w, h) == (None, None) or (w, h) == (w, h)   # never raises
 
@@ -60,7 +60,7 @@ def test_camera_metadata_extracted_from_exif(tmp_path):
   sub[0x829A] = (1, 250)       # ExposureTime
   sub[0x8827] = 400            # ISOSpeedRatings
   img.save(jpg, exif=exif)
-  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens_model = \
+  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens_model, mm35 = \
       fileinfo.read_image_metadata(jpg)
   assert aperture == 2.8 and shutter_speed == 0.004 and iso == 400
 
@@ -76,18 +76,18 @@ def test_lens_metadata_extracted_from_exif(tmp_path):
   sub[0x920A] = (50, 1)            # FocalLength
   sub[0xA434] = "smc PENTAX-DA 35mm F2.4 AL"   # LensModel (ticket 156)
   img.save(jpg, exif=exif)
-  *_, focal, make, model, lens_model = fileinfo.read_image_metadata(jpg)
+  *_, focal, make, model, lens_model, mm35 = fileinfo.read_image_metadata(jpg)
   assert focal == 50.0 and make == "PENTAX" and model == "PENTAX K-5"
-  assert lens_model == "smc PENTAX-DA 35mm F2.4 AL"
+  assert lens_model == "smc PENTAX-DA 35mm F2.4 AL" and mm35 is None
 
 
 def test_camera_metadata_absent_without_exif(tmp_path):
   jpg = str(tmp_path / "a.jpg")
   make_jpeg(jpg, size=(30, 20))   # no EXIF at all
-  *_, aperture, shutter_speed, iso, focal, make, model, lens_model = \
+  *_, aperture, shutter_speed, iso, focal, make, model, lens_model, mm35 = \
       fileinfo.read_image_metadata(jpg)
   assert (aperture, shutter_speed, iso) == (None, None, None)
-  assert (focal, make, model, lens_model) == (None, None, None, None)
+  assert (focal, make, model, lens_model, mm35) == (None, None, None, None, None)
 
 
 def test_pef_exif_fallback_when_pillow_cannot_open(tmp_path, monkeypatch):
@@ -98,7 +98,7 @@ def test_pef_exif_fallback_when_pillow_cannot_open(tmp_path, monkeypatch):
   def cannot_open(*_args, **_kwargs):
     raise ValueError("cannot identify image file")
   monkeypatch.setattr(Image, "open", cannot_open)
-  _, _, _, date, aperture, shutter_speed, iso, focal, make, model, lens = \
+  _, _, _, date, aperture, shutter_speed, iso, focal, make, model, lens, mm35 = \
       fileinfo.read_image_metadata(pef)
   assert date == "2008-02-16 18:29:00"
   assert (aperture, shutter_speed, iso) == (4.5, 0.125, 200)
@@ -112,8 +112,8 @@ def test_pef_exif_fallback_reads_the_tiff_directly(tmp_path):
   write_synthetic_pef(pef)
   assert fileinfo.read_exif_from_tiff(pef) == (
       "2008-02-16 18:29:00", 4.5, 0.125, 200, 43.0, "PENTAX Corporation", "PENTAX *ist DL",
-      "smc PENTAX-DA 18-55mm")
-  assert fileinfo.read_exif_from_tiff(str(tmp_path / "nope.PEF")) == (None,) * 8
+      "smc PENTAX-DA 18-55mm", None)
+  assert fileinfo.read_exif_from_tiff(str(tmp_path / "nope.PEF")) == (None,) * 9
 
 
 def test_read_pentax_lens_is_none_for_a_non_pentax_file(tmp_path):
@@ -130,7 +130,7 @@ REAL_PEF = os.environ.get("REAL_PEF")
                     reason="REAL_PEF not set")
 def test_real_pef_exif_fallback():
   # ticket 161: a real PEF (big-endian, and one Pillow cannot open at all) still yields its EXIF.
-  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens = \
+  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens, mm35 = \
       fileinfo.read_image_metadata(REAL_PEF)
   assert mime == "image/x-raw" and w and h
   assert date is not None and make is not None
@@ -139,6 +139,7 @@ def test_real_pef_exif_fallback():
   assert iso is None or isinstance(iso, int)
   # ticket 166: the lens comes from the MakerNote LensType (no standard LensModel in a PEF).
   assert fileinfo.read_pentax_lens(REAL_PEF) == "smc PENTAX-DA 18-55mm F3.5-5.6 AL"
+  assert mm35 == 64   # ticket 170: the 35mm-equivalent (exiftool agrees)
 
 
 REAL_DNG = os.environ.get("REAL_DNG")
@@ -159,7 +160,8 @@ def test_real_dng_pentax_lens_from_makernote():
   # ticket 166: a DNG with no standard LensModel -- the lens is the MakerNote LensType code,
   # decoded with the vendored ExifTool table, in read_image_metadata and on its own.
   assert fileinfo.read_pentax_lens(REAL_DNG) == "smc PENTAX-DA 35mm F2.4 AL"
-  assert fileinfo.read_image_metadata(REAL_DNG)[-1] == "smc PENTAX-DA 35mm F2.4 AL"
+  assert fileinfo.read_image_metadata(REAL_DNG)[-2] == "smc PENTAX-DA 35mm F2.4 AL"
+  assert fileinfo.read_image_metadata(REAL_DNG)[-1] == 52   # ticket 170
 
 
 @pytest.mark.skipif(not REAL_DNG or not os.path.exists(REAL_DNG or ""),
@@ -169,7 +171,7 @@ def test_real_dng_camera_metadata(tmp_path):
   # representation _exif_rational_to_float needs to handle (see test_camera_metadata_extracted...
   # above for that one). A real RAW is expected to have at least ISO; aperture/shutter_speed
   # depend on the specific file, so only check the extraction does not raise and ISO is present.
-  *_, aperture, shutter_speed, iso, focal, make, model, lens_model = \
+  *_, aperture, shutter_speed, iso, focal, make, model, lens_model, mm35 = \
       fileinfo.read_image_metadata(REAL_DNG)
   assert iso is None or isinstance(iso, int)
   assert aperture is None or isinstance(aperture, float)
@@ -180,6 +182,8 @@ def test_real_dng_camera_metadata(tmp_path):
   assert model is None or isinstance(model, str)
   # ticket 156: LensModel is read from that same parse (often absent on a manual/unknown lens).
   assert lens_model is None or isinstance(lens_model, str)
+  # ticket 170: the 35mm-equivalent focal length, an integer.
+  assert mm35 is None or isinstance(mm35, int)
 
 
 def test_migration_forces_reread_of_raw_rows(tmp_path):

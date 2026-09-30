@@ -38,7 +38,7 @@ flags.DEFINE_integer("report_seconds", 30, "How often to log progress.")
 
 # The EXIF columns this command writes, in read_image_metadata's tail order.
 EXIF_COLUMNS = ("exif_date", "aperture", "shutter_speed", "iso", "focal_length",
-                "camera_make", "camera_model", "lens_model")
+                "camera_make", "camera_model", "lens_model", "focal_length_35mm")
 
 
 def find_unbackfilled(conn, limit=None):
@@ -62,13 +62,14 @@ def backfill(conn, pictures_dir, limit=None, report_seconds=30):
     path = os.path.join(pictures_dir, row["path"])
     try:
       (mime_type, width, height, exif_date, aperture, shutter_speed, iso, focal_length,
-       camera_make, camera_model, lens_model) = fileinfo.read_image_metadata(path)
+       camera_make, camera_model, lens_model, focal_length_35mm) = \
+          fileinfo.read_image_metadata(path)
     except Exception as e:
       logging.warning("%s: could not read EXIF: %s", row["path"], e)
       errors += 1
       continue
     values = (exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,
-              lens_model)
+              lens_model, focal_length_35mm)
     if all(v is None for v in values):
       unchanged += 1
       logging.vlog(5, "%s: no EXIF metadata in file", row["path"])

@@ -73,7 +73,8 @@ flags.DEFINE_list(
     "metadata_json_fields", [],
     "Extra metadata field groups to also read/write in the --write_metadata_json cache, on top "
     "of hash/mtime/bytesize (ticket 141): 'dimensions' (mime_type/width/height) and/or 'exif' "
-    "(exif_date/aperture/shutter_speed/iso/focal_length/camera_make/camera_model/lens_model). "
+    "(exif_date/aperture/shutter_speed/iso/focal_length/camera_make/camera_model/lens_model/"
+    "focal_length_35mm). "
     "Both groups "
     "come from one photoapp.fileinfo.read_image_metadata() decode per file (the same call "
     "photoapp's own scanner makes) -- requesting either costs the same as requesting both; the "
@@ -95,7 +96,7 @@ _HASH_CHUNK_SIZE = 1024 * 1024
 # --metadata_json_fields groups.
 _DIMENSION_KEYS = ("mime_type", "width", "height")
 _EXIF_KEYS = ("exif_date", "aperture", "shutter_speed", "iso", "focal_length", "camera_make",
-              "camera_model", "lens_model")
+              "camera_model", "lens_model", "focal_length_35mm")
 _FIELD_GROUPS = {"dimensions": _DIMENSION_KEYS, "exif": _EXIF_KEYS}
 
 
@@ -111,11 +112,11 @@ def _read_extra_metadata(filepath, extra_fields):
   expand_metadata_fields) were requested -- one photoapp.fileinfo.read_image_metadata() decode
   regardless of which subset is asked for."""
   (mime_type, width, height, exif_date, aperture, shutter_speed, iso, focal_length, camera_make,
-   camera_model, lens_model) = fileinfo.read_image_metadata(filepath)
+   camera_model, lens_model, focal_length_35mm) = fileinfo.read_image_metadata(filepath)
   values = dict(zip(
       _DIMENSION_KEYS + _EXIF_KEYS,
       (mime_type, width, height, exif_date, aperture, shutter_speed, iso, focal_length,
-       camera_make, camera_model, lens_model)))
+       camera_make, camera_model, lens_model, focal_length_35mm)))
   return {k: v for k, v in values.items() if k in extra_fields}
 
 
