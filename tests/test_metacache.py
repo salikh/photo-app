@@ -262,7 +262,7 @@ def test_lensless_raw_record_is_patched_by_a_cheap_makernote_probe(conn, setting
   d = settings.pictures_dir
   Image.new("RGB", (30, 20)).save(os.path.join(d, "a.DNG"), format="JPEG")  # content irrelevant
   raw_md = ("image/x-adobe-dng", 100, 50, "2020-01-01 00:00:00", 2.8, 0.01, 100, 35.0,
-            "PENTAX", "PENTAX K-5", None)
+            "PENTAX", "PENTAX K-5", None, 52)
   monkeypatch.setattr(fileinfo, "read_image_metadata", lambda p_: raw_md)
   scan.scan(conn, d, metadata_cache=True)
   rec = read_index(d)["files"]["a.DNG"]
@@ -279,3 +279,36 @@ def test_lensless_raw_record_is_patched_by_a_cheap_makernote_probe(conn, setting
   assert probes == [os.path.join(d, "a.DNG")]      # only the cheap MakerNote probe ran
   assert files(conn)["a.DNG"]["lens_model"] == "smc PENTAX-DA 35mm F2.4 AL"
   assert read_index(d)["files"]["a.DNG"]["lens_model"] == "smc PENTAX-DA 35mm F2.4 AL"
+
+
+def test_record_lacks_focal_length_35mm_signature():
+  # ticket 171: only a *missing* key counts, never a present None (a camera with no 0xA405 tag is
+  # complete once the key exists and must not be probed on every later scan).
+  assert metacache.record_lacks_focal_length_35mm({})
+  assert metacache.record_lacks_focal_length_35mm({"focal_length": 35.0})
+  assert not metacache.record_lacks_focal_length_35mm({"focal_length_35mm": None})
+  assert not metacache.record_lacks_focal_length_35mm({"focal_length_35mm": 52})
+
+
+def test_missing_focal_length_35mm_key_is_patched_cheaply(conn, settings, monkeypatch):
+  # ticket 171: a record from before ticket 170 is filled from the EXIF-only reader; a full
+  # read_image_metadata (which for a RAW re-opens it through LibRaw) must never run.
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "a.jpg"))
+  scan.scan(conn, d, metadata_cache=True)
+  index = read_index(d)
+  del index["files"]["a.jpg"]["focal_length_35mm"]   # as written before ticket 170
+  with open(os.path.join(d, "index.json"), "w") as f:
+    json.dump(index, f)
+  conn.execute("DELETE FROM dir_mtimes")
+  conn.commit()
+
+  def no_full_read(p_):
+    raise AssertionError("full metadata re-read")
+  monkeypatch.setattr(fileinfo, "read_image_metadata", no_full_read)
+  probes = []
+  monkeypatch.setattr(fileinfo, "read_focal_length_35mm", lambda p_: probes.append(p_) or 52)
+  scan.scan(conn, d, metadata_cache=True)
+  assert probes == [os.path.join(d, "a.jpg")]      # only the cheap EXIF probe ran
+  assert files(conn)["a.jpg"]["focal_length_35mm"] == 52
+  assert read_index(d)["files"]["a.jpg"]["focal_length_35mm"] == 52

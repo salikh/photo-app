@@ -110,9 +110,20 @@ def record_lacks_lens(record):
           and record.get("mime_type") in _RAW_MIMES)
 
 
+def record_lacks_focal_length_35mm(record):
+  """True if a cache record predates the ticket 170 focal_length_35mm key (ticket 171).
+
+  Only a *missing* key counts, never a present None: a camera that has no FocalLengthIn35mmFilm tag
+  is complete once the key exists, so it is not probed again on every later scan. ``_scan_files``
+  patches the key with a cheap EXIF-only read (fileinfo.read_focal_length_35mm) rather than a full
+  read_image_metadata, which for a RAW would re-open it through LibRaw.
+  """
+  return "focal_length_35mm" not in record
+
+
 def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
-  """True if any of names lacks a complete record in dirpath's index.json, or has a stale/lens-less
-  one.
+  """True if any of names lacks a complete record in dirpath's index.json, or has a stale/lens-less/
+  pre-focal_length_35mm one.
 
   A directory with no image names returns False (nothing to cache). If it has image names but no
   index.json at all, every one of them "lacks" a record, so this returns True and the directory is
@@ -124,7 +135,8 @@ def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
   records = load_records(dirpath)
   return any(not has_all_keys(records.get(n, {}), required_keys)
              or record_is_stale(records.get(n, {}))
-             or record_lacks_lens(records.get(n, {})) for n in names)
+             or record_lacks_lens(records.get(n, {}))
+             or record_lacks_focal_length_35mm(records.get(n, {})) for n in names)
 
 
 def write_record(dirpath, name, record):
