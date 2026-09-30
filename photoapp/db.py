@@ -269,6 +269,14 @@ MIGRATIONS = [
     -- written to sidecars (it is a physical-file rendering fix, like crop/raw settings).
     ALTER TABLE files ADD COLUMN rotation INTEGER;
     """,
+    """
+    -- Ticket 156: the lens used with the picture, from the EXIF LensModel tag (Exif sub-IFD),
+    -- alongside ticket 111's focal length / camera make/model. NULL when the file has no EXIF, or
+    -- no LensModel tag. Existing rows are backfilled by a scan (or the metadata JSON cache)
+    -- re-reading the file's EXIF -- adding lens_model to metacache.REQUIRED_KEYS makes the next
+    -- scan reprocess directories whose cache predates it (ticket 111's own mechanism).
+    ALTER TABLE files ADD COLUMN lens_model TEXT;
+    """,
 ]
 
 

@@ -2,6 +2,8 @@ import json
 import os
 import time
 
+from PIL import Image
+
 from photoapp import fileinfo
 from photoapp import metacache
 from photoapp import scan
@@ -122,6 +124,41 @@ def test_record_missing_a_new_key_is_backfilled_by_rereading_only_it(conn, setti
   assert calls == [os.path.join(d, "a.jpg")]       # only the incomplete record is re-read
   assert p.files_processed == 1
   assert metacache.has_all_keys(read_index(d)["files"]["a.jpg"])
+
+
+def test_lens_model_is_stored_and_written_to_the_cache(conn, settings):
+  # ticket 156: the EXIF LensModel tag lands in files.lens_model and in <name>.json/index.json.
+  path = os.path.join(settings.pictures_dir, "a.jpg")
+  img = Image.new("RGB", (30, 20))
+  exif = img.getexif()
+  exif.get_ifd(0x8769)[0xA434] = "smc PENTAX-DA 35mm F2.4 AL"   # LensModel
+  img.save(path, exif=exif)
+  scan.scan(conn, settings.pictures_dir, metadata_cache=True)
+  assert files(conn)["a.jpg"]["lens_model"] == "smc PENTAX-DA 35mm F2.4 AL"
+  assert read_index(settings.pictures_dir)["files"]["a.jpg"]["lens_model"] == \
+      "smc PENTAX-DA 35mm F2.4 AL"
+
+
+def test_record_missing_lens_model_is_backfilled(conn, settings, monkeypatch):
+  # ticket 156: a record written before lens_model existed is re-read once for just that field.
+  make_jpeg(os.path.join(settings.pictures_dir, "a.jpg"))
+  scan.scan(conn, settings.pictures_dir, metadata_cache=True)
+  d = settings.pictures_dir
+  index = read_index(d)
+  del index["files"]["a.jpg"]["lens_model"]
+  with open(os.path.join(d, "index.json"), "w") as f:
+    json.dump(index, f)
+  os.utime(d, (time.time() + 5, time.time() + 5))
+  conn.execute("DELETE FROM dir_mtimes")
+  conn.commit()
+  calls = []
+  real = fileinfo.read_image_metadata
+  monkeypatch.setattr(fileinfo, "read_image_metadata",
+                      lambda p_: calls.append(p_) or real(p_))
+  p = scan.scan(conn, settings.pictures_dir, metadata_cache=True)
+  assert calls == [os.path.join(d, "a.jpg")]
+  assert p.files_processed == 1
+  assert "lens_model" in read_index(d)["files"]["a.jpg"]
 
 
 def test_scan_with_cache_on_over_a_database_scanned_with_it_off(conn, settings):

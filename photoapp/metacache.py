@@ -16,9 +16,9 @@ from.
 The validity rule is the same one the in-database ``dir_mtimes`` cache uses: a
 record is reused only when its recorded mtime *and* bytesize match the file on
 disk. A record from an older cache that lacks a key added later (for example
-``focal_length``) is backfilled by re-reading that file's EXIF; the directory is
-then reprocessed even though its own mtime is unchanged (see
-``index_lacks_keys``).
+``focal_length``, or ticket 156's ``lens_model``) is backfilled by re-reading
+that file's EXIF; the directory is then reprocessed even though its own mtime is
+unchanged (see ``index_lacks_keys``).
 
 Writing ``index.json`` (or a per-file JSON) changes the directory's mtime, which
 would make the next scan think the directory changed. ``write_index`` re-stats
@@ -40,7 +40,7 @@ INDEX_JSON_NAME = "index.json"
 REQUIRED_KEYS = (
     "mime_type", "width", "height", "hash", "bytesize", "exif_date",
     "aperture", "shutter_speed", "iso", "focal_length", "camera_make",
-    "camera_model",
+    "camera_model", "lens_model",
 )
 RECORD_KEYS = REQUIRED_KEYS + ("mtime",)
 

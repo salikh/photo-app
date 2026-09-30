@@ -60,8 +60,8 @@ def _upsert_file(conn, rel_path, record):
   conn.execute(
       "INSERT INTO files (path, hash, mime_type, width, height, bytesize,"
       " mtime, exif_date, aperture, shutter_speed, iso, focal_length,"
-      " camera_make, camera_model, missing) VALUES"
-      " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
+      " camera_make, camera_model, lens_model, missing) VALUES"
+      " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
       "ON CONFLICT(path) DO UPDATE SET hash = excluded.hash,"
       " mime_type = excluded.mime_type, width = excluded.width,"
       " height = excluded.height, bytesize = excluded.bytesize,"
@@ -69,12 +69,13 @@ def _upsert_file(conn, rel_path, record):
       " aperture = excluded.aperture, shutter_speed = excluded.shutter_speed,"
       " iso = excluded.iso, focal_length = excluded.focal_length,"
       " camera_make = excluded.camera_make, camera_model = excluded.camera_model,"
+      " lens_model = excluded.lens_model,"
       " missing = 0",
       (rel_path, record["hash"], record["mime_type"], record["width"],
        record["height"], record["bytesize"], record["mtime"],
        record["exif_date"], record["aperture"], record["shutter_speed"],
        record["iso"], record["focal_length"], record["camera_make"],
-       record["camera_model"]))
+       record["camera_model"], record["lens_model"]))
 
 
 def import_single_file(conn, pictures_dir, rel_path, hashes=None):
@@ -85,14 +86,14 @@ def import_single_file(conn, pictures_dir, rel_path, hashes=None):
   full = os.path.join(pictures_dir, rel_path)
   st = os.stat(full)
   (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
-   focal_length, camera_make, camera_model) = fileinfo.read_image_metadata(full)
+   focal_length, camera_make, camera_model, lens_model) = fileinfo.read_image_metadata(full)
   file_hash = fileinfo.get_or_compute_hash(full, rel_path, st.st_mtime, hashes)
   _upsert_file(conn, rel_path, {
       "hash": file_hash, "mime_type": mime_type, "width": width, "height": height,
       "bytesize": st.st_size, "mtime": st.st_mtime, "exif_date": exif_date,
       "aperture": aperture, "shutter_speed": shutter_speed, "iso": iso,
       "focal_length": focal_length, "camera_make": camera_make,
-      "camera_model": camera_model})
+      "camera_model": camera_model, "lens_model": lens_model})
   return conn.execute("SELECT id FROM files WHERE path = ?", (rel_path,)).fetchone()["id"]
 
 
@@ -142,11 +143,12 @@ def _apply_move(conn, pictures_dir, thumbs_dir, file_id, old_path, new_path, rec
   conn.execute(
       "UPDATE files SET path = ?, hash = ?, mime_type = ?, width = ?, height = ?,"
       " bytesize = ?, mtime = ?, exif_date = ?, aperture = ?, shutter_speed = ?, iso = ?,"
-      " focal_length = ?, camera_make = ?, camera_model = ?, missing = 0 WHERE id = ?",
+      " focal_length = ?, camera_make = ?, camera_model = ?, lens_model = ?, missing = 0"
+      " WHERE id = ?",
       (new_path, record["hash"], record["mime_type"], record["width"], record["height"],
        record["bytesize"], record["mtime"], record["exif_date"], record["aperture"],
        record["shutter_speed"], record["iso"], record["focal_length"],
-       record["camera_make"], record["camera_model"], file_id))
+       record["camera_make"], record["camera_model"], record["lens_model"], file_id))
   moved = []
   if thumbs_dir:
     moved = thumbs.move_thumbnails(conn, thumbs_dir, file_id, old_path, new_path)
@@ -200,7 +202,7 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
         return name, rel_path, dict(cached), False
       # Valid but incomplete (a key added later), or no usable record: re-read the metadata.
       (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
-       focal_length, camera_make, camera_model) = fileinfo.read_image_metadata(filepath)
+       focal_length, camera_make, camera_model, lens_model) = fileinfo.read_image_metadata(filepath)
       file_hash = None
       if cache_valid and cached.get("hash") is not None:
         file_hash = cached["hash"]
@@ -217,13 +219,13 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
           "exif_date": exif_date, "aperture": aperture,
           "shutter_speed": shutter_speed, "iso": iso,
           "focal_length": focal_length, "camera_make": camera_make,
-          "camera_model": camera_model}, True
+          "camera_model": camera_model, "lens_model": lens_model}, True
 
     if (old is not None and old["mtime"] == st.st_mtime
         and old["bytesize"] == st.st_size and not old["missing"]):
       return None
     (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
-     focal_length, camera_make, camera_model) = fileinfo.read_image_metadata(filepath)
+     focal_length, camera_make, camera_model, lens_model) = fileinfo.read_image_metadata(filepath)
     file_hash = fileinfo.get_or_compute_hash(
         filepath, rel_path, st.st_mtime, hashes)
     logging.vlog(7, "scanned %s (%s, %dx%d)", rel_path, mime_type, width, height)
@@ -233,7 +235,7 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
         "exif_date": exif_date, "aperture": aperture,
         "shutter_speed": shutter_speed, "iso": iso,
         "focal_length": focal_length, "camera_make": camera_make,
-        "camera_model": camera_model}, True
+        "camera_model": camera_model, "lens_model": lens_model}, True
 
   results = [r for r in pool.map(work, filenames) if r is not None]
   # Ticket 128: a file at a path not yet known whose content uniquely matches one gone row is

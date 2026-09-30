@@ -54,9 +54,11 @@ _EXIF_EXPOSURE_TIME = 0x829A
 _EXIF_ISO = 0x8827
 
 # Ticket 111: focal length (FocalLength, Exif sub-IFD) and camera make/model (Make/Model, IFD0).
+# Ticket 156 adds LensModel (Exif sub-IFD) -- the lens used with the picture.
 _EXIF_FOCAL_LENGTH = 0x920A
 _EXIF_MAKE = 0x010F
 _EXIF_MODEL = 0x0110
+_EXIF_LENS_MODEL = 0xA434
 
 
 def hash_file(path):
@@ -176,23 +178,25 @@ def read_camera_metadata(img):
 
 
 def read_lens_metadata(img):
-  """Return (focal_length, camera_make, camera_model) of an open PIL image.
+  """Return (focal_length, camera_make, camera_model, lens_model) of an open PIL image.
 
   focal_length is in millimetres (a float, from the EXIF FocalLength rational in the Exif
-  sub-IFD); camera_make/model are the Make/Model strings from IFD0, stripped of padding. Any of
-  the three is None if that tag is absent; all three are None if there is no EXIF at all. Works
-  for RAW files for the same reason read_camera_metadata does (ticket 111)."""
+  sub-IFD); camera_make/model are the Make/Model strings from IFD0; lens_model is the LensModel
+  string (ticket 156) from the Exif sub-IFD, the lens used with the picture. Any of the four is
+  None if that tag is absent; all four are None if there is no EXIF at all. Works for RAW files
+  for the same reason read_camera_metadata does (ticket 111)."""
   try:
     exif = img.getexif()
     if not exif:
-      return None, None, None
+      return None, None, None, None
     sub_ifd = exif.get_ifd(_EXIF_IFD_POINTER)
   except Exception as e:
     logging.vlog(3, "Could not read EXIF: %s", e)
-    return None, None, None
+    return None, None, None, None
   focal_length = sub_ifd.get(_EXIF_FOCAL_LENGTH)
   return (_exif_rational_to_float(focal_length) if focal_length is not None else None,
-          _exif_str(exif.get(_EXIF_MAKE)), _exif_str(exif.get(_EXIF_MODEL)))
+          _exif_str(exif.get(_EXIF_MAKE)), _exif_str(exif.get(_EXIF_MODEL)),
+          _exif_str(sub_ifd.get(_EXIF_LENS_MODEL, exif.get(_EXIF_LENS_MODEL))))
 
 
 def read_exif_date_from_path(filepath):
@@ -230,25 +234,25 @@ def read_raw_size(filepath):
 
 def read_image_metadata(filepath):
   """Return (mime_type, width, height, exif_date, aperture, shutter_speed, iso, focal_length,
-  camera_make, camera_model) for filepath.
+  camera_make, camera_model, lens_model) for filepath.
 
-  width/height/exif_date/aperture/shutter_speed/iso/focal_length/camera_make/camera_model are
-  None, and mime_type falls back to a best-effort guess from the extension, when the file cannot
-  be decoded (e.g. RAW formats LibRaw does not know). Any EXIF field is also None if the image has
-  no EXIF, or lacks that specific tag. RAW files get their real dimensions from LibRaw (see
-  read_raw_size), not Pillow's IFD0 thumbnail -- but camera metadata still comes from Pillow's
-  EXIF parse (tickets 083/111; same reason exif_date already works for RAW: the EXIF header
+  width/height/exif_date/aperture/shutter_speed/iso/focal_length/camera_make/camera_model/
+  lens_model are None, and mime_type falls back to a best-effort guess from the extension, when the
+  file cannot be decoded (e.g. RAW formats LibRaw does not know). Any EXIF field is also None if the
+  image has no EXIF, or lacks that specific tag. RAW files get their real dimensions from LibRaw
+  (see read_raw_size), not Pillow's IFD0 thumbnail -- but camera metadata still comes from Pillow's
+  EXIF parse (tickets 083/111/156; same reason exif_date already works for RAW: the EXIF header
   parses even when the image data does not).
   """
   mime_type = width = height = exif_date = aperture = shutter_speed = iso = None
-  focal_length = camera_make = camera_model = None
+  focal_length = camera_make = camera_model = lens_model = None
   try:
     with Image.open(filepath) as img:
       width, height = img.size
       mime_type = Image.MIME.get(img.format)
       exif_date = read_exif_date(img)
       aperture, shutter_speed, iso = read_camera_metadata(img)
-      focal_length, camera_make, camera_model = read_lens_metadata(img)
+      focal_length, camera_make, camera_model, lens_model = read_lens_metadata(img)
   except Exception as e:
     logging.warning("Could not decode image %s: %s", filepath, e)
     mime_type, _ = mimetypes.guess_type(filepath)
@@ -257,7 +261,7 @@ def read_image_metadata(filepath):
     if raw_size is not None:
       width, height, mime_type = raw_size
   return (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
-          focal_length, camera_make, camera_model)
+          focal_length, camera_make, camera_model, lens_model)
 
 
 def load_precomputed_hashes(db_path):
