@@ -8,28 +8,24 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-Camera make display, user request 2026-09-30:
-
-- [ ] [168](docs/tickets/168.md) Files pane: drop the duplicated make, e.g. `PENTAX Corporation
-      PENTAX *ist DL` → `PENTAX *ist DL`, `OLYMPUS IMAGING CORP. u830` → `OLYMPUS u830`
-
-Everything else — epic 164 (Pentax lens type, 165-167), epic 160 (PEF support, 161-163), epic 156
-(lens metadata, 157-159), the ten build-order epics, v1 filtering, every cross-cutting ticket, epic
-102 (103-107), epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-155 and tickets
-108-115, 117-124, 127, 128 and 130 — is done (see `STATUS.md`).
+*No open tickets right now.* Ticket 168 (Files-pane camera-make dedup) is done — see `STATUS.md`.
+Epic 164 (Pentax lens type, 165-167), epic 160 (PEF support, 161-163), epic 156 (lens metadata,
+157-159), the ten build-order epics, v1 filtering, every cross-cutting ticket, epic 102 (103-107),
+epic 131 (132-138), epic 144 (145-148), tickets 139-143, 149-155 and tickets 108-115, 117-124, 127,
+128 and 130 are done (see `STATUS.md`).
 
 ## Restart notes
 
-- Work in progress: ticket 168 (Files-pane camera-make dedup), open. Epic 164 (Pentax lens type,
-  165-167) is the most recent completed work; see `STATUS.md` for that and everything before it.
-  New requests should be filed as tickets in `docs/tickets/NNN.md` first.
+- No work in progress, no open tickets. Ticket 168 (Files-pane camera-make dedup) is the most
+  recent completed work; see `STATUS.md` for that and everything before it. New requests should be
+  filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
   <paths>`, ending the message with the `Co-Authored-By` line. `jj config` for this repo raises
   `snapshot.max-new-file-size` to 2 MiB (the vendored `libraw.wasm` is 1.4 MiB).
 - Config: `./photos.toml` (gitignored, holds the `/zoo` paths; template `photos.example.toml`) is
   picked up by `./start.sh` and every `python -m photoapp...` run from the checkout; use
   `--config=none` to ignore it.
-- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 453 tests, ~1-2 min) and
+- Tests: `.venv/bin/python -m pytest tests/ --ignore=tests/e2e -q` (about 474 tests, ~1-2 min) and
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
   never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing. `REAL_PEF` is a real

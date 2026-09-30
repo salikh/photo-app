@@ -555,13 +555,31 @@ function formatFocalLength(mm) {
   return r + 'mm';
 }
 
-// Camera make + model, without repeating the make when the model already starts with it
-// (many cameras' Model is e.g. "PENTAX K-5", their Make "PENTAX").
+// Corporate noise words dropped from a camera Make before it is shown (ticket 168), so a Make of
+// "PENTAX Corporation"/"OLYMPUS IMAGING CORP." is just "PENTAX"/"OLYMPUS".
+const MAKE_NOISE_WORDS = new Set(
+  ['corporation', 'corp.', 'corp', 'inc.', 'inc', 'ltd.', 'ltd', 'co.', 'co', 'gmbh', 'company',
+   'imaging']);
+
+function canonicalMake(make) {
+  if (!make) return make;
+  const words = make.split(/\s+/).filter((w) => !MAKE_NOISE_WORDS.has(w.toLowerCase()));
+  return words.length ? words.join(' ') : make;
+}
+
+// Camera make + model, without repeating the make when the model already starts with it (many
+// cameras' Model is e.g. "PENTAX K-5", their Make "PENTAX"). Ticket 168: compare against the
+// canonical make too, so "PENTAX Corporation" + "PENTAX *ist DL" shows only "PENTAX *ist DL" and
+// "OLYMPUS IMAGING CORP." + "u830" shows "OLYMPUS u830".
 function formatCamera(make, model) {
   make = make ? make.trim() : null; model = model ? model.trim() : null;
   if (!model) return make;
-  if (make && !model.toLowerCase().startsWith(make.toLowerCase())) return make + ' ' + model;
-  return model;
+  const canonical = canonicalMake(make);
+  const modelLower = model.toLowerCase();
+  if (canonical && modelLower.startsWith(canonical.toLowerCase())) return model;
+  if (make && modelLower.startsWith(make.toLowerCase())) return model;
+  const shown = canonical || make;
+  return shown ? shown + ' ' + model : model;
 }
 
 // Tickets 084/111/156: camera (make/model), lens, focal length, aperture/shutter speed/ISO and

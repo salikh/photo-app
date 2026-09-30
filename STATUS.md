@@ -416,3 +416,10 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [167](docs/tickets/167.md) `metacache.record_lacks_lens` + a cheap `_scan_files` MakerNote
       probe fill existing DNG/PEF rows on the next scan, instead of re-opening every RAW through
       LibRaw (which marking them `record_is_stale` would cost)
+
+## Files pane camera-make dedup (user request 2026-09-30, done)
+
+- [x] [168](docs/tickets/168.md) `loupe.js`'s `formatCamera` canonicalizes Make (drops
+      `Corporation`/`Inc.`/`Ltd.`/`IMAGING`/... noise words) before deciding whether to prefix the
+      model, so `PENTAX Corporation PENTAX *ist DL` → `PENTAX *ist DL` and `OLYMPUS IMAGING CORP.
+      u830` → `OLYMPUS u830`. Frontend-only; new e2e `test_files_panel_dedupes_the_camera_make`

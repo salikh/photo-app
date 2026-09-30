@@ -394,6 +394,27 @@ def test_files_panel_shows_camera_metadata(page, server):
   expect(page.locator(".files-panel .file")).to_contain_text("2024:06:01 12:00:00")
 
 
+def test_files_panel_dedupes_the_camera_make(page, server):
+  # ticket 168: the corporate part of Make is dropped and not repeated: "PENTAX Corporation" +
+  # "PENTAX *ist DL" shows only the model; "OLYMPUS IMAGING CORP." + "u830" shows "OLYMPUS u830".
+  ids = photo_ids(server)
+  fid = server.app.state.db.execute(
+      "SELECT id FROM files WHERE photo_id = ?", (ids[0],)).fetchone()[0]
+  for make, model, shown, hidden in [
+      ("PENTAX Corporation", "PENTAX *ist DL", "PENTAX *ist DL", "PENTAX Corporation"),
+      ("OLYMPUS IMAGING CORP.", "u830", "OLYMPUS u830", "IMAGING")]:
+    server.app.state.db.execute(
+        "UPDATE files SET camera_make = ?, camera_model = ? WHERE id = ?", (make, model, fid))
+    server.app.state.db.commit()
+    page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+    expect(page.locator(".loupe")).to_be_visible()
+    page.keyboard.press("i")
+    panel = page.locator(".files-panel .file")
+    expect(panel).to_contain_text(shown)
+    expect(panel).not_to_contain_text(hidden)
+    page.keyboard.press("i")   # close the panel before the next case
+
+
 def test_files_panel_directory_link_only_shown_when_browsing_recursively(page, server):
   # ticket 154: the directory portion of a file's path becomes its own link, but only when the
   # current view is recursive ("this folder + subfolders") -- otherwise it's always the same
