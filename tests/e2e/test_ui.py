@@ -370,21 +370,23 @@ def test_files_panel_and_representative_for_pair(page, server, tmp_path):
 
 
 def test_files_panel_shows_camera_metadata(page, server):
-  # tickets 084/111: camera (make/model), focal length, aperture/shutter speed/ISO/exif_date,
-  # written directly since the fixture files carry no real EXIF (083/111 extraction is covered
-  # separately).
+  # tickets 084/111/156: camera (make/model), lens, focal length, aperture/shutter speed/ISO/
+  # exif_date, written directly since the fixture files carry no real EXIF (083/111/156 extraction
+  # is covered separately).
   ids = photo_ids(server)
   fid = server.app.state.db.execute(
       "SELECT id FROM files WHERE photo_id = ?", (ids[0],)).fetchone()[0]
   server.app.state.db.execute(
       "UPDATE files SET aperture = 2.8, shutter_speed = 0.004, iso = 400,"
       " focal_length = 50.0, camera_make = 'PENTAX', camera_model = 'PENTAX K-5',"
+      " lens_model = 'smc PENTAX-DA 35mm F2.4 AL',"
       " exif_date = '2024:06:01 12:00:00' WHERE id = ?", (fid,))
   server.app.state.db.commit()
   page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
   expect(page.locator(".loupe")).to_be_visible()
   page.keyboard.press("i")
   expect(page.locator(".files-panel .file")).to_contain_text("PENTAX K-5")
+  expect(page.locator(".files-panel .file")).to_contain_text("smc PENTAX-DA 35mm F2.4 AL")
   expect(page.locator(".files-panel .file")).to_contain_text("50mm")
   expect(page.locator(".files-panel .file")).to_contain_text("f/2.8")
   expect(page.locator(".files-panel .file")).to_contain_text("1/250s")

@@ -564,10 +564,11 @@ function formatCamera(make, model) {
   return model;
 }
 
-// Tickets 084/111: camera (make/model), focal length, aperture/shutter speed/ISO and exif_date,
-// one line, omitting whatever's absent.
+// Tickets 084/111/156: camera (make/model), lens, focal length, aperture/shutter speed/ISO and
+// exif_date, one line, omitting whatever's absent.
 function cameraMetaText(f) {
-  const parts = [formatCamera(f.camera_make, f.camera_model), formatFocalLength(f.focal_length),
+  const parts = [formatCamera(f.camera_make, f.camera_model), f.lens_model,
+                  formatFocalLength(f.focal_length),
                   formatAperture(f.aperture), formatShutterSpeed(f.shutter_speed),
                   f.iso != null ? 'ISO ' + Math.round(f.iso) : null, f.exif_date]
       .filter((p) => p != null);
