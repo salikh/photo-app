@@ -401,3 +401,18 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [163](docs/tickets/163.md) `backfill_exif` now uses `read_image_metadata` (fallback included)
       and writes the full EXIF set, so existing PEF rows fill immediately; `docs/operations.md`
       updated
+
+## Pentax lens type (user bug report 2026-09-30, done)
+
+- [x] [164](docs/tickets/164.md) Epic: Pentax files store the lens only as a two-byte MakerNote
+      `LensType` code (no standard EXIF `LensModel`), so the Files pane showed nothing; the code is
+      now parsed and decoded with a vendored ExifTool lens table. `K___2502.DNG` → `smc
+      PENTAX-DA 35mm F2.4 AL`, `K___3853.DNG` → `smc PENTAX-DA 18-135mm F3.5-5.6 ED AL [IF] DC WR`
+- [x] [165](docs/tickets/165.md) `photoapp/pentax_lens.py`: 265 `(series, id)` → name entries
+      generated from ExifTool 13.55's `%pentaxLensTypes`, `decode()` with its series 4→7/7→8/11↔13
+      fallbacks; ExifTool notice in `NOTICE.md`, license texts in `third_party_licenses/`
+- [x] [166](docs/tickets/166.md) `fileinfo.read_pentax_lens` reads the code from `DNGPrivateData`
+      (DNG) or `MakerNote` (PEF); `read_image_metadata` uses it when `LensModel` is absent
+- [x] [167](docs/tickets/167.md) `metacache.record_lacks_lens` + a cheap `_scan_files` MakerNote
+      probe fill existing DNG/PEF rows on the next scan, instead of re-opening every RAW through
+      LibRaw (which marking them `record_is_stale` would cost)
