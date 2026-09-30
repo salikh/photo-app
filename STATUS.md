@@ -423,3 +423,17 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       `Corporation`/`Inc.`/`Ltd.`/`IMAGING`/... noise words) before deciding whether to prefix the
       model, so `PENTAX Corporation PENTAX *ist DL` → `PENTAX *ist DL` and `OLYMPUS IMAGING CORP.
       u830` → `OLYMPUS u830`. Frontend-only; new e2e `test_files_panel_dedupes_the_camera_make`
+
+## 35mm-equivalent focal length (user request 2026-09-30, done)
+
+- [x] [169](docs/tickets/169.md) Epic: the Files pane now shows `35mm (52mm)` — a new
+      `focal_length_35mm` field/column from EXIF `FocalLengthIn35mmFilm` (0xA405; verified 52 / 27 /
+      64 mm against exiftool on real files)
+- [x] [170](docs/tickets/170.md) `fileinfo` extraction (Pillow + TIFF fallback),
+      `files.focal_length_35mm INTEGER` migration, `scan`/`library`/`catalog`/`backfill_exif` wiring
+- [x] [171](docs/tickets/171.md) Cheap `fileinfo.read_focal_length_35mm` +
+      `metacache.record_lacks_focal_length_35mm` patched in `_scan_files`'s shared `_patch_cheap`, so
+      existing records fill from a standard EXIF read instead of a full LibRaw re-read (the ticket
+      167 pattern; deliberately not `REQUIRED_KEYS`)
+- [x] [172](docs/tickets/172.md) `loupe.js`'s `formatFocalLength(mm, mm35)` shows the equivalent in
+      parentheses; e2e asserts `50mm (75mm)`
