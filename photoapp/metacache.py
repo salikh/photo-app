@@ -92,19 +92,39 @@ def record_is_stale(record):
           and record.get("camera_make") is None)
 
 
-def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
-  """True if any of names lacks a complete record in dirpath's index.json, or has a stale one.
+# The RAW mime types: a lens can only come from the MakerNote for these (ticket 166).
+_RAW_MIMES = ("image/x-adobe-dng", "image/x-raw")
 
-  A directory with no image names returns False (nothing to cache). If it has
-  image names but no index.json at all, every one of them "lacks" a record, so
-  this returns True and the directory is reprocessed.
+
+def record_lacks_lens(record):
+  """True if a RAW record's extraction otherwise worked but has no lens yet (ticket 167).
+
+  A record written before ticket 166 has ``lens_model = None`` (Pentax has no standard LensModel
+  tag) with every other field present, so a scan would reuse it and the Files pane would stay
+  empty. Unlike ``record_is_stale`` this is fixed by a cheap MakerNote-only probe in ``_scan_files``
+  (``read_pentax_lens``), never a full ``read_image_metadata`` re-read; a RAW whose MakerNote has no
+  lens is probed again on each scan, which is cheap and only affects such files.
+  """
+  return (record.get("lens_model") is None
+          and record.get("camera_make") is not None
+          and record.get("mime_type") in _RAW_MIMES)
+
+
+def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
+  """True if any of names lacks a complete record in dirpath's index.json, or has a stale/lens-less
+  one.
+
+  A directory with no image names returns False (nothing to cache). If it has image names but no
+  index.json at all, every one of them "lacks" a record, so this returns True and the directory is
+  reprocessed.
   """
   names = list(names)
   if not names:
     return False
   records = load_records(dirpath)
   return any(not has_all_keys(records.get(n, {}), required_keys)
-             or record_is_stale(records.get(n, {})) for n in names)
+             or record_is_stale(records.get(n, {}))
+             or record_lacks_lens(records.get(n, {})) for n in names)
 
 
 def write_record(dirpath, name, record):

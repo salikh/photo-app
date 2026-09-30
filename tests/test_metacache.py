@@ -239,3 +239,43 @@ def test_stale_raw_record_is_reprocessed_and_reextracted(conn, settings, monkeyp
   assert p.files_processed == 1
   assert files(conn)["a.PEF"]["camera_make"] == "PENTAX Corporation"
   assert read_index(d)["files"]["a.PEF"]["camera_make"] == "PENTAX Corporation"
+
+
+def test_record_lacks_lens_signature():
+  # ticket 167: a RAW record whose extraction worked but has no lens (and not the pre-ticket-161
+  # all-None case, which record_is_stale handles).
+  assert metacache.record_lacks_lens(
+      {"lens_model": None, "camera_make": "PENTAX", "mime_type": "image/x-adobe-dng"})
+  assert metacache.record_lacks_lens(
+      {"lens_model": None, "camera_make": "PENTAX", "mime_type": "image/x-raw"})
+  assert not metacache.record_lacks_lens(
+      {"lens_model": "smc PENTAX-DA 35mm F2.4 AL", "camera_make": "PENTAX",
+       "mime_type": "image/x-adobe-dng"})
+  assert not metacache.record_lacks_lens(
+      {"lens_model": None, "camera_make": "PENTAX", "mime_type": "image/jpeg"})
+  assert not metacache.record_lacks_lens({})
+
+
+def test_lensless_raw_record_is_patched_by_a_cheap_makernote_probe(conn, settings, monkeypatch):
+  # ticket 167: a DNG cache record with lens_model None is filled from read_pentax_lens alone; a
+  # full read_image_metadata would mean re-opening every RAW through LibRaw (see ticket 163).
+  d = settings.pictures_dir
+  Image.new("RGB", (30, 20)).save(os.path.join(d, "a.DNG"), format="JPEG")  # content irrelevant
+  raw_md = ("image/x-adobe-dng", 100, 50, "2020-01-01 00:00:00", 2.8, 0.01, 100, 35.0,
+            "PENTAX", "PENTAX K-5", None)
+  monkeypatch.setattr(fileinfo, "read_image_metadata", lambda p_: raw_md)
+  scan.scan(conn, d, metadata_cache=True)
+  rec = read_index(d)["files"]["a.DNG"]
+  assert rec["mime_type"] == "image/x-adobe-dng" and rec["lens_model"] is None
+  assert files(conn)["a.DNG"]["lens_model"] is None
+
+  def no_full_read(p_):
+    raise AssertionError("full metadata re-read")
+  monkeypatch.setattr(fileinfo, "read_image_metadata", no_full_read)
+  probes = []
+  monkeypatch.setattr(fileinfo, "read_pentax_lens",
+                      lambda p_: probes.append(p_) or "smc PENTAX-DA 35mm F2.4 AL")
+  scan.scan(conn, d, metadata_cache=True)
+  assert probes == [os.path.join(d, "a.DNG")]      # only the cheap MakerNote probe ran
+  assert files(conn)["a.DNG"]["lens_model"] == "smc PENTAX-DA 35mm F2.4 AL"
+  assert read_index(d)["files"]["a.DNG"]["lens_model"] == "smc PENTAX-DA 35mm F2.4 AL"

@@ -200,6 +200,13 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
                      and cached.get("bytesize") == st.st_size)
       if (cache_valid and metacache.has_all_keys(cached)
           and not metacache.record_is_stale(cached)):
+        # Ticket 167: a RAW record from before ticket 166 has no lens (Pentax has no standard
+        # LensModel). Patch just that with a cheap MakerNote probe, not a full read_image_metadata.
+        if metacache.record_lacks_lens(cached) and fileinfo.is_raw(name):
+          lens = fileinfo.read_pentax_lens(filepath)
+          if lens is not None:
+            cached = dict(cached)
+            cached["lens_model"] = lens
         return name, rel_path, dict(cached), False
       # Valid but incomplete (a key added later), or no usable record: re-read the metadata.
       (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
