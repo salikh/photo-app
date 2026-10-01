@@ -11,6 +11,7 @@ import {configure} from './rating.js';
 import * as filters from './filters.js';
 import * as help from './help.js';
 import * as exportAction from './export.js';
+import * as aiRate from './aiRate.js';
 import * as renameAction from './rename.js';
 
 const app = document.getElementById('app');
@@ -130,6 +131,9 @@ function renderHeader(route) {
     // via route.dir/route.recursive, same scope grid.loadFolder already used to populate it).
     browsing ? el('button', {text: 'Export', title: 'export photos to a folder',
                              onclick: () => exportAction.open()}) : null,
+    // ticket 180: AI rating of the selection, else everything in view (same scope as Export).
+    browsing ? el('button', {text: 'AI Rate', title: 'rate the selected (or all) photos with Gemini',
+                             onclick: () => aiRate.start()}) : null,
     // Ticket 155: only offered for the unfiltered view -- the whole folder moves regardless of
     // any active rating/tag filter, so showing this under a filter would be misleading.
     browsing && route.filter === 'all' && route.dir !== '.'

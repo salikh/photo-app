@@ -100,3 +100,22 @@ def test_job_runs_through_the_queue(settings, conn, tmp_path, monkeypatch):
   finally:
     app.state.jobs.stop()
   assert t.calls == 1 and score_of(conn, fid)["ai_score"] == ai_score.score(ANSWERS)
+
+
+def test_ai_rate_endpoint_queues_representative_files(settings, conn, monkeypatch):
+  from fastapi.testclient import TestClient
+  from photoapp import api
+  for n in "ab":
+    make_jpeg(os.path.join(settings.pictures_dir, f"{n}.jpg"), size=(300, 200), color=n == "a" and "red" or "blue")
+  scan.scan(conn, settings.pictures_dir)
+  pids = [r[0] for r in conn.execute("SELECT id FROM photos ORDER BY id")]
+  monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+  c = TestClient(api.create_app(conn, settings))
+  r = c.post("/api/ai/rate", json={"ids": pids})
+  assert r.status_code == 400 and "API key" in r.json()["detail"]
+  monkeypatch.setenv("GEMINI_API_KEY", "K")
+  r = c.post("/api/ai/rate", json={"ids": pids + [9999]})
+  assert r.json() == {"queued": 2, "missing": 1}
+  c.post("/api/ai/rate", json={"ids": pids})                    # deduped while queued
+  assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='ai_rate'").fetchone()[0] == 2
+  assert c.post("/api/ai/rate", json={"ids": []}).status_code == 400

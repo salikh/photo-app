@@ -82,6 +82,10 @@ class ExportBody(pydantic.BaseModel):
   target: str
 
 
+class AiRateBody(pydantic.BaseModel):
+  ids: list[int]
+
+
 class MoveBody(pydantic.BaseModel):
   ids: list[int]
   target: str
@@ -408,6 +412,33 @@ def create_app(conn, settings):
           queued.append({"photo_id": r["photo_id"], "job_id": job_id})
       missing = sorted(set(body.ids) - {r["photo_id"] for r in rows})
       return {"queued": queued, "missing": missing}
+    return run_db(attempt)
+
+  @app.post("/api/ai/rate")
+  def start_ai_rate(body: AiRateBody):
+    """Ticket 180: queue one 'ai_rate' job per Photo's representative file (the queue dedupes a
+    file that is already queued). Refuses up front without an API key, since every cache miss
+    would fail; cached answers need no key, so a key-less install can still rescore by re-rating
+    only if every picture is cached -- not worth a special case, the message says how to fix it."""
+    if not body.ids or len(body.ids) > 20000:
+      raise HTTPException(400, "give between 1 and 20000 photo ids")
+    if not settings.gemini_api_key():
+      raise HTTPException(
+          400, "no Gemini API key configured: set $GEMINI_API_KEY or put the key in "
+               f"{settings.gemini_api_key_file or os.path.join(settings.state_dir, 'gemini_api_key')}")
+
+    def attempt():
+      with app.state.db_lock:
+        rows = []
+        for i in range(0, len(body.ids), 500):
+          chunk = body.ids[i:i + 500]
+          rows += app.state.db.execute(
+              f"SELECT p.id AS photo_id, p.representative_file_id AS file_id FROM photos p "
+              f"JOIN files rf ON rf.id = p.representative_file_id WHERE rf.missing = 0 AND "
+              f"p.id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+        for r in rows:
+          app.state.jobs.enqueue("ai_rate", file_id=r["file_id"])
+      return {"queued": len(rows), "missing": len(set(body.ids)) - len(rows)}
     return run_db(attempt)
 
   @app.post("/api/move")

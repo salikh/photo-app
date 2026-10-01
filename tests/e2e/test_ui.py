@@ -2780,3 +2780,45 @@ def test_filter_switcher_disabled_option_does_nothing_and_escape_closes_the_pane
   page.keyboard.press("Escape")
   expect(page.locator(".filter-picker")).to_have_count(0)
   expect(page.locator(".loupe")).to_be_visible()                 # Escape closed the panel, not the viewer
+
+
+# ------------------------------------------------------ AI rating (epic 173, ticket 180) ------
+
+AI_ANSWERS = {"sharpness": 4, "composition": 3, "exposure": 5, "has_people": 0, "faces": 0,
+              "subject_interest": 2, "color": 3, "technical_flaws": 1}
+
+
+class FakeGemini:
+  def __init__(self):
+    self.calls = 0
+
+  def __call__(self, url, headers, body):
+    import json
+    self.calls += 1
+    text = json.dumps(AI_ANSWERS)
+    return 200, json.dumps({"candidates": [{"content": {"parts": [{"text": text}]}}]}).encode()
+
+
+def test_ai_rate_button_rates_only_the_selection(page, server, monkeypatch):
+  monkeypatch.setenv("GEMINI_API_KEY", "K")
+  fake = server.app.state.gemini_transport = FakeGemini()
+  page.goto(server.url + "/#/2024/trip")
+  page.get_by_role("button", name="Select").click()
+  page.locator(".cell").nth(1).click()
+  page.locator(".cell").nth(3).click()
+  page.get_by_role("button", name="AI Rate", exact=True).click()
+  expect(page.locator("#toast")).to_contain_text("AI rating queued for 2 photo(s)")
+  assert server.app.state.jobs.wait_idle(20)
+  assert fake.calls == 2
+  rated = server.app.state.db.execute(
+      "SELECT COUNT(*) FROM files WHERE ai_score IS NOT NULL").fetchone()[0]
+  assert rated == 2
+
+
+def test_ai_rate_button_without_key_shows_the_message(page, server, monkeypatch):
+  monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  page.get_by_role("button", name="AI Rate", exact=True).click()
+  expect(page.locator("#toast")).to_contain_text("no Gemini API key configured")
+  page.errors.clear()    # the browser logs the 400 itself as a console error
