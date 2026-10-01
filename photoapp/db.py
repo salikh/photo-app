@@ -293,6 +293,21 @@ MIGRATIONS = [
       created_at TEXT NOT NULL
     );
     """,
+    """
+    -- Ticket 179: AI rating. ai_responses caches Gemini's raw structured answers per (image,
+    -- prompt content hash, model): an unchanged prompt never re-sends the picture, a changed prompt
+    -- or model has a different key and so does. image_key is "<files.hash>:<thumb_rev>" (the sent
+    -- Medium rendition depends on content and on crop/RAW tuning). files.ai_score is the single
+    -- number computed from those answers by ai_score.score(); ai_score_version is that function's
+    -- content hash, so editing the function marks every stored score stale (rescored locally).
+    CREATE TABLE ai_responses (
+      image_key TEXT NOT NULL, prompt_hash TEXT NOT NULL, model TEXT NOT NULL,
+      answers TEXT NOT NULL, created_at TEXT NOT NULL,
+      PRIMARY KEY (image_key, prompt_hash, model)
+    );
+    ALTER TABLE files ADD COLUMN ai_score REAL;
+    ALTER TABLE files ADD COLUMN ai_score_version TEXT;
+    """,
 ]
 
 

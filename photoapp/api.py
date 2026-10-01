@@ -22,6 +22,7 @@ from PIL import Image
 from photoapp import curation
 from photoapp import crop as crop_lib
 from photoapp import db as db_lib
+from photoapp import ai_rating
 from photoapp import export
 from photoapp import export_backfill
 from photoapp import fileinfo
@@ -192,6 +193,18 @@ def create_app(conn, settings):
   app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render},
                                  settings.job_workers)
   app.state.jobs.add_handler("export", export_job)
+
+  # Ticket 179: the Gemini transport is swappable (tests set app.state.gemini_transport to a fake).
+  app.state.gemini_transport = None
+
+  def ai_rate_job(conn, job):
+    """Rate the file's Medium rendition with Gemini, or reuse the cached answers (ticket 179);
+    then rescore anything a changed scoring function made stale (local, no requests)."""
+    ai_rating.rate_file(conn, settings, job["file_id"], transport=app.state.gemini_transport)
+    ai_rating.rescore_stale(conn, settings)
+
+  app.state.jobs.add_handler("ai_rate", ai_rate_job)
+  ai_rating.rescore_stale(conn, settings)     # the scoring function may have been edited since
 
   # A single low-priority, single-worker queue for everything ticket 073's load-adaptive worker
   # drains: populate_thumb (thumb_populate.Populator, registered below), scan_dir (ticket 076's
