@@ -132,3 +132,15 @@ def test_photo_detail_carries_score_and_answers(setup):
   assert f["ai_score"] == ai_score.score(ANSWERS) and f["ai_answers"] == ANSWERS
   other = library.photo_detail(conn, pid, "another-model")["files"][0]
   assert other["ai_score"] is not None and other["ai_answers"] is None   # scored by a different model
+
+
+def test_sort_by_ai_rating_best_first_unscored_last(settings, conn):
+  from photoapp import library
+  for n, color in zip("abcd", ("red", "green", "blue", "yellow")):
+    make_jpeg(os.path.join(settings.pictures_dir, f"{n}.jpg"), size=(300, 200), color=color)
+  scan.scan(conn, settings.pictures_dir)
+  for name, score in (("a", 3.0), ("c", 8.5), ("d", 3.0)):
+    conn.execute("UPDATE files SET ai_score = ? WHERE path = ?", (score, name + ".jpg"))
+  conn.commit()
+  got = library.list_photos(conn, ".", sort="ai")["photos"]
+  assert [p["name"] for p in got] == ["c.jpg", "a.jpg", "d.jpg", "b.jpg"]

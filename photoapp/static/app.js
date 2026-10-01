@@ -15,7 +15,7 @@ import * as aiRate from './aiRate.js';
 import * as renameAction from './rename.js';
 
 const app = document.getElementById('app');
-const SORTS = [['date', 'date'], ['name', 'name']];
+const SORTS = [['date', 'date'], ['name', 'name'], ['ai', 'AI rating']];
 const PAGES = {activity: pages.activityPage, attention: pages.attentionPage,
                usage: pages.usagePage, jobs: pages.jobsPage,
                'delete-review': pages.deleteReviewPage};

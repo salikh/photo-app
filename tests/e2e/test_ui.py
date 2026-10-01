@@ -2835,3 +2835,17 @@ def test_files_panel_shows_the_ai_rating(page, server):
   expect(page.locator(".loupe")).to_be_visible()
   page.keyboard.press("i")
   expect(page.locator(".files-panel .file .ai-rating")).to_have_text("AI rating 7.5")
+
+
+def test_sort_by_ai_rating_orders_the_grid_best_first(page, server):
+  # ticket 182
+  ids = photo_ids(server)
+  db = server.app.state.db
+  for rank, pid in enumerate(ids[:3]):          # scores 1.0, 2.0, 3.0; the rest stay unscored
+    db.execute("UPDATE files SET ai_score = ? WHERE photo_id = ?", (rank + 1.0, pid))
+  db.commit()
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  page.locator('select[aria-label="sort"]').select_option("ai")
+  assert "sort=ai" in page.url
+  expect(page.locator(".cell").first).to_have_attribute("data-id", str(ids[2]))

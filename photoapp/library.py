@@ -14,7 +14,7 @@ RATING_FILTER_RE = re.compile(r"^rating:([1-5])$")    # exactly N stars
 RATING_GE_RE = re.compile(r"^rating>=([1-5])$")       # N stars or more
 RATING_LE_RE = re.compile(r"^rating<=([1-5])$")       # N stars or fewer
 TAG_FILTER_RE = re.compile(r"^tag:(.+)$")            # exactly one tag, e.g. "tag:vacation"
-SORTS = ("date", "name")
+SORTS = ("date", "name", "ai")   # ai (ticket 182): best AI rating first, unrated last
 
 _FILTER_SQL = {
     "all": "1",
@@ -186,8 +186,9 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
   scope_sql, scope_args = _scope_condition(rel_dir, recursive, _is_dot_tag(filter))
   where = scope_sql + " AND rf.missing = 0 AND " + filter_sql
   args = scope_args + filter_args
-  order = ("COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path"
-           if sort == "date" else "rf.path COLLATE NOCASE")
+  order = {"date": "COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path",
+           "name": "rf.path COLLATE NOCASE",
+           "ai": "rf.ai_score IS NULL, rf.ai_score DESC, rf.path COLLATE NOCASE"}[sort]
   total = conn.execute(
       "SELECT COUNT(*) FROM photos p JOIN files rf ON rf.id = "
       "p.representative_file_id WHERE " + where, args).fetchone()[0]

@@ -437,3 +437,24 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       167 pattern; deliberately not `REQUIRED_KEYS`)
 - [x] [172](docs/tickets/172.md) `loupe.js`'s `formatFocalLength(mm, mm35)` shows the equivalent in
       parentheses; e2e asserts `50mm (75mm)`
+
+## AI photo ranking with Gemini Flash-Lite (user request 2026-10-01, done)
+
+- [x] [173](docs/tickets/173.md) Epic: "AI Rate" button, `ai_rate` jobs, a score in the Files pane, sort
+      "AI rating". Never run against the real Gemini API in development (no key available); the
+      request shape follows the public `generateContent` REST API with `responseSchema` — verify with
+      a real key and a few photos before a bulk run
+- [x] [174](docs/tickets/174.md) `$GEMINI_API_KEY` or `--gemini_api_key_file` (default
+      `<state_dir>/gemini_api_key`); `--ai_model` (default `gemini-flash-lite-3.5`, the name as given)
+- [x] [175](docs/tickets/175.md) `ai_prompts.py`: prompt files in `photoapp/prompts/`, content hash
+      = version, `ai_prompts` table remembers every hash used
+- [x] [176](docs/tickets/176.md) `prompts/rating.md` + `rating.schema.json` (8 integer questions)
+- [x] [177](docs/tickets/177.md) `gemini.py`: stdlib client, key in a header, injectable transport,
+      range-validated answers, 429/5xx retry
+- [x] [178](docs/tickets/178.md) `ai_score.py`: weights table; `VERSION` = hash of the file itself
+- [x] [179](docs/tickets/179.md) `ai_rating.py`: `ai_responses` cache keyed (image, prompt hash,
+      model); edited prompt re-sends, edited scoring function only `rescore_stale()` from cache
+- [x] [180](docs/tickets/180.md) `POST /api/ai/rate` + toolbar button (selection, else the view;
+      confirm above 200 photos)
+- [x] [181](docs/tickets/181.md) `AI rating 7.5` line in the Files pane, answers in the tooltip
+- [x] [182](docs/tickets/182.md) `sort=ai`: best first, unrated last
