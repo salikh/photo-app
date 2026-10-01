@@ -60,3 +60,12 @@ nightly_scan_hour = 3
 scan_workers = 8               # threads reading files during a scan
 job_workers = 2                # background RAW render threads
 load_worker_enabled = true     # fill in missing thumbnails when the machine is idle
+
+# --- AI rating (Gemini) --------------------------------------------------------------------------
+
+# The Google API key is read from $GEMINI_API_KEY, else from this file (one line; chmod 600). There
+# is deliberately no setting for the key itself. Default: <state_dir>/gemini_api_key.
+# gemini_api_key_file = "~/.local/share/photos/gemini_api_key"
+
+# The model that rates photos. Changing it re-rates pictures (it is part of the response cache key).
+# ai_model = "gemini-flash-lite-3.5"

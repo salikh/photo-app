@@ -48,6 +48,15 @@ flags.DEFINE_enum(
     "Naming of a NEW sidecar for a RAW original: 'full' = NAME.DNG.xmp (what "
     "darktable and 15427 of 15429 existing sidecars use), 'stem' = NAME.xmp. "
     "Existing sidecars are always edited in place. See ticket 042.")
+flags.DEFINE_string(
+    "gemini_api_key_file", None,
+    "File holding the Google API key used for AI rating (ticket 174). Default: "
+    "<state_dir>/gemini_api_key. $GEMINI_API_KEY wins over the file. There is deliberately no "
+    "flag for the key itself (it would show up in `ps`); chmod 600 the file.")
+flags.DEFINE_string(
+    "ai_model", "gemini-flash-lite-3.5",
+    "Gemini model that rates photos (ticket 174). Part of the response cache key, so changing it "
+    "re-rates pictures.")
 flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).")
 flags.DEFINE_integer("nightly_scan_hour", 3, "Local hour (0-23) of the nightly rescan; -1 disables it.")
 flags.DEFINE_integer("scan_workers", 8, "Threads reading files during a scan (network file systems are latency bound).")
@@ -167,10 +176,26 @@ class Settings:
   load_stop_threshold: float = 1.5
   mem_start_percent: float = 20.0
   mem_stop_percent: float = 10.0
+  gemini_api_key_file: str = None
+  ai_model: str = "gemini-flash-lite-3.5"
 
   @property
   def db_path(self):
     return self.database_path or os.path.join(self.state_dir, "app.sqlite")
+
+  def gemini_api_key(self, environ=None):
+    """The Google API key for AI rating (ticket 174): $GEMINI_API_KEY, else the key file (default
+    <state_dir>/gemini_api_key), stripped; None when neither gives one. Never logs the key."""
+    environ = os.environ if environ is None else environ
+    key = (environ.get("GEMINI_API_KEY") or "").strip()
+    if key:
+      return key
+    path = self.gemini_api_key_file or os.path.join(self.state_dir, "gemini_api_key")
+    try:
+      with open(path) as f:
+        return f.read().strip() or None
+    except OSError:
+      return None
 
   def check_pictures_dir(self):
     if not os.path.isdir(self.pictures_dir):
@@ -212,4 +237,5 @@ class Settings:
         load_check_seconds=f.load_check_seconds,
         load_start_threshold=f.load_start_threshold,
         load_stop_threshold=f.load_stop_threshold,
-        mem_start_percent=f.mem_start_percent, mem_stop_percent=f.mem_stop_percent)
+        mem_start_percent=f.mem_start_percent, mem_stop_percent=f.mem_stop_percent,
+        gemini_api_key_file=_expand(f.gemini_api_key_file), ai_model=f.ai_model)

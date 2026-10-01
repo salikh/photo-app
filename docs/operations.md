@@ -12,6 +12,8 @@ are the flag names, see `photos.example.toml`); the command line wins over the f
 | `--pictures_dir` | `~/Pictures` | the library; read-only except XMP sidecars and the Delete flow (ticket 072), which moves rejected photos' files to `.trash/` |
 | `--thumbs_dir` | `<state_dir>/thumbs` | thumbnail cache (sizes are created on demand) |
 | `--state_dir` | `$XDG_DATA_HOME/photos` (`~/.local/share/photos`) | database, XMP backups, manual link log |
+| `--gemini_api_key_file` | `<state_dir>/gemini_api_key` | file with the Google API key for AI rating (`$GEMINI_API_KEY` wins) |
+| `--ai_model` | `gemini-flash-lite-3.5` | Gemini model that rates photos |
 | `--database_path` | `<state_dir>/app.sqlite` | the sqlite file, when it should live elsewhere |
 | `--hashes_db` | none | `tools/archive/catalog.py` database whose hashes are reused by scans |
 | `--xmp_dry_run` | off | compute and log XMP changes without writing anything |
@@ -213,6 +215,7 @@ is the file's ctime (bumped by the move itself, unlike mtime, which a same-files
 | `app.sqlite` ratings the database itself decided (`photos.rating_source` = `app`, `import`, `hash-recovery`) that are **not** in any sidecar (an import without `--write_xmp`) | **no**: the newest rating wins whether it is in the database or in a sidecar, so a database-only rating is real data | yes, copy the file |
 | `app.sqlite` tables `activity_log` (undo history) and `manual_links` | **no** | yes, copy the file |
 | `manual_links.jsonl` | it is the durable copy of `manual_links` | **yes** |
+| `gemini_api_key` (Google API key for AI rating, ticket 174; or set `$GEMINI_API_KEY`) | no, a secret | keep a private copy; `chmod 600` |
 | `xmp_backups/` (first-seen copy of every sidecar the app changed) | no | yes, it is the safety net |
 
 Copy the whole state directory to back it up (stop the app first, or copy `app.sqlite`,
