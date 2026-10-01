@@ -458,3 +458,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       confirm above 200 photos)
 - [x] [181](docs/tickets/181.md) `AI rating 7.5` line in the Files pane, answers in the tooltip
 - [x] [182](docs/tickets/182.md) `sort=ai`: best first, unrated last
+- [x] [183](docs/tickets/183.md) `deploy.sh`: install /opt/photos + systemd service `photos.service`

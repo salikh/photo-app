@@ -32,6 +32,21 @@ are the flag names, see `photos.example.toml`); the command line wins over the f
 
 Try a first session with `--xmp_dry_run` to see what would be written.
 
+## Running as a service
+
+`sudo ./deploy.sh [--dry-run] [--install-deps]` (ticket 183) installs the app as the systemd service
+`photos.service`, running as the invoking user (`$SUDO_USER`, or `--user=NAME`). Stop any `./start.sh`
+instance first (the script refuses if the port is taken).
+
+- The app is copied to `/opt/photos/app` with its own `/opt/photos/.venv`; `/opt/photos/DEPLOYED_REV`
+  records the jj change and time. There is no build step: if the venv's packages do not satisfy
+  `requirements.txt`, the script prints the `pip install` command (or runs it with `--install-deps`).
+- Configuration lives in `~/.config/photos/` and is created once, never overwritten: `config.toml`
+  (from `./photos.toml`), `env` (`GEMINI_API_KEY`, from `./ENV`, mode 600) and `service.args`
+  (`PHOTOS_ARGS=...`, the command-line flags). Edit them, then `sudo systemctl restart photos`.
+- The unit runs at `Nice=19` / idle I/O class, waits for the library mounts, restarts on failure.
+  Logs: `journalctl -u photos -f`. Rollback: check out the older revision and redeploy.
+
 ## Scanning the library
 
 `python -m photoapp.fullscan --hashes_db=~/zoo.db` scans the whole library from the command line

@@ -1,0 +1,20 @@
+[Unit]
+Description=Photo manager web app
+After=network-online.target
+Wants=network-online.target
+@MOUNTS@
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@INSTALL@/app
+EnvironmentFile=@CONFDIR@/env
+EnvironmentFile=@CONFDIR@/service.args
+ExecStart=@INSTALL@/.venv/bin/python -m photoapp --logtostderr --config=@CONFDIR@/config.toml $PHOTOS_ARGS
+Nice=19
+IOSchedulingClass=idle
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
