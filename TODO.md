@@ -8,7 +8,18 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* Epic 169 (35mm-equivalent focal length, 170-172) is done — see
+- [ ] [173](docs/tickets/173.md) Epic: automated photo ranking with Gemini Flash-Lite
+  - [ ] [174](docs/tickets/174.md) API key and model settings
+  - [ ] [175](docs/tickets/175.md) Content-hashed prompt store
+  - [ ] [176](docs/tickets/176.md) Draft the rating prompt and response schema
+  - [ ] [177](docs/tickets/177.md) Gemini client: image + prompt, structured JSON
+  - [ ] [178](docs/tickets/178.md) Content-versioned scoring function
+  - [ ] [179](docs/tickets/179.md) Cached `ai_rate` job and schema
+  - [ ] [180](docs/tickets/180.md) "AI Rate" button and endpoint
+  - [ ] [181](docs/tickets/181.md) AI rating in the Files pane
+  - [ ] [182](docs/tickets/182.md) Sort by AI rating
+
+Epic 169 (35mm-equivalent focal length, 170-172) is done — see
 `STATUS.md`. Ticket 168 (Files-pane camera-make dedup), epic 164 (Pentax lens type, 165-167), epic
 160 (PEF support, 161-163), epic 156 (lens metadata, 157-159), the ten build-order epics, v1
 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131 (132-138), epic 144 (145-148),
