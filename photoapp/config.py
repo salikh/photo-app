@@ -54,7 +54,7 @@ flags.DEFINE_string(
     "<state_dir>/gemini_api_key. $GEMINI_API_KEY wins over the file. There is deliberately no "
     "flag for the key itself (it would show up in `ps`); chmod 600 the file.")
 flags.DEFINE_string(
-    "ai_model", "gemini-flash-lite-3.5",
+    "ai_model", "gemini-3.5-flash-lite",
     "Gemini model that rates photos (ticket 174). Part of the response cache key, so changing it "
     "re-rates pictures.")
 flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).")
@@ -177,7 +177,7 @@ class Settings:
   mem_start_percent: float = 20.0
   mem_stop_percent: float = 10.0
   gemini_api_key_file: str = None
-  ai_model: str = "gemini-flash-lite-3.5"
+  ai_model: str = "gemini-3.5-flash-lite"
 
   @property
   def db_path(self):

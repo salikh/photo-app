@@ -445,7 +445,7 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       request shape follows the public `generateContent` REST API with `responseSchema` — verify with
       a real key and a few photos before a bulk run
 - [x] [174](docs/tickets/174.md) `$GEMINI_API_KEY` or `--gemini_api_key_file` (default
-      `<state_dir>/gemini_api_key`); `--ai_model` (default `gemini-flash-lite-3.5`, the name as given)
+      `<state_dir>/gemini_api_key`); `--ai_model` (default `gemini-3.5-flash-lite`, the name that worked for the user; "gemini-flash-lite-3.5", as first given, 404s)
 - [x] [175](docs/tickets/175.md) `ai_prompts.py`: prompt files in `photoapp/prompts/`, content hash
       = version, `ai_prompts` table remembers every hash used
 - [x] [176](docs/tickets/176.md) `prompts/rating.md` + `rating.schema.json` (8 integer questions)

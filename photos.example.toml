@@ -68,4 +68,4 @@ load_worker_enabled = true     # fill in missing thumbnails when the machine is 
 # gemini_api_key_file = "~/.local/share/photos/gemini_api_key"
 
 # The model that rates photos. Changing it re-rates pictures (it is part of the response cache key).
-# ai_model = "gemini-flash-lite-3.5"
+# ai_model = "gemini-3.5-flash-lite"

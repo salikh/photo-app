@@ -20,4 +20,4 @@ def test_api_key_missing_is_none(settings):
 
 
 def test_default_model():
-  assert config.Settings("p", "t", "s").ai_model == "gemini-flash-lite-3.5"
+  assert config.Settings("p", "t", "s").ai_model == "gemini-3.5-flash-lite"
