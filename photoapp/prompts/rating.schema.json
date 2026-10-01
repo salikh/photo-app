@@ -1,0 +1,65 @@
+{
+  "type": "OBJECT",
+  "properties": {
+    "sharpness": {
+      "type": "INTEGER",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "composition": {
+      "type": "INTEGER",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "exposure": {
+      "type": "INTEGER",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "has_people": {
+      "type": "INTEGER",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "faces": {
+      "type": "INTEGER",
+      "minimum": -2,
+      "maximum": 2
+    },
+    "subject_interest": {
+      "type": "INTEGER",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "color": {
+      "type": "INTEGER",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "technical_flaws": {
+      "type": "INTEGER",
+      "minimum": 0,
+      "maximum": 5
+    }
+  },
+  "required": [
+    "sharpness",
+    "composition",
+    "exposure",
+    "has_people",
+    "faces",
+    "subject_interest",
+    "color",
+    "technical_flaws"
+  ],
+  "propertyOrdering": [
+    "sharpness",
+    "composition",
+    "exposure",
+    "has_people",
+    "faces",
+    "subject_interest",
+    "color",
+    "technical_flaws"
+  ]
+}
