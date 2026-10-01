@@ -284,6 +284,15 @@ MIGRATIONS = [
     -- focal_length_35mm probe on the next scan (tickets 169/171), not a forced RAW re-read.
     ALTER TABLE files ADD COLUMN focal_length_35mm INTEGER;
     """,
+    """
+    -- Ticket 175: every AI prompt (text + response schema) that was ever used, keyed by its content
+    -- hash, so a cached response (ticket 179) can always be traced to the exact text that made it
+    -- even after the prompt file is edited. No version numbers: the hash is the version.
+    CREATE TABLE ai_prompts (
+      hash TEXT PRIMARY KEY, name TEXT NOT NULL, text TEXT NOT NULL, schema TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 
