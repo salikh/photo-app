@@ -255,8 +255,16 @@ def tags_in_view(conn, rel_dir=".", recursive=False):
   return {"dir": rel_dir, "tags": [{"tag": r["tag"], "count": r["n"]} for r in rows]}
 
 
-def photo_detail(conn, photo_id):
-  """One Photo with all its files and sidecars, or None."""
+def _ai_answers(conn, file_id, ai_model):
+  """The cached AI answers behind a file's score for the current prompt and `ai_model`, or None."""
+  from photoapp import ai_rating      # local import: ai_rating pulls in the thumbnail machinery
+  row = conn.execute("SELECT id, hash, thumb_rev FROM files WHERE id = ?", (file_id,)).fetchone()
+  return ai_rating.answers_for(conn, ai_model, row)
+
+
+def photo_detail(conn, photo_id, ai_model=None):
+  """One Photo with all its files and sidecars, or None. ai_model (ticket 181) selects which
+  model's cached AI answers go into each rated file's `ai_answers`."""
   p = conn.execute("SELECT * FROM photos WHERE id = ?",
                    (photo_id,)).fetchone()
   if p is None:
@@ -264,12 +272,13 @@ def photo_detail(conn, photo_id):
   files = [dict(r) for r in conn.execute(
       "SELECT id, path, role, derived_from, link_source, mime_type, width,"
       " height, bytesize, exif_date, aperture, shutter_speed, iso, focal_length,"
-      " camera_make, camera_model, lens_model, focal_length_35mm, crop_x, crop_y, crop_w, crop_h,"
+      " camera_make, camera_model, lens_model, focal_length_35mm, ai_score, crop_x, crop_y, crop_w, crop_h,"
       " rotation, thumb_rev, missing,"
       f" hash, exported_from_file_id, {', '.join(raw_settings.COLUMNS)} FROM files"
       " WHERE photo_id = ? ORDER BY (id = ?) DESC, path",
       (photo_id, p["original_file_id"]))]
   for f in files:
+    f["ai_answers"] = _ai_answers(conn, f["id"], ai_model) if f["ai_score"] is not None else None
     f["is_raw"] = fileinfo.is_raw(f["path"])   # ticket 085: only a RAW file gets settings sliders
     # Ticket 099: "exported from" jump-to-original -- dir + photo_id of the source Photo, so the
     # frontend can build a link the same shape route.href already takes. Ticket 152: path too, for

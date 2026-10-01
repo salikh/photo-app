@@ -119,3 +119,16 @@ def test_ai_rate_endpoint_queues_representative_files(settings, conn, monkeypatc
   c.post("/api/ai/rate", json={"ids": pids})                    # deduped while queued
   assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='ai_rate'").fetchone()[0] == 2
   assert c.post("/api/ai/rate", json={"ids": []}).status_code == 400
+
+
+def test_photo_detail_carries_score_and_answers(setup):
+  from photoapp import library
+  conn, s, fid = setup
+  pid = conn.execute("SELECT photo_id FROM files WHERE id = ?", (fid,)).fetchone()[0]
+  f = library.photo_detail(conn, pid, s.ai_model)["files"][0]
+  assert f["ai_score"] is None and f["ai_answers"] is None
+  ai_rating.rate_file(conn, s, fid, transport=Fake())
+  f = library.photo_detail(conn, pid, s.ai_model)["files"][0]
+  assert f["ai_score"] == ai_score.score(ANSWERS) and f["ai_answers"] == ANSWERS
+  other = library.photo_detail(conn, pid, "another-model")["files"][0]
+  assert other["ai_score"] is not None and other["ai_answers"] is None   # scored by a different model

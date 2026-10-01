@@ -596,6 +596,12 @@ function cameraMetaText(f) {
   return parts.length ? parts.join('  ·  ') : null;
 }
 
+// Ticket 181: the individual answers behind a file's AI rating, for the line's tooltip.
+function aiAnswersText(answers) {
+  if (!answers) return 'scored from an earlier prompt or model';
+  return Object.entries(answers).map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`).join('\n');
+}
+
 // ------------------------------------------- per-file RAW conversion settings (085, then 094) ---
 //
 // Ticket 085's original shape had every slider tick immediately POST and clear the real thumbnail
@@ -1118,6 +1124,8 @@ async function openFiles() {
         'exported from: ', el('a', {href: href({dir: f.exported_from.dir, photo: f.exported_from.photo_id}),
                                     text: f.exported_from.path})) : null,
       cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
+      f.ai_score != null ? el('div', {class: 'meta ai-rating', text: 'AI rating ' + f.ai_score.toFixed(1),
+                                      title: aiAnswersText(f.ai_answers)}) : null,
       f.is_raw && !f.missing ? rawSettingsControls(f) : null,
       el('div', {class: 'row'},
         f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :

@@ -2822,3 +2822,16 @@ def test_ai_rate_button_without_key_shows_the_message(page, server, monkeypatch)
   page.get_by_role("button", name="AI Rate", exact=True).click()
   expect(page.locator("#toast")).to_contain_text("no Gemini API key configured")
   page.errors.clear()    # the browser logs the 400 itself as a console error
+
+
+def test_files_panel_shows_the_ai_rating(page, server):
+  # ticket 181: the score on its own line, the individual answers in the tooltip
+  ids = photo_ids(server)
+  fid = server.app.state.db.execute(
+      "SELECT id FROM files WHERE photo_id = ?", (ids[0],)).fetchone()[0]
+  server.app.state.db.execute("UPDATE files SET ai_score = 7.46 WHERE id = ?", (fid,))
+  server.app.state.db.commit()
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel .file .ai-rating")).to_have_text("AI rating 7.5")

@@ -488,7 +488,7 @@ def create_app(conn, settings):
         grouping.set_representative(app.state.db, photo_id, body.file_id)
       except ValueError as e:
         raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
-      return library.photo_detail(app.state.db, photo_id)
+      return library.photo_detail(app.state.db, photo_id, settings.ai_model)
 
   def path_of(file_id):
     row = app.state.db.execute("SELECT path FROM files WHERE id = ?",
@@ -506,7 +506,7 @@ def create_app(conn, settings):
                           path_of(body.target_file_id), body.role)
         photo_id = app.state.db.execute(
             "SELECT photo_id FROM files WHERE id = ?", (file_id,)).fetchone()[0]
-        return library.photo_detail(app.state.db, photo_id)
+        return library.photo_detail(app.state.db, photo_id, settings.ai_model)
       except ValueError as e:
         raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
 
@@ -518,7 +518,7 @@ def create_app(conn, settings):
         manual_links.unlink(app.state.db, settings.state_dir, path_of(file_id))
         photo_id = app.state.db.execute(
             "SELECT photo_id FROM files WHERE id = ?", (file_id,)).fetchone()[0]
-        return library.photo_detail(app.state.db, photo_id)
+        return library.photo_detail(app.state.db, photo_id, settings.ai_model)
       except ValueError as e:
         raise HTTPException(404 if str(e).startswith("no such") else 400, str(e))
 
@@ -534,7 +534,7 @@ def create_app(conn, settings):
         result = trash.trash_file(app.state.db, settings, file_id)
         photo_id = app.state.db.execute(
             "SELECT photo_id FROM files WHERE id = ?", (file_id,)).fetchone()[0]
-        result["photo"] = library.photo_detail(app.state.db, photo_id)
+        result["photo"] = library.photo_detail(app.state.db, photo_id, settings.ai_model)
         return result
       except trash.TrashError as e:
         raise HTTPException(404 if e.args[0].startswith("no such") else 400, str(e))
@@ -740,7 +740,7 @@ def create_app(conn, settings):
   @app.get("/api/photos/{photo_id}")
   @db_route
   def photo(photo_id: int):
-    detail = read(library.photo_detail, photo_id)
+    detail = read(library.photo_detail, photo_id, settings.ai_model)
     if detail is None:
       raise HTTPException(404, f"no such photo: {photo_id}")
     return detail

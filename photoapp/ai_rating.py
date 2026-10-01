@@ -98,9 +98,9 @@ def rescore_stale(conn, settings):
   return n
 
 
-def answers_for(conn, settings, file_row):
+def answers_for(conn, ai_model, file_row):
   """The cached answers for the current prompt/model of a files row (a dict with hash, thumb_rev,
   id), or None."""
   prompt = current_prompt()
   return cached_answers(conn, image_key(file_row["hash"], file_row["thumb_rev"], file_row["id"]),
-                        prompt.hash, settings.ai_model)
+                        prompt.hash, ai_model)
