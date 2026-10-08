@@ -2856,7 +2856,7 @@ def test_sort_by_ai_rating_orders_the_grid_best_first(page, server):
   expect(page.locator(".cell").first).to_have_attribute("data-id", str(ids[2]))
 
 
-def test_actions_menu_closes_with_escape_and_close_button_without_acting(page, server):
+def test_actions_menu_closes_with_escape_and_outside_click_without_acting(page, server):
   # ticket 196: the "..." menu is a modal; dismissing it does nothing.
   open_loupe(page, server)
   page.locator(".hud button.debug-menu").click()
@@ -2865,7 +2865,8 @@ def test_actions_menu_closes_with_escape_and_close_button_without_acting(page, s
   expect(page.locator(".actions-modal")).to_have_count(0)
   expect(page.locator(".loupe")).to_be_visible()                           # Escape closed only the menu
   page.locator(".hud button.debug-menu").click()
-  page.locator(".actions-modal").get_by_role("button", name="Close").click()
+  expect(page.locator(".actions-modal").get_by_role("button", name="Close")).to_have_count(0)
+  page.mouse.click(5, 5)                                                    # outside the menu
   expect(page.locator(".actions-modal")).to_have_count(0)
   expect(page.locator("#toast")).not_to_contain_text("re-rendering")
 

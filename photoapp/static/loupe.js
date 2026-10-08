@@ -1367,8 +1367,7 @@ function openActionsMenu(anchor) {
         class: 'menu-item', role: 'menuitem', title: item.hint,
         onclick: () => { closeActionsMenu(); item.run(); }},
         el('span', {class: 'label', text: item.label}),
-        el('span', {class: 'hint', text: item.hint}))),
-      el('div', {class: 'row'}, el('button', {text: 'Close', onclick: closeActionsMenu}))));
+        el('span', {class: 'hint', text: item.hint})))));
   document.body.append(ui.actionsModal);
   placeNear(ui.actionsModal.querySelector('.confirm-card'), anchor);   // ticket 198: next to the "⋯"
   const first = ui.actionsModal.querySelector('.menu-item');
