@@ -261,3 +261,62 @@ def test_rating_and_tag_filters_are_anded(settings):
   r = c.get("/api/photos", params={"dir": "t", "filter": "rating:4", "tag": "trip"}).json()
   assert [p["name"] for p in r["photos"]] == ["a.jpg"] and r["total"] == 1
   assert c.get("/api/photos/counts", params={"dir": "t", "tag": "trip"}).json()["counts"]["all"] == 3
+
+
+# ---- ticket 202: a video's still is made by a job, never inside the request ----------------------
+
+def clip_app(settings, real=True):
+  from tests.test_video_tools import make_clip
+  d = settings.pictures_dir
+  os.makedirs(os.path.join(d, "v"), exist_ok=True)
+  if real:
+    make_clip(video.Tools(), os.path.join(d, "v", "a.mp4"), seconds=3)
+  else:
+    touch(os.path.join(d, "v", "a.mp4"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  app = api.create_app(conn, settings)
+  fid = conn.execute("SELECT id FROM files").fetchone()[0]
+  return TestClient(app), app, conn, fid
+
+
+@pytest.mark.skipif(not video.Tools().available(), reason="ffmpeg not installed")
+def test_video_still_is_queued_then_served(settings):
+  c, app, conn, fid = clip_app(settings)
+  app.state.jobs.start()
+  try:
+    r = c.get(f"/img/Thumb/{fid}")
+    assert r.status_code == 404 and r.headers["retry-after"] == "2"
+    assert app.state.jobs.wait_idle(30)
+    r = c.get(f"/img/Thumb/{fid}")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    assert c.get(f"/img/Medium/{fid}").status_code == 200           # all four were made from one frame
+    assert conn.execute("SELECT COUNT(*) FROM thumbs WHERE file_id = ?", (fid,)).fetchone()[0] == 4
+  finally:
+    app.state.jobs.stop()
+
+
+@pytest.mark.skipif(not video.Tools().available(), reason="ffmpeg not installed")
+def test_undecodable_video_gets_the_placeholder_after_one_failed_job(settings):
+  c, app, conn, fid = clip_app(settings, real=False)
+  app.state.jobs.start()
+  try:
+    assert c.get(f"/img/Thumb/{fid}").status_code == 404
+    assert app.state.jobs.wait_idle(30)
+    r = c.get(f"/img/Thumb/{fid}")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"   # the placeholder
+    assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind = 'video_thumb'").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM thumbs").fetchone()[0] == 0     # nothing recorded
+  finally:
+    app.state.jobs.stop()
+
+
+def test_video_without_ffmpeg_gets_the_placeholder_at_once(settings):
+  c, app, conn, fid = clip_app(settings, real=False)
+  video.configure(video.Tools("no-such-ffmpeg-xyz", "no-such-ffprobe-xyz"))
+  try:
+    r = c.get(f"/img/Thumb/{fid}")
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache"
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+  finally:
+    video.configure(video.Tools())

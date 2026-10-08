@@ -145,3 +145,21 @@ def test_files_panel_shows_only_the_video_element_beside_the_panel(page, vserver
   expect(page.locator(".files-panel")).to_have_count(0)
   v = page.locator("video.main-video").bounding_box()
   assert abs(v["width"] - s["width"]) < 2
+
+
+def test_video_tiles_without_thumbnails_fill_in_and_do_not_block_the_folder(page, server):
+  # ticket 202: the still is made by a queued job; the tile retries until it exists.
+  d = os.path.join(server.pictures, "fresh")
+  os.makedirs(d)
+  for name in ("a", "b", "c"):
+    video.Tools().ffmpeg_run(["-f", "lavfi", "-i", "testsrc=duration=2:size=320x180:rate=10",
+                              "-pix_fmt", "yuv420p", "-y", os.path.join(d, f"{name}.mp4")])
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  page.goto(server.url + "/#/fresh")
+  page.get_by_label("tag filter").select_option("tag:video")
+  expect(page.locator(".cell.video")).to_have_count(3)
+  wait_for(lambda: page.evaluate(
+      "[...document.querySelectorAll('.cell.video img')].every(i => i.complete && i.naturalWidth > 0)"),
+      timeout=30)
+  page.errors.clear()      # the expected 404 + Retry-After answers are logged by the browser

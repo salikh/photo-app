@@ -96,7 +96,7 @@ export function createFilmstrip(onPick) {
       const photo = photos[i];
       if (!photo) continue;
       const img = el('img', {src: imgUrl('Thumb', photo.file_id), alt: photo.name, decoding: 'async', draggable: 'false'});
-      retryImage(img);
+      retryImage(img, photo.is_video ? 120 : 6);   // ticket 202
       node.append(img);
       if (photo.is_video) node.append(playOverlay());      // ticket 192
     }

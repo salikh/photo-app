@@ -79,18 +79,46 @@ def _populate_video(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes):
       errors.append(f"{size} failed")
       break         # the clip is the problem; do not spend another timeout on the next size
   if errors:
-    mtime = conn.execute("SELECT mtime FROM files WHERE id = ?", (file_id,)).fetchone()["mtime"]
-    conn.execute(
-        "INSERT INTO video_failures (file_id, error, failed_at, file_mtime) VALUES (?, ?, ?, ?)"
-        " ON CONFLICT(file_id) DO UPDATE SET error = excluded.error,"
-        " failed_at = excluded.failed_at, file_mtime = excluded.file_mtime",
-        (file_id, "; ".join(errors), time.time(), mtime))
-    logging.warning("%s: video thumbnails incomplete (%s); not retried for %d days",
-                    rel_path, "; ".join(errors), VIDEO_RETRY_SECONDS // 86400)
+    record_video_failure(conn, file_id, rel_path, errors)
   else:
     conn.execute("DELETE FROM video_failures WHERE file_id = ?", (file_id,))
   conn.commit()
   return made
+
+
+def record_video_failure(conn, file_id, rel_path, errors):
+  mtime = conn.execute("SELECT mtime FROM files WHERE id = ?", (file_id,)).fetchone()["mtime"]
+  conn.execute(
+      "INSERT INTO video_failures (file_id, error, failed_at, file_mtime) VALUES (?, ?, ?, ?)"
+      " ON CONFLICT(file_id) DO UPDATE SET error = excluded.error,"
+      " failed_at = excluded.failed_at, file_mtime = excluded.file_mtime",
+      (file_id, "; ".join(errors), time.time(), mtime))
+  logging.warning("%s: video thumbnails incomplete (%s); not retried for %d days",
+                  rel_path, "; ".join(errors), VIDEO_RETRY_SECONDS // 86400)
+
+
+def video_failed_recently(conn, file_id, now=None):
+  """True if this video's thumbnails failed within the retry window and the file is unchanged
+  since (ticket 202: the on-demand route then serves the placeholder instead of retrying)."""
+  row = conn.execute(
+      "SELECT 1 FROM video_failures vf JOIN files f ON f.id = vf.file_id WHERE vf.file_id = ?"
+      " AND vf.file_mtime IS f.mtime AND vf.failed_at > ?",
+      (file_id, (time.time() if now is None else now) - VIDEO_RETRY_SECONDS)).fetchone()
+  return row is not None
+
+
+def populate_video_stills(conn, pictures_dir, thumbs_dir, file_id, rel_path):
+  """The four still sizes of a video from one extracted frame (no animations). Records a failure
+  and raises RuntimeError when no frame can be decoded (ticket 202's on-demand job)."""
+  frames = video_thumbs.render_all(pictures_dir, thumbs_dir, rel_path)
+  for size, path in frames.items():
+    thumbs.record(conn, file_id, size, path, "ffmpeg")
+  if not frames and any(not thumbs.lookup(thumbs_dir, s, rel_path) for s in thumbs.SIZES):
+    record_video_failure(conn, file_id, rel_path, ["no decodable frame"])
+    conn.commit()
+    raise RuntimeError("no decodable frame")
+  conn.commit()
+  return list(frames)
 
 
 def find_missing_files(conn, limit=None, sizes=thumbs.SIZES, rel_dir=None,

@@ -48,13 +48,15 @@ export function enqueue(fn) {
 }
 
 // Retry loading an <img> whose source may still be rendering (404 + Retry-After).
+// Ticket 202: the delay between tries is capped at 8 s, so a long wait (a video tile whose thumbnail
+// is queued behind hundreds of others) keeps retrying every few seconds instead of backing off for ever.
 export function retryImage(img, attempts = 6) {
   let n = 0;
   const base = img.getAttribute('src');
   img.addEventListener('error', () => {
     if (n >= attempts) return;
     n++;
-    setTimeout(() => { img.src = base + (base.includes('?') ? '&' : '?') + 'r=' + n; }, 1500 * n);
+    setTimeout(() => { img.src = base + (base.includes('?') ? '&' : '?') + 'r=' + n; }, Math.min(1500 * n, 8000));
   });
 }
 

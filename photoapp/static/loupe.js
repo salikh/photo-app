@@ -251,13 +251,14 @@ function retryOnce(img, photo) {
   let n = 0;
   img.onerror = () => {
     if (current() !== photo) return;
-    if (n >= 6) {
+    if (n >= (photo.is_video ? 40 : 6)) {    // ticket 202: a video's still comes from a queued job
       brokenFileId = photo.file_id;
       renderHud();
       return;
     }
     n++;
-    setTimeout(() => { if (current() === photo) img.src = forceUrl('Medium', photo.file_id, n); }, 1500 * n);
+    setTimeout(() => { if (current() === photo) img.src = forceUrl('Medium', photo.file_id, n); },
+               Math.min(1500 * n, 8000));
   };
 }
 

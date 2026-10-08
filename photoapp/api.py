@@ -39,6 +39,8 @@ from photoapp import scan as scan_lib
 from photoapp import raw_settings
 from photoapp import rotation as rotation_lib
 from photoapp import thumb_populate
+from photoapp import video
+from photoapp import video_thumbs
 from photoapp import thumbs
 from photoapp import trash
 
@@ -195,7 +197,20 @@ def create_app(conn, settings):
     export.link_exported_file(conn, settings, job["file_id"], job["target"])
     logging.vlog(5, "%s: exported to %s", row["path"], job["target"])
 
-  app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render},
+  def video_thumb(conn, job):
+    """Ticket 202: the still thumbnails of a video the grid asked for. Extracting a frame takes
+    from half a second to several over a network file system, so the request does not wait for it
+    (a grid of hundreds of video tiles used to hold every browser connection, and with them the
+    folder's own API calls): the route answers 404 + Retry-After and this job makes the files."""
+    row = conn.execute("SELECT path FROM files WHERE id = ? AND missing = 0",
+                       (job["file_id"],)).fetchone()
+    if row is None:
+      raise RuntimeError("file is gone")
+    thumb_populate.populate_video_stills(conn, settings.pictures_dir, settings.thumbs_dir,
+                                         job["file_id"], row["path"])
+
+  app.state.jobs = jobs.JobQueue(settings.db_path, {"raw_render": raw_render,
+                                                    "video_thumb": video_thumb},
                                  settings.job_workers)
   app.state.jobs.add_handler("export", export_job)
 
@@ -821,6 +836,22 @@ def create_app(conn, settings):
                 rotation_lib.get(app.state.db, file_id))
     file_settings, file_crop, file_rotation = await run_in_threadpool(
         run_db, get_file_settings)
+    if fileinfo.is_video(row["path"]) and not thumbs.lookup(settings.thumbs_dir, size, row["path"]):
+      # Ticket 202: never extract a frame inside the request. A larger cached size can still be
+      # downscaled cheaply (thumbs.make does that); otherwise queue a job and let the client retry.
+      larger = [thumbs.lookup(settings.thumbs_dir, s, row["path"])
+                for s in thumbs.SIZES[thumbs.SIZES.index(size) + 1:]]
+      if not any(larger):
+        def video_state():
+          with app.state.db_lock:
+            return thumb_populate.video_failed_recently(app.state.db, file_id)
+        if (not video.default_tools().available()
+            or await run_in_threadpool(run_db, video_state)):
+          # nothing real can be made now: the shared placeholder, not cached by the browser
+          return FileResponse(video_thumbs.placeholder_path(settings.thumbs_dir, size),
+                              headers={"Cache-Control": "no-cache"})
+        app.state.jobs.enqueue("video_thumb", file_id)
+        raise HTTPException(404, "being rendered; retry shortly", headers={"Retry-After": "2"})
     if (size == "Huge" and not fileinfo.is_raw(row["path"])
         and rotation_lib.is_default(file_rotation)):
       # Huge is the full size: an existing one, else the original if the

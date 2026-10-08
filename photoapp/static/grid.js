@@ -94,7 +94,7 @@ export function refreshCellThumb(photoId, fileId) {
 
 export function makeCell(photo) {
   const img = el('img', {src: imgUrl('Thumb', photo.file_id), loading: 'lazy', alt: photo.name, decoding: 'async'});
-  retryImage(img);
+  retryImage(img, photo.is_video ? 120 : 6);   // ticket 202: a video's still is made by a queued job
   const check = el('button', {class: 'check', 'aria-label': 'select', text: '✓', onclick: (e) => {
     e.preventDefault(); e.stopPropagation();
     if (e.shiftKey) selectRange(photo.id); else toggle(photo.id);
