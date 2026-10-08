@@ -109,13 +109,13 @@ def test_video_filter_via_tag_dropdown_and_hud_chip(page, vserver):
   expect(select.locator("option", has_text="video (2)")).to_have_count(1, timeout=10000)
   select.select_option("tag:video")
   expect(page.locator(".cell")).to_have_count(2)
-  assert all(p["is_video"] for p in api(vserver, "/api/photos?dir=clips&filter=tag:video")["photos"])
+  assert all(p["is_video"] for p in api(vserver, "/api/photos?dir=clips&tag=video")["photos"])
   # from the loupe: the implied 'video' chip is a shortcut to the same filter
   pid = photos(vserver)["a.mp4"]["id"]
   page.goto(f"{vserver.url}/#/clips?photo={pid}")
   expect(page.locator(".hud .tag.implied", has_text="video")).to_have_count(1)
   page.locator(".hud .tag.implied", has_text="video").click()
-  expect(page.locator(".hud .filter-tag")).to_have_text("filter: tag: video")
+  expect(page.locator(".hud .filter-tag")).to_have_text("filter: All · tag: video")
   expect(page.locator(".hud .pos")).to_have_text("1/2")
 
 

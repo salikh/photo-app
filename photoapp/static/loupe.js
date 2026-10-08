@@ -12,7 +12,7 @@ import * as preloader from './preload.js';
 import {createFilmstrip} from './filmstrip.js';
 import {createZoom} from './zoom.js';
 import {updateCell, refreshCellThumb, settle, reinsertPhotos, loadRest, loadFolder} from './grid.js';
-import {matches, scheduleCountsRefresh} from './filters.js';
+import {matchesRoute, scheduleCountsRefresh} from './filters.js';
 import {RawTuningSession} from './rawTuning.js';
 import * as exportAction from './export.js';
 
@@ -375,16 +375,16 @@ function renderHud() {
     p.conflict ? el('span', {class: 'conflict', title: 'sidecars disagree', text: '⚠ conflict'}) : null,
     // Ticket 194: a tag chip is also a shortcut to filter the view by that tag.
     p.tags.map((t) => el('span', {class: 'tag', title: `show only tag: ${t}`, role: 'button',
-      onclick: (e) => { e.stopPropagation(); switchFilterTo('tag:' + t); }, text: t})),
+      onclick: (e) => { e.stopPropagation(); switchViewTo({tag: t}); }, text: t})),
     // Ticket 123: dot-directory names in the path read as implicit tags (a hidden folder's name).
     (p.implied || []).map((t) => el('span', {class: 'tag implied',
       title: t === 'video' ? 'a video file (click: show only videos)' : 'from a hidden folder name',
-      role: 'button', onclick: (e) => { e.stopPropagation(); switchFilterTo('tag:' + t); }, text: t})),
+      role: 'button', onclick: (e) => { e.stopPropagation(); switchViewTo({tag: t}); }, text: t})),
     // Deliberately not class "tag" -- .hud .tag is also used for the photo's own tags, and tests
     // (and a future feature) count them separately from this filter-switcher button.
     state.route
       ? el('button', {class: 'filter-tag' + (filterPanelOpen ? ' on' : ''), title: 'switch the active filter',
-                      text: 'filter: ' + filterLabel(state.route.filter),
+                      text: 'filter: ' + filterLabel(state.route.filter) + (state.route.tag ? ' · tag: ' + state.route.tag : ''),
                       onclick: (e) => { e.stopPropagation(); toggleFilterPicker(); }}) : null,
     ui.tagInput,
     el('div', {class: 'buttons'},
@@ -453,9 +453,8 @@ function leaveIfNoLongerMatching(photo) {
 // matches, or put it back (and show it) if it was removed but does match after all (a failed
 // write, or a dry run).
 function reconcile(photo, left) {
-  const filter = state.route && state.route.filter;
   const inList = state.photos.includes(photo);
-  const should = !filter || filter === 'all' || matches(photo, filter);
+  const should = !state.route || matchesRoute(photo, state.route);   // ticket 200: rating AND tag
   if (!should && inList) {
     left.push(...leaveIfNoLongerMatching(photo));
   } else if (should && !inList) {
@@ -1186,7 +1185,7 @@ async function openFiles() {
         const dir = slash < 0 ? null : f.path.slice(0, slash);
         const name = slash < 0 ? f.path : f.path.slice(slash + 1);
         const pathParts = (state.route.recursive && dir)
-          ? [el('a', {href: href({dir, filter: state.route.filter, sort: state.route.sort}),
+          ? [el('a', {href: href({dir, filter: state.route.filter, tag: state.route.tag, sort: state.route.sort}),
                      text: dir}), '/' + name]
           : [f.path];
         return el('div', {class: 'meta'},
@@ -1248,7 +1247,7 @@ function renderFilterPanel() {
   const photo = current();
   const option = (value, text) => {
     const active = state.route.filter === value;
-    const ok = matches(photo, value);
+    const ok = matchesRoute(photo, {filter: value, tag: state.route.tag});   // ticket 200: AND the tag
     const count = state.counts ? state.counts[value] : null;
     return el('button', {
       class: 'filter-option' + (active ? ' on' : ''),
@@ -1293,11 +1292,14 @@ function closeFilterPicker() {
 
 function toggleFilterPicker() { filterPanelOpen ? closeFilterPicker() : openFilterPicker(); }
 
-async function switchFilterTo(newFilter) {
+function switchFilterTo(newFilter) { return switchViewTo({filter: newFilter}); }
+
+// Ticket 200: change the rating filter and/or the tag (independent, ANDed) while staying on this photo.
+async function switchViewTo(change) {
   const photoId = current().id;
   closeFilterPicker();
-  if (newFilter === state.route.filter) return;
-  const newRoute = {...state.route, filter: newFilter};
+  const newRoute = {...state.route, ...change};
+  if (newRoute.filter === state.route.filter && newRoute.tag === state.route.tag) return;
   history.replaceState(null, '', href(newRoute));
   try {
     await loadFolder(newRoute);

@@ -5,10 +5,13 @@ import {el, toast, retryImage, enqueue, setChildren, playOverlay, formatDuration
 import {href, hrefPage} from './route.js';
 import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
-import {matches, scheduleCountsRefresh} from './filters.js';
+import {matchesRoute, scheduleCountsRefresh} from './filters.js';
 import * as moveAction from './move.js';
 
 const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
+
+// Ticket 200: the tag filter travels beside the rating filter (the two are ANDed).
+export function tagParam(route) { return route.tag ? '&tag=' + encodeURIComponent(route.tag) : ''; }
 
 export async function loadFolder(route) {
   state.route = route;
@@ -17,8 +20,8 @@ export async function loadFolder(route) {
   const rec = route.recursive ? '&recursive=1' : '';
   const [dirs, first, counts, tags] = await Promise.all([
     get('/api/dirs?path=' + encodeURIComponent(route.dir)),
-    get(`/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}&filter=${route.filter}&limit=${PAGE}${rec}`),
-    get('/api/photos/counts?dir=' + encodeURIComponent(route.dir) + rec),
+    get(`/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}&filter=${route.filter}${tagParam(route)}&limit=${PAGE}${rec}`),
+    get('/api/photos/counts?dir=' + encodeURIComponent(route.dir) + rec + tagParam(route)),
     get('/api/photos/tags?dir=' + encodeURIComponent(route.dir) + rec),
   ]);
   state.dirs = dirs;
@@ -44,7 +47,7 @@ export function loadRest(route, onPage = () => {}) {
       const epoch = state.epoch;
       const page = await enqueue(() => get(
           `/api/photos?dir=${encodeURIComponent(route.dir)}&sort=${route.sort}` +
-          `&filter=${route.filter}&offset=${state.loaded - state.removed}&limit=${PAGE}` +
+          `&filter=${route.filter}${tagParam(route)}&offset=${state.loaded - state.removed}&limit=${PAGE}` +
           (route.recursive ? '&recursive=1' : '')));
       if (state.route !== route) break;
       if (epoch !== state.epoch) continue;
@@ -230,7 +233,7 @@ function statusText() {
   const shown = state.photos.length;
   const total = state.total - state.removed;
   if (!total) {
-    return 'No photos in this folder' + (state.route && state.route.filter !== 'all' ? ' with this filter' : '');
+    return 'No photos in this folder' + (state.route && (state.route.filter !== 'all' || state.route.tag) ? ' with this filter' : '');
   }
   return `${shown} of ${total} photos`;
 }
@@ -287,8 +290,7 @@ export function reinsertPhotos(entries) {
 // If the photo no longer matches the active filter, take it out of the view.
 // Returns the entries that were removed (empty when nothing changed).
 export function settle(photo) {
-  const filter = state.route && state.route.filter;
-  if (!filter || filter === 'all' || !state.photos.includes(photo) || matches(photo, filter)) return [];
+  if (!state.route || !state.photos.includes(photo) || matchesRoute(photo, state.route)) return [];
   return removePhotos([photo]);
 }
 

@@ -96,6 +96,13 @@ export function matches(photo, filter) {
 }
 
 
+// Ticket 200: does a photo match the rating filter AND the tag of a route?
+export function matchesRoute(photo, route) {
+  const filter = route.filter || 'all';
+  if (filter !== 'all' && !matches(photo, filter)) return false;
+  return !route.tag || matches(photo, 'tag:' + route.tag);
+}
+
 // ---- counts per filter for the current folder (ticket 057) ----
 
 // Shortcuts for the grid (the viewer has its own keys): Shift + A / X / 0..5. Alt+digit is not
@@ -135,11 +142,11 @@ export function applyTags(tags) {
   const sel = document.querySelector('.filters select.tag-filter');
   if (!sel) return;
   const known = new Set(state.tags.map((t) => 'tag:' + t.tag));
-  const options = [el('option', {value: '', text: 'tag: …'})];
+  const active = state.route && state.route.tag ? 'tag:' + state.route.tag : null;   // ticket 200
+  const options = [el('option', {value: '', text: active ? 'all tags' : 'tag: …'})];
   // An already-active custom tag (not in this view's aspects) still gets an option, so the
   // selector shows what is filtering the view instead of silently falling back to the placeholder.
-  const active = state.route && state.route.filter;
-  if (active && active.startsWith('tag:') && !known.has(active)) {
+  if (active && !known.has(active)) {
     options.push(el('option', {value: active, text: 'tag: ' + active.slice(4)}));
     known.add(active);
   }
@@ -161,8 +168,9 @@ export function scheduleCountsRefresh() {
       if (!state.route || state.route.page !== 'browse') return;
       const dir = encodeURIComponent(state.route.dir);
       const rec = state.route.recursive ? '&recursive=1' : '';
+      const tag = state.route.tag ? '&tag=' + encodeURIComponent(state.route.tag) : '';   // ticket 200
       try {
-        applyCounts((await get(`/api/photos/counts?dir=${dir}${rec}`)).counts);
+        applyCounts((await get(`/api/photos/counts?dir=${dir}${rec}${tag}`)).counts);
       } catch (e) { /* the numbers are a convenience; leave them as they are */ }
       try {
         applyTags((await get(`/api/photos/tags?dir=${dir}${rec}`)).tags);

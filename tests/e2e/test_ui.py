@@ -1231,7 +1231,7 @@ def test_dot_tag_filter_reveals_a_hidden_folder_and_its_implied_tag(page, server
   page.get_by_label("tag name").fill(".nu")
   page.get_by_label("tag name").press("Enter")
   expect(page.locator(".cell")).to_have_count(1)
-  assert "filter=tag%3A.nu" in page.url
+  assert "tag=.nu" in page.url and "filter=" not in page.url
   expect(sel).to_have_value("tag:.nu")
   page.locator(".cell").first.click()
   expect(page.locator(".loupe")).to_be_visible()
@@ -1346,7 +1346,7 @@ def test_tag_filter_dropdown_lists_and_filters_by_one_tag(page, server):
 
   tag_select.select_option("tag:vacation")
   expect(page.locator(".cell")).to_have_count(2)
-  assert "filter=tag%3Avacation" in page.url
+  assert "tag=vacation" in page.url and "filter=" not in page.url
   expect(tag_select).to_have_class(ON)
 
   page.reload()                                          # state is in the URL
@@ -1354,7 +1354,7 @@ def test_tag_filter_dropdown_lists_and_filters_by_one_tag(page, server):
   expect(tag_select).to_have_value("tag:vacation")
 
   add_tag(page, server, 3, "vacation")                      # a 3rd photo joins the tag mid-session
-  page.goto(server.url + "/#/2024/trip?filter=tag%3Avacation")
+  page.goto(server.url + "/#/2024/trip?tag=vacation")
   expect(page.locator(".cell")).to_have_count(3)
 
 
@@ -1371,7 +1371,7 @@ def test_custom_tag_filter_input(page, server):
   inp.fill("vacation")
   inp.press("Enter")
   expect(page.locator(".cell")).to_have_count(1)
-  assert "filter=tag%3Avacation" in page.url
+  assert "tag=vacation" in page.url and "filter=" not in page.url
   expect(sel).to_have_value("tag:vacation")
 
   # a tag with no photos in this view still applies, and the selector shows it rather than resetting
@@ -1379,7 +1379,7 @@ def test_custom_tag_filter_input(page, server):
   page.get_by_label("tag name").fill("no-such-tag")
   page.get_by_role("button", name="Filter").click()
   expect(page.locator(".cell")).to_have_count(0)
-  assert "filter=tag%3Ano-such-tag" in page.url
+  assert "tag=no-such-tag" in page.url
   expect(sel).to_have_value("tag:no-such-tag")
 
   # Escape cancels and restores the selector to the still-active filter, without navigating
@@ -2896,3 +2896,28 @@ def test_loupe_popovers_open_next_to_the_clicked_element(page, server, viewport)
   more = page.locator(".hud button.debug-menu")
   more.click()
   _next_to(page.locator(".actions-modal .confirm-card").bounding_box(), more.bounding_box(), viewport)
+
+
+def test_rating_filter_and_tag_filter_are_independent_and_anded(page, server):
+  # ticket 200: stars/unrated/rejected and the tag combine with AND; neither resets the other.
+  add_tag(page, server, 0, "vacation")        # IMG_0001: unrated
+  add_tag(page, server, 1, "vacation")        # IMG_0002: 4 stars
+  add_tag(page, server, 2, "vacation")        # IMG_0003: rejected
+  page.goto(server.url + "/#/2024/trip")
+  tag_select = page.get_by_label("tag filter")
+  tag_select.select_option("tag:vacation")
+  expect(page.locator(".cell")).to_have_count(3)
+  page.locator(".filters button[data-filter='rating:4']").click()          # keeps the tag
+  expect(page.locator(".cell")).to_have_count(1)
+  assert "tag=vacation" in page.url and "filter=rating%3A4" in page.url
+  expect(tag_select).to_have_value("tag:vacation")
+  expect(page.locator(".filters button[data-filter='all'] .n")).to_have_text("3")   # counts honour the tag
+  expect(page.locator(".filters button[data-filter='rejected'] .n")).to_have_text("1")
+  page.locator(".filters button[data-filter='rejected']").click()
+  expect(page.locator(".cell")).to_have_count(1)
+  tag_select.select_option("")                                              # clearing the tag keeps the rating
+  expect(page.locator(".cell")).to_have_count(1)
+  assert "tag=" not in page.url and "filter=rejected" in page.url
+  tag_select.select_option("tag:vacation")
+  page.locator(".cell").first.click()
+  expect(page.locator(".hud .filter-tag")).to_have_text("filter: ✖ Rejected · tag: vacation")

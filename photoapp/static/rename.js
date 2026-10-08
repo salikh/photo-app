@@ -22,7 +22,7 @@ async function commit(oldDir, newDir) {
     toast(`renamed to ${newDir} (${r.files_moved} file(s)) — see the Jobs page for progress`);
     // The folder being browsed no longer exists at its old path -- follow it to the new one,
     // keeping the current filter/sort (same reasoning as ticket 154's directory link).
-    location.hash = href({dir: newDir, filter: state.route.filter, sort: state.route.sort});
+    location.hash = href({dir: newDir, filter: state.route.filter, tag: state.route.tag, sort: state.route.sort});
   } catch (e) {
     toast(e.message, true);
   }

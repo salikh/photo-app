@@ -45,6 +45,11 @@ function filterRow(route) {
     history.replaceState(null, '', href({...route, filter, photo: null}));
     render();
   };
+  // Ticket 200: the tag is independent of the rating filter (the two are ANDed), and vice versa.
+  const goTag = (tag) => {
+    history.replaceState(null, '', href({...route, tag, photo: null}));
+    render();
+  };
   const extra = filters.more();
   const inMore = extra.some(([v]) => v === route.filter);
   return el('div', {class: 'filters', role: 'group', 'aria-label': 'filter'},
@@ -74,15 +79,15 @@ function filterRow(route) {
     // after this element is in the DOM, not built here from a fixed list like the row above.
     // Ticket 122: the "Other tag…" option opens an input to type any tag (notably a dot-tag).
     el('select', {'aria-label': 'tag filter', class: 'tag-filter', onchange: (e) => {
-      if (e.target.value === filters.CUSTOM_TAG) promptCustomTag(go);
-      else if (e.target.value) go(e.target.value);
+      if (e.target.value === filters.CUSTOM_TAG) promptCustomTag(goTag);
+      else goTag(e.target.value ? e.target.value.slice(4) : null);   // '' = all tags; 'tag:NAME'
     }},
       el('option', {value: '', text: 'tag: \u2026'})));
 }
 
-// Ticket 122: a small modal to type any tag. Enter/Filter applies tag:<typed>; Escape/Cancel
+// Ticket 122: a small modal to type any tag. Enter/Filter applies the typed tag; Escape/Cancel
 // restores the selector to whatever the active filter is.
-function promptCustomTag(go) {
+function promptCustomTag(goTag) {
   const input = el('input', {type: 'text', class: 'tag-input', placeholder: 'tag name',
                              'aria-label': 'tag name'});
   const restore = () => filters.applyTags(state.tags);
@@ -90,7 +95,7 @@ function promptCustomTag(go) {
   const apply = () => {
     const tag = input.value.trim();
     modal.remove();
-    if (tag) go('tag:' + tag); else restore();
+    if (tag) goTag(tag); else restore();
   };
   const modal = el('div', {class: 'confirm-modal', onclick: close},
     el('div', {class: 'confirm-card', onclick: (e) => e.stopPropagation()},
@@ -136,10 +141,10 @@ function renderHeader(route) {
                              onclick: () => aiRate.start()}) : null,
     // Ticket 155: only offered for the unfiltered view -- the whole folder moves regardless of
     // any active rating/tag filter, so showing this under a filter would be misleading.
-    browsing && route.filter === 'all' && route.dir !== '.'
+    browsing && route.filter === 'all' && !route.tag && route.dir !== '.'
       ? el('button', {text: 'Rename', title: 'rename this folder',
                       onclick: () => renameAction.open()}) : null,
-    browsing && route.filter === 'rejected'
+    browsing && route.filter === 'rejected' && !route.tag
       ? el('a', {class: 'danger', href: hrefPage('delete-review', route.dir, route.recursive),
                 text: 'Delete', title: 'review and move these rejected photos to trash'}) : null,
     el('button', {text: 'Rescan', title: 'rescan this folder', onclick: () => rescan(route)}),
@@ -187,7 +192,7 @@ async function render() {
     return;
   }
 
-  const sameFolder = previous && previous.dir === route.dir && previous.filter === route.filter &&
+  const sameFolder = previous && previous.dir === route.dir && previous.filter === route.filter && previous.tag === route.tag &&
                      previous.sort === route.sort && previous.recursive === route.recursive &&
                      state.route && state.route.page === 'browse';
   if (!sameFolder) {
@@ -210,7 +215,7 @@ async function render() {
   } else {
     state.route.photo = route.photo;
   }
-  previous = {dir: route.dir, filter: route.filter, sort: route.sort, recursive: route.recursive};
+  previous = {dir: route.dir, filter: route.filter, tag: route.tag, sort: route.sort, recursive: route.recursive};
 
   if (route.photo) {
     // Open at once if the photo is on the first page; otherwise (a direct link deep into a big

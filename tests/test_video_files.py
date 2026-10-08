@@ -224,3 +224,40 @@ def test_rating_sidecar_trash_and_move_work_for_a_video(settings):
   r = c.post("/api/photos/trash", json={"ids": [pid]})
   assert r.status_code == 200, r.text
   assert os.path.isfile(os.path.join(d, ".trash", "moved", "a.mp4"))
+
+
+# ---- ticket 200: the rating filter and the tag filter are ANDed -----------------------------------
+
+def test_rating_and_tag_filters_are_anded(settings):
+  from photoapp import library
+  d = settings.pictures_dir
+  for n in ("a", "b", "c", "d"):
+    make_jpeg(os.path.join(d, "t", f"{n}.jpg"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  pid = {r["path"]: r["id"] for r in conn.execute(
+      "SELECT f.path, p.id FROM photos p JOIN files f ON f.id = p.representative_file_id")}
+  for path, rating, tags in (("t/a.jpg", 4, ["trip"]), ("t/b.jpg", 4, []),
+                             ("t/c.jpg", 2, ["trip"]), ("t/d.jpg", -1, ["trip"])):
+    conn.execute("UPDATE photos SET rating = ? WHERE id = ?", (rating, pid[path]))
+    for t in tags:
+      conn.execute("INSERT INTO tags (photo_id, tag) VALUES (?, ?)", (pid[path], t))
+  conn.commit()
+
+  def names(**kw):
+    return [p["name"] for p in library.list_photos(conn, "t", sort="name", **kw)["photos"]]
+
+  assert names(filter="rating:4") == ["a.jpg", "b.jpg"]
+  assert names(filter="all", tag="trip") == ["a.jpg", "c.jpg", "d.jpg"]
+  assert names(filter="rating:4", tag="trip") == ["a.jpg"]                  # the AND
+  assert names(filter="rating>=2", tag="trip") == ["a.jpg", "c.jpg"]
+  assert names(filter="rejected", tag="trip") == ["d.jpg"]
+  assert names(filter="tag:trip") == ["a.jpg", "c.jpg", "d.jpg"]            # legacy form still works
+  assert names(filter="tag:trip", tag="other") == []                         # explicit tag wins
+  counts = library.filter_counts(conn, "t", tag="trip")["counts"]
+  assert counts["all"] == 3 and counts["rating:4"] == 1 and counts["rejected"] == 1
+  assert library.filter_counts(conn, "t")["counts"]["all"] == 4
+  c = TestClient(api.create_app(conn, settings))
+  r = c.get("/api/photos", params={"dir": "t", "filter": "rating:4", "tag": "trip"}).json()
+  assert [p["name"] for p in r["photos"]] == ["a.jpg"] and r["total"] == 1
+  assert c.get("/api/photos/counts", params={"dir": "t", "tag": "trip"}).json()["counts"]["all"] == 3

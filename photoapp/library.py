@@ -35,11 +35,6 @@ _FILTER_SQL_ONE_STAR_UNRATED = dict(
 )
 
 
-def _is_dot_tag(name):
-  """True if name is a 'tag:NAME' filter whose tag starts with a dot (ticket 123)."""
-  m = TAG_FILTER_RE.match(name or "")
-  return bool(m) and m.group(1).startswith('.')
-
 
 def implied_tags(path):
   """Dot-prefixed directory names in path, e.g. 'a/.picasa/b.jpg' -> ['.picasa'].
@@ -187,17 +182,39 @@ def _photo_json(r, tags):
   }
 
 
+def split_filter(filter, tag=None):
+  """(filter, tag) with a legacy 'tag:NAME' filter moved into the tag slot (ticket 200).
+
+  The rating/status filter and the tag filter are independent and ANDed; an old URL or client that
+  sends filter=tag:X means "all ratings, tag X". An explicit `tag` wins over a legacy one.
+  """
+  m = TAG_FILTER_RE.match(filter or "")
+  if m:
+    return "all", tag or m.group(1)
+  return filter or "all", tag or None
+
+
+def _view_condition(filter, tag, one_star_is_unrated):
+  """(sql, params) of the rating/status filter ANDed with the tag filter, on photos p / files rf."""
+  filter, tag = split_filter(filter, tag)
+  sql, args = filter_condition(filter, one_star_is_unrated)
+  if tag:
+    tag_sql, tag_args = filter_condition("tag:" + tag)
+    sql, args = f"({sql}) AND ({tag_sql})", tuple(args) + tuple(tag_args)
+  return sql, tuple(args), bool(tag) and tag.startswith(".")
+
+
 def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
-                limit=200, one_star_is_unrated=False, recursive=False):
+                limit=200, one_star_is_unrated=False, recursive=False, tag=None):
   """A page of Photos whose representative file is directly in rel_dir, or
-  (recursive) anywhere in its subtree."""
+  (recursive) anywhere in its subtree. filter (rating/status) and tag are ANDed (ticket 200)."""
   rel_dir = _norm_dir(rel_dir)
   if sort not in SORTS:
     raise ValueError(f"sort must be one of {SORTS}")
-  filter_sql, filter_args = filter_condition(filter, one_star_is_unrated)
+  filter_sql, filter_args, dot_tag = _view_condition(filter, tag, one_star_is_unrated)
   limit = max(1, min(int(limit), 1000))
   offset = max(0, int(offset))
-  scope_sql, scope_args = _scope_condition(rel_dir, recursive, _is_dot_tag(filter))
+  scope_sql, scope_args = _scope_condition(rel_dir, recursive, dot_tag)
   where = scope_sql + " AND rf.missing = 0 AND " + filter_sql
   args = scope_args + filter_args
   order = {"date": "COALESCE(rf.exif_date, datetime(rf.mtime, 'unixepoch')), rf.path",
@@ -234,7 +251,7 @@ COUNT_FILTERS = ("all", "unrated", "rejected", "rating:1", "rating:2", "rating:3
                  "picked", "rated", "fav", "conflict")
 
 
-def filter_counts(conn, rel_dir=".", one_star_is_unrated=False, recursive=False):
+def filter_counts(conn, rel_dir=".", one_star_is_unrated=False, recursive=False, tag=None):
   """How many Photos each filter shows in rel_dir (the ones the grid lists there).
 
   One query; the conditions and the recursive/non-recursive scope are the ones list_photos
@@ -242,14 +259,17 @@ def filter_counts(conn, rel_dir=".", one_star_is_unrated=False, recursive=False)
   With one_star_is_unrated there is no 'rating:1'.
   """
   rel_dir = _norm_dir(rel_dir)
-  scope_sql, scope_args = _scope_condition(rel_dir, recursive)
+  _, tag = split_filter("all", tag)
+  tag_sql, tag_args = filter_condition("tag:" + tag) if tag else ("1", ())
+  scope_sql, scope_args = _scope_condition(rel_dir, recursive, bool(tag) and tag.startswith("."))
   names = [n for n in COUNT_FILTERS if not (one_star_is_unrated and n == "rating:1")]
   sums = ", ".join(
       f"COALESCE(SUM(CASE WHEN {filter_condition(n, one_star_is_unrated)[0]} THEN 1 ELSE 0 END), 0)"
       for n in names)   # none of COUNT_FILTERS is a tag:NAME filter, so [0] never drops params
   row = conn.execute(
       f"SELECT {sums} FROM photos p JOIN files rf ON rf.id = p.representative_file_id "
-      "WHERE " + scope_sql + " AND rf.missing = 0", scope_args).fetchone()
+      "WHERE " + scope_sql + " AND rf.missing = 0 AND (" + tag_sql + ")",
+      tuple(scope_args) + tuple(tag_args)).fetchone()
   return {"dir": rel_dir, "counts": dict(zip(names, row))}
 
 
