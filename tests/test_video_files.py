@@ -114,3 +114,55 @@ def test_scan_stores_probe_results_and_exposes_them(settings, monkeypatch):
   assert p["duration"] == 12.5 and p["width"] == 1080
   f = c.get(f"/api/photos/{p['id']}").json()["files"][0]
   assert (f["duration"], f["fps"], f["video_codec"]) == (12.5, 29.97, "h264")
+
+
+# ---- ticket 191: serving ----------------------------------------------------------------------
+
+def served_app(settings):
+  d = settings.pictures_dir
+  touch(os.path.join(d, "v", "a.mp4"), bytes(range(256)) * 40)      # 10240 bytes
+  make_jpeg(os.path.join(d, "v", "p.jpg"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  ids = {r["path"]: r["id"] for r in conn.execute("SELECT id, path FROM files")}
+  return TestClient(api.create_app(conn, settings)), conn, ids
+
+
+def test_original_video_supports_range_requests(settings):
+  c, _, ids = served_app(settings)
+  full = c.get(f"/video/{ids['v/a.mp4']}")
+  assert full.status_code == 200 and full.headers["content-type"] == "video/mp4"
+  assert full.headers["accept-ranges"] == "bytes" and len(full.content) == 10240
+  part = c.get(f"/video/{ids['v/a.mp4']}", headers={"Range": "bytes=100-199"})
+  assert part.status_code == 206 and part.content == full.content[100:200]
+  assert part.headers["content-range"] == "bytes 100-199/10240"
+  tail = c.get(f"/video/{ids['v/a.mp4']}", headers={"Range": "bytes=-16"})
+  assert tail.status_code == 206 and tail.content == full.content[-16:]
+  bad = c.get(f"/video/{ids['v/a.mp4']}", headers={"Range": "bytes=99999-"})
+  assert bad.status_code == 416
+
+
+def test_video_route_refuses_stills_and_unknown_files(settings):
+  c, _, ids = served_app(settings)
+  assert c.get(f"/video/{ids['v/p.jpg']}").status_code == 404
+  assert c.get("/video/99999").status_code == 404
+
+
+def test_anim_thumbnail_route_and_has_anim_flag(settings):
+  from photoapp import thumbs
+  c, conn, ids = served_app(settings)
+  fid = ids["v/a.mp4"]
+  assert c.get(f"/anim/AnimThumb/{fid}").status_code == 404           # not made yet: fall back
+  p = c.get("/api/photos", params={"dir": "v", "sort": "name"}).json()["photos"][0]
+  assert p["is_video"] and p["has_anim"] is False
+  dest = thumbs.anim_path(settings.thumbs_dir, "AnimThumb", "v/a.mp4")
+  os.makedirs(os.path.dirname(dest)); open(dest, "wb").write(b"webm-bytes")
+  thumbs.record(conn, fid, "AnimThumb", dest, "anim-v1"); conn.commit()
+  r = c.get(f"/anim/AnimThumb/{fid}")
+  assert r.status_code == 200 and r.headers["content-type"] == "video/webm" and r.content == b"webm-bytes"
+  assert c.get(f"/anim/AnimSmall/{fid}").status_code == 404
+  assert c.get(f"/anim/Bogus/{fid}").status_code == 404
+  assert c.get(f"/anim/AnimThumb/{ids['v/p.jpg']}").status_code == 404
+  p = c.get("/api/photos", params={"dir": "v", "sort": "name"}).json()["photos"][0]
+  assert p["has_anim"] is True
+  assert c.get(f"/api/photos/{p['id']}").json()["files"][0]["has_anim"] is True

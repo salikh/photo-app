@@ -183,6 +183,7 @@ def _photo_json(r, tags):
       "implied": implied_tags(r["path"]),
       "is_video": fileinfo.is_video(r["path"]),   # ticket 185
       "duration": r["duration"],                   # ticket 187: seconds, None for stills
+      "has_anim": bool(r["has_anim"]),             # ticket 191: an animated thumbnail exists
   }
 
 
@@ -209,6 +210,8 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
       "SELECT p.id, p.rating, p.fav, p.conflict, p.previous_stars, rf.id AS file_id, rf.path,"
       " rf.width, rf.height, rf.exif_date, rf.crop_x, rf.crop_y, rf.crop_w, rf.crop_h,"
       " rf.rotation, rf.thumb_rev, rf.duration,"
+      " EXISTS (SELECT 1 FROM thumbs th WHERE th.file_id = rf.id AND th.size = 'AnimThumb')"
+      "  AS has_anim,"
       " (SELECT COUNT(*) FROM files x WHERE x.photo_id = p.id AND"
       "  x.missing = 0) AS nfiles"
       " FROM photos p JOIN files rf ON rf.id = p.representative_file_id"
@@ -295,6 +298,8 @@ def photo_detail(conn, photo_id, ai_model=None):
     f["ai_answers"] = _ai_answers(conn, f["id"], ai_model) if f["ai_score"] is not None else None
     f["is_raw"] = fileinfo.is_raw(f["path"])   # ticket 085: only a RAW file gets settings sliders
     f["is_video"] = fileinfo.is_video(f["path"])   # ticket 185
+    f["has_anim"] = bool(conn.execute(              # ticket 191
+        "SELECT 1 FROM thumbs WHERE file_id = ? AND size = 'AnimThumb'", (f["id"],)).fetchone())
     # Ticket 099: "exported from" jump-to-original -- dir + photo_id of the source Photo, so the
     # frontend can build a link the same shape route.href already takes. Ticket 152: path too, for
     # the link's display text (dir alone read as "<dir> (photo <id>)", not a real path).

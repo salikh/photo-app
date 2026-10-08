@@ -3,6 +3,7 @@
 import dataclasses
 import functools
 import io
+import mimetypes
 import os
 import sqlite3
 import threading
@@ -772,6 +773,32 @@ def create_app(conn, settings):
       raise HTTPException(404, "not viewable in a browser; use a thumbnail size")
     return FileResponse(os.path.join(settings.pictures_dir, row["path"]),
                         headers=cache)
+
+  @app.get("/video/{file_id}")
+  @db_route
+  def video_original(file_id: int):
+    """Ticket 191: the original video, streamed with HTTP Range support (206) for <video>."""
+    row = file_row(file_id)
+    if not fileinfo.is_video(row["path"]):
+      raise HTTPException(404, "not a video")
+    path = os.path.join(settings.pictures_dir, row["path"])
+    if not os.path.isfile(path):
+      raise HTTPException(404, "file is missing")
+    mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    return FileResponse(path, media_type=mime, headers=cache)
+
+  @app.get("/anim/{size}/{file_id}")
+  @db_route
+  def animated_thumbnail(size: str, file_id: int):
+    """Ticket 191: the animated WebM preview (background-made, ticket 190). 404 -- not 500 and not
+    generated on the spot -- when it does not exist yet, so the client falls back to the still."""
+    if size not in thumbs.ANIM_SIZES:
+      raise HTTPException(404, "unknown size")
+    row = file_row(file_id)
+    path = thumbs.anim_lookup(settings.thumbs_dir, size, row["path"])
+    if not fileinfo.is_video(row["path"]) or path is None:
+      raise HTTPException(404, "no animated thumbnail")
+    return FileResponse(path, media_type="video/webm", headers=cache)
 
   @app.get("/img/{size}/{file_id}")
   async def image(size: str, file_id: int):
