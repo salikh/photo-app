@@ -194,6 +194,13 @@ function show(i) {
 
 // ------------------------------------------------------------------ video playback (ticket 193)
 
+// The player replaces the still while it is shown (ticket 197): both visible at once, each laid out
+// differently next to the Files panel, read as two images.
+function setVideoShown(shown) {
+  ui.video.hidden = !shown;
+  ui.stage.classList.toggle('video-shown', shown);
+}
+
 function stopVideo() {
   if (!ui.video) return;
   ui.video.pause();
@@ -207,19 +214,19 @@ function stopVideo() {
 // the animated preview if there is one and a link to the original (showVideoFallback).
 function showVideo(photo) {
   stopVideo();
-  ui.video.hidden = true;
+  setVideoShown(false);
   ui.videoFallback.hidden = true;
   ui.stage.classList.toggle('is-video', !!photo.is_video);
   if (!photo.is_video) return;
   ui.video.poster = imgUrl('Medium', photo.file_id);
   ui.video.src = `/video/${photo.file_id}`;
-  ui.video.hidden = false;
+  setVideoShown(true);
 }
 
 function showVideoFallback(photo) {
   if (!photo || !photo.is_video || current() !== photo) return;
   stopVideo();
-  ui.video.hidden = true;
+  setVideoShown(false);
   const ext = (photo.path.match(/\.[^./]+$/) || [''])[0];
   const preview = photo.has_anim
     ? el('video', {class: 'fallback-anim', autoplay: true, loop: true, playsinline: true,

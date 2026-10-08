@@ -125,3 +125,23 @@ def test_actions_menu_has_no_export_for_a_video(page, vserver):
   page.locator(".hud button.debug-menu").click()
   expect(page.locator(".actions-modal .menu-item")).to_have_count(1)
   expect(page.locator(".actions-modal .menu-item")).to_contain_text("Flush thumbnails")
+
+
+def test_files_panel_shows_only_the_video_element_beside_the_panel(page, vserver):
+  # ticket 197: 'i' used to show the still next to the player (two images).
+  pid = photos(vserver)["a.mp4"]["id"]
+  page.goto(f"{vserver.url}/#/clips?photo={pid}")
+  expect(page.locator("video.main-video")).to_be_visible()
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel")).to_be_visible()
+  expect(page.locator("video.main-video")).to_be_visible()
+  expect(page.locator(".stage img.main")).to_be_hidden()                  # visibility: hidden
+  v = page.locator("video.main-video").bounding_box()
+  p = page.locator(".files-panel").bounding_box()
+  s = page.locator(".stage").bounding_box()
+  assert v["x"] + v["width"] <= p["x"] + 1                                 # clear of the panel
+  assert abs(v["x"] - s["x"]) < 2 and abs((v["x"] + v["width"]) - p["x"]) < 2   # fills what is left
+  page.keyboard.press("i")
+  expect(page.locator(".files-panel")).to_have_count(0)
+  v = page.locator("video.main-video").bounding_box()
+  assert abs(v["width"] - s["width"]) < 2
