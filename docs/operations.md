@@ -50,6 +50,20 @@ instance first (the script refuses if the port is taken).
 - The unit runs at `Nice=19` / idle I/O class, waits for the library mounts, restarts on failure.
   Logs: `journalctl -u photos -f`. Rollback: check out the older revision and redeploy.
 
+## Videos (epic 184)
+
+Video files (mp4 m4v mov avi 3gp mpg mpeg mkv mts m2ts wmv webm) are indexed like any other file: their
+own Photo, rating/tags/XMP sidecar/trash/move as usual, and an implied tag `video` (the tag dropdown
+lists it; the loupe's `video` chip filters by it). Needs the system `ffmpeg`/`ffprobe` for metadata
+(duration, size, codec, date) and thumbnails; without them videos are listed with a placeholder
+thumbnail and the app logs one warning at start. Thumbnails: the usual four JPEG sizes (a frame from
+early in the clip) plus two muted WebM previews (`AnimThumb`, `AnimSmall`: eight 1-second fragments
+spread over the clip) that play when the mouse is over a tile. They are made by the background
+populator, one video at a time (about 8 s each; ~770 videos is roughly 1.7 hours), and a video that
+fails is retried after 7 days or when the file changes. The loupe plays the original (HTTP Range); a
+browser that cannot decode it (AVI, WMV) gets the still, the preview and a download link. Videos are
+skipped by AI rating and export. See [design/thumbnails.md](design/thumbnails.md).
+
 ## Scanning the library
 
 `python -m photoapp.fullscan --hashes_db=~/zoo.db` scans the whole library from the command line

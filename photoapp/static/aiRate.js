@@ -19,7 +19,9 @@ export async function start() {
       !confirm(`Send up to ${ids.length} photos to Gemini for rating?`)) return;
   try {
     const r = await post('/api/ai/rate', {ids});
-    toast(`AI rating queued for ${r.queued} photo(s) — see the Jobs page for progress`);
+    toast(`AI rating queued for ${r.queued} photo(s)` +
+          (r.skipped_videos ? `, ${r.skipped_videos} video(s) skipped` : '') +
+          ' — see the Jobs page for progress');
   } catch (e) {
     toast(e.message, true);   // e.g. no API key configured
   }

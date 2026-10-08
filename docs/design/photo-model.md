@@ -82,3 +82,11 @@ now per-top-level-directory (see [scanning.md](scanning.md)), the version is tra
 library, or one top-level directory, or the root's own files) rather than as one global flag — otherwise a
 partial/interrupted full-library migration would look "half done" with no way to know which directories still
 need it.
+
+## Videos
+
+A video is a file like any other and never groups with a RAW/JPEG even when the stem matches
+(`IMG_1.jpg` + `IMG_1.mp4` are two Photos): grouping only combines RAW/JPEG/TIFF/PNG. It carries the
+implied tag `video` (`library.implied_tags`, matched in SQL by extension in `filter_condition`), and
+crop, rotation and RAW tuning do not apply to it.
+

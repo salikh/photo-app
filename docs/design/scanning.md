@@ -83,3 +83,14 @@ directories so grouping there is revisited too.
 
 Hash recovery still exists for the cases this cannot cover: a row that is genuinely gone (a rebuilt database) or
 an ambiguous match, where the content hash in `rating_by_hash` is the only way back to the rating.
+
+## Videos
+
+`fileinfo.is_media()` (image or video) decides what a scan indexes; `read_image_metadata` returns nothing
+useful for a video (Pillow cannot open one), so `scan._with_video_info()` overlays the ffprobe result
+(size with the rotation tag applied, duration, fps, codec, date) onto the record. The date is the file
+name's camera-local timestamp (`VID_20180605_171430`) first, then the container's `creation_time`, which
+is UTC and so differs by the time zone (seen on a real Samsung clip), else NULL (the date sort falls back
+to mtime). Without ffprobe the record lacks the `duration` key, so `metacache.record_lacks_video_info`
+re-probes it once ffprobe exists (a present `None` means "unprobeable" and is not retried).
+

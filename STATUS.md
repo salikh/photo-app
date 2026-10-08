@@ -459,3 +459,19 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [181](docs/tickets/181.md) `AI rating 7.5` line in the Files pane, answers in the tooltip
 - [x] [182](docs/tickets/182.md) `sort=ai`: best first, unrated last
 - [x] [183](docs/tickets/183.md) `deploy.sh`: install /opt/photos + systemd service `photos.service`
+
+## Video support (user request 2026-10-08, done)
+
+- [x] [184](docs/tickets/184.md) Epic: videos in the library — indexed, thumbnailed (still + animated
+      WebM), played in the loupe. Needs system `ffmpeg`. Decisions in the epic ticket
+- [x] [185](docs/tickets/185.md) video extensions, own Photo, implied `video` tag
+- [x] [186](docs/tickets/186.md) `video.py` ffmpeg/ffprobe wrapper, `ffmpeg_path`/`ffprobe_path`, deploy check
+- [x] [187](docs/tickets/187.md) duration/size/codec/fps/date via ffprobe (`files.duration/fps/video_codec`)
+- [x] [188](docs/tickets/188.md) static video thumbnails; clean frames, shared placeholder
+- [x] [189](docs/tickets/189.md) animated WebM previews `AnimThumb`/`AnimSmall`
+- [x] [190](docs/tickets/190.md) background population, `video_failures`, 7-day retry
+- [x] [191](docs/tickets/191.md) `/video/{id}` (Range), `/anim/{size}/{id}`, `has_anim`
+- [x] [192](docs/tickets/192.md) grid tiles: SVG play overlay, duration badge, hover animation
+- [x] [193](docs/tickets/193.md) loupe `<video>` player with unplayable-codec fallback
+- [x] [194](docs/tickets/194.md) `video` in the tag dropdown + clickable HUD tag chips
+- [x] [195](docs/tickets/195.md) AI rating/export skip videos; docs; real-library smoke check

@@ -115,7 +115,7 @@ def test_ai_rate_endpoint_queues_representative_files(settings, conn, monkeypatc
   assert r.status_code == 400 and "API key" in r.json()["detail"]
   monkeypatch.setenv("GEMINI_API_KEY", "K")
   r = c.post("/api/ai/rate", json={"ids": pids + [9999]})
-  assert r.json() == {"queued": 2, "missing": 1}
+  assert r.json() == {"queued": 2, "skipped_videos": 0, "missing": 1}
   c.post("/api/ai/rate", json={"ids": pids})                    # deduped while queued
   assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='ai_rate'").fetchone()[0] == 2
   assert c.post("/api/ai/rate", json={"ids": []}).status_code == 400

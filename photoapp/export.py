@@ -9,6 +9,7 @@ import os
 import shutil
 
 from photoapp import crop as crop_lib
+from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import paths
 from photoapp import raw_settings
@@ -122,6 +123,8 @@ def export_file(conn, settings, file_id, file_path, dest):
   is rendered and cropped/rotated in one pass, straight from the original (never the full-frame,
   lossy Huge) -- the same pixel rectangle Thumb/Small use.
   """
+  if fileinfo.is_video(file_path):         # ticket 195
+    raise ExportError("videos are not exported")
   file_crop = crop_lib.get(conn, file_id)
   file_rotation = rotation_lib.get(conn, file_id)
   if crop_lib.is_default(file_crop) and rotation_lib.is_default(file_rotation):

@@ -42,6 +42,7 @@ export async function open(ids) {
         const r = await post('/api/export', {ids, dir: route.dir, target: input.value});
         toast(`queued ${r.queued.length} for export` +
               (r.missing.length ? `, ${r.missing.length} could not be found` : '') +
+              (r.skipped_videos ? `, ${r.skipped_videos} video(s) skipped` : '') +
               ' — see the Jobs page for progress');
         close();
       } catch (e) {

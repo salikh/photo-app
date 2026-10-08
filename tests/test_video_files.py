@@ -1,6 +1,8 @@
 """Ticket 185: video files are indexed as ordinary files, implicitly tagged 'video'."""
 import os
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from photoapp import api
@@ -182,3 +184,43 @@ def test_video_tag_is_offered_in_the_tag_dropdown_with_a_matching_count(settings
   assert shown["total"] == 2
   assert c.get("/api/photos/tags", params={"dir": "."}).json()["tags"] == []   # not recursive
   assert c.get("/api/photos/tags", params={"dir": ".", "recursive": 1}).json()["tags"] == tags
+
+
+# ---- ticket 195: exclusions, and the features that must keep working ----------------------------
+
+def test_ai_rate_and_export_skip_videos(settings, monkeypatch, tmp_path):
+  monkeypatch.setenv("GEMINI_API_KEY", "K")
+  c, conn, ids = served_app(settings)
+  pids = {r["path"]: r["id"] for r in conn.execute(
+      "SELECT f.path, p.id FROM photos p JOIN files f ON f.id = p.representative_file_id")}
+  both = [pids["v/a.mp4"], pids["v/p.jpg"]]
+  r = c.post("/api/ai/rate", json={"ids": both}).json()
+  assert r == {"queued": 1, "skipped_videos": 1, "missing": 0}
+  assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='ai_rate'").fetchone()[0] == 1
+  r = c.post("/api/export", json={"ids": both, "dir": "v", "target": str(tmp_path / "out")}).json()
+  assert len(r["queued"]) == 1 and r["skipped_videos"] == 1 and r["missing"] == []
+  # and the job handlers refuse a video enqueued by anything else
+  from photoapp import ai_rating, export
+  with pytest.raises(ai_rating.AiRatingError, match="videos"):
+    ai_rating.rate_file(conn, settings, ids["v/a.mp4"])
+  with pytest.raises(export.ExportError, match="videos"):
+    export.export_file(conn, settings, ids["v/a.mp4"], "v/a.mp4", str(tmp_path / "x.jpg"))
+
+
+def test_rating_sidecar_trash_and_move_work_for_a_video(settings):
+  d = settings.pictures_dir
+  c, conn, ids = served_app(settings)
+  pid = conn.execute("SELECT photo_id FROM files WHERE path = 'v/a.mp4'").fetchone()[0]
+  assert c.post(f"/api/photos/{pid}/rating", json={"rating": 4}).status_code == 200
+  assert os.path.isfile(os.path.join(d, "v", "a.mp4.xmp"))
+  scan.scan(conn, d)                                        # the sidecar is read back, not lost
+  assert conn.execute("SELECT rating FROM photos WHERE id = ?", (pid,)).fetchone()[0] == 4
+  assert c.post(f"/api/photos/{pid}/tags", json={"add": ["trip"], "remove": []}).status_code == 200
+  assert c.post("/api/move", json={"ids": [pid], "target": "moved"}).status_code == 200
+  assert os.path.isfile(os.path.join(d, "moved", "a.mp4"))
+  assert os.path.isfile(os.path.join(d, "moved", "a.mp4.xmp"))
+  assert not os.path.exists(os.path.join(d, "v", "a.mp4"))
+  assert c.post(f"/api/photos/{pid}/rating", json={"rating": -1}).status_code == 200
+  r = c.post("/api/photos/trash", json={"ids": [pid]})
+  assert r.status_code == 200, r.text
+  assert os.path.isfile(os.path.join(d, ".trash", "moved", "a.mp4"))

@@ -12,6 +12,7 @@ from absl import logging
 
 from photoapp import ai_prompts
 from photoapp import ai_score
+from photoapp import fileinfo
 from photoapp import gemini
 from photoapp import thumbs
 
@@ -49,6 +50,8 @@ def rate_file(conn, settings, file_id, transport=None):
                      (file_id,)).fetchone()
   if row is None:
     raise AiRatingError("file is gone")
+  if fileinfo.is_video(row["path"]):       # ticket 195
+    raise AiRatingError("videos are not rated")
   prompt = current_prompt()
   ai_prompts.register(conn, prompt)
   key = image_key(row["hash"], row["thumb_rev"], file_id)

@@ -404,6 +404,8 @@ def create_app(conn, settings):
             body.ids).fetchall()
         queued = []
         taken = set()
+        skipped_videos = [r["photo_id"] for r in rows if fileinfo.is_video(r["path"])]   # ticket 195
+        rows = [r for r in rows if not fileinfo.is_video(r["path"])]
         for r in rows:
           candidate = export.dest_path(body.target, rel_dir, r["path"])
           dest = export.resolve_dest_path(app.state.db, settings.pictures_dir, candidate,
@@ -411,8 +413,8 @@ def create_app(conn, settings):
           taken.add(dest)
           job_id = app.state.jobs.enqueue("export", file_id=r["file_id"], target=dest)
           queued.append({"photo_id": r["photo_id"], "job_id": job_id})
-      missing = sorted(set(body.ids) - {r["photo_id"] for r in rows})
-      return {"queued": queued, "missing": missing}
+      missing = sorted(set(body.ids) - {r["photo_id"] for r in rows} - set(skipped_videos))
+      return {"queued": queued, "missing": missing, "skipped_videos": len(skipped_videos)}
     return run_db(attempt)
 
   @app.post("/api/ai/rate")
@@ -434,12 +436,16 @@ def create_app(conn, settings):
         for i in range(0, len(body.ids), 500):
           chunk = body.ids[i:i + 500]
           rows += app.state.db.execute(
-              f"SELECT p.id AS photo_id, p.representative_file_id AS file_id FROM photos p "
+              f"SELECT p.id AS photo_id, p.representative_file_id AS file_id, rf.path FROM photos p "
               f"JOIN files rf ON rf.id = p.representative_file_id WHERE rf.missing = 0 AND "
               f"p.id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+        # Ticket 195: a video has no still worth sending to Gemini; skipped and counted.
+        skipped = sum(1 for r in rows if fileinfo.is_video(r["path"]))
+        rows = [r for r in rows if not fileinfo.is_video(r["path"])]
         for r in rows:
           app.state.jobs.enqueue("ai_rate", file_id=r["file_id"])
-      return {"queued": len(rows), "missing": len(set(body.ids)) - len(rows)}
+      return {"queued": len(rows), "skipped_videos": skipped,
+              "missing": len(set(body.ids)) - len(rows) - skipped}
     return run_db(attempt)
 
   @app.post("/api/move")
