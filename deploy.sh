@@ -71,6 +71,18 @@ else
   fi
 fi
 
+# ffmpeg (ticket 186): not a pip package. Without it videos are listed with placeholder thumbnails.
+if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+  if [ "$INSTALL_DEPS" = 1 ]; then
+    run apt-get install -y ffmpeg
+  else
+    echo "ffmpeg/ffprobe are missing (needed for video thumbnails and metadata). Run:" >&2
+    echo "    sudo apt install ffmpeg" >&2
+    echo "or re-run with --install-deps." >&2
+    [ "$DRY" = 1 ] || exit 1
+  fi
+fi
+
 # --- (b) copy the app ---------------------------------------------------------------------------
 say "copying photoapp/ and requirements.txt to $INSTALL/app"
 run as_user rsync -a --delete --exclude __pycache__ --exclude '*.pyc' "$SRC/photoapp" "$SRC/requirements.txt" "$INSTALL/app/"

@@ -9,7 +9,9 @@ database server to set up.
 - Linux or macOS (developed on Linux) with **Python 3.11 or newer** and `venv` (on Debian/Ubuntu:
   `sudo apt install python3 python3-venv`).
 - `git`, to get the code.
-- Nothing else for the server. The RAW decoder (LibRaw, through `rawpy`) and every other dependency
+- Optional: `ffmpeg` (`sudo apt install ffmpeg`) for video thumbnails and metadata. Without it videos
+  are listed with placeholder thumbnails.
+- Nothing else required for the server. The RAW decoder (LibRaw, through `rawpy`) and every other dependency
   come as prebuilt Python wheels. The wheels cover the common Linux/macOS x86-64 and arm64 setups;
   on another platform `pip` builds `rawpy` and `lxml` itself, which needs a C compiler and the
   `libxml2`/`libxslt` development headers.

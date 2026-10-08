@@ -41,6 +41,9 @@ instance first (the script refuses if the port is taken).
 - The app is copied to `/opt/photos/app` with its own `/opt/photos/.venv`; `/opt/photos/DEPLOYED_REV`
   records the jj change and time. There is no build step: if the venv's packages do not satisfy
   `requirements.txt`, the script prints the `pip install` command (or runs it with `--install-deps`).
+  It also needs the system `ffmpeg`/`ffprobe` (ticket 186; `apt install ffmpeg`, or `--install-deps`):
+  without them videos are still indexed but get placeholder thumbnails and no metadata, and the app
+  logs one warning at startup. `ffmpeg_path` / `ffprobe_path` override the `$PATH` lookup.
 - Configuration lives in `~/.config/photos/` and is created once, never overwritten: `config.toml`
   (from `./photos.toml`), `env` (`GEMINI_API_KEY`, from `./ENV`, mode 600) and `service.args`
   (`PHOTOS_ARGS=...`, the command-line flags). Edit them, then `sudo systemctl restart photos`.

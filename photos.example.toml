@@ -69,3 +69,10 @@ load_worker_enabled = true     # fill in missing thumbnails when the machine is 
 
 # The model that rates photos. Changing it re-rates pictures (it is part of the response cache key).
 # ai_model = "gemini-3.5-flash-lite"
+
+# --- Video (ffmpeg) -------------------------------------------------------------------------------
+
+# Videos are indexed and listed without ffmpeg, but their thumbnails and metadata need it
+# (`apt install ffmpeg`). Defaults: `ffmpeg` / `ffprobe` from $PATH.
+# ffmpeg_path = "/usr/bin/ffmpeg"
+# ffprobe_path = "/usr/bin/ffprobe"

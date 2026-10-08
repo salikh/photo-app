@@ -57,6 +57,13 @@ flags.DEFINE_string(
     "ai_model", "gemini-3.5-flash-lite",
     "Gemini model that rates photos (ticket 174). Part of the response cache key, so changing it "
     "re-rates pictures.")
+flags.DEFINE_string(
+    "ffmpeg_path", None,
+    "ffmpeg binary used for video thumbnails (ticket 186). Default: `ffmpeg` from $PATH. Without "
+    "it videos are still indexed and listed, with placeholder thumbnails.")
+flags.DEFINE_string(
+    "ffprobe_path", None,
+    "ffprobe binary used to read video metadata (ticket 186). Default: `ffprobe` from $PATH.")
 flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).")
 flags.DEFINE_integer("nightly_scan_hour", 3, "Local hour (0-23) of the nightly rescan; -1 disables it.")
 flags.DEFINE_integer("scan_workers", 8, "Threads reading files during a scan (network file systems are latency bound).")
@@ -178,6 +185,8 @@ class Settings:
   mem_stop_percent: float = 10.0
   gemini_api_key_file: str = None
   ai_model: str = "gemini-3.5-flash-lite"
+  ffmpeg_path: str = None
+  ffprobe_path: str = None
 
   @property
   def db_path(self):
@@ -238,4 +247,5 @@ class Settings:
         load_start_threshold=f.load_start_threshold,
         load_stop_threshold=f.load_stop_threshold,
         mem_start_percent=f.mem_start_percent, mem_stop_percent=f.mem_stop_percent,
-        gemini_api_key_file=_expand(f.gemini_api_key_file), ai_model=f.ai_model)
+        gemini_api_key_file=_expand(f.gemini_api_key_file), ai_model=f.ai_model,
+        ffmpeg_path=f.ffmpeg_path, ffprobe_path=f.ffprobe_path)
