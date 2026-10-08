@@ -117,3 +117,11 @@ def test_video_filter_via_tag_dropdown_and_hud_chip(page, vserver):
   page.locator(".hud .tag.implied", has_text="video").click()
   expect(page.locator(".hud .filter-tag")).to_have_text("filter: tag: video")
   expect(page.locator(".hud .pos")).to_have_text("1/2")
+
+
+def test_actions_menu_has_no_export_for_a_video(page, vserver):
+  pid = photos(vserver)["a.mp4"]["id"]
+  page.goto(f"{vserver.url}/#/clips?photo={pid}")
+  page.locator(".hud button.debug-menu").click()
+  expect(page.locator(".actions-modal .menu-item")).to_have_count(1)
+  expect(page.locator(".actions-modal .menu-item")).to_contain_text("Flush thumbnails")

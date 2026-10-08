@@ -475,3 +475,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [193](docs/tickets/193.md) loupe `<video>` player with unplayable-codec fallback
 - [x] [194](docs/tickets/194.md) `video` in the tag dropdown + clickable HUD tag chips
 - [x] [195](docs/tickets/195.md) AI rating/export skip videos; docs; real-library smoke check
+- [x] [196](docs/tickets/196.md) loupe "⋯" opens a modal actions menu (Export…, Flush thumbnails); the dedicated export button is gone

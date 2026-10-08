@@ -106,8 +106,11 @@ def test_debug_button_rerenders_thumbnails(page, server):
 
   btn = page.locator(".hud .buttons button.debug-menu")
   expect(btn).to_be_visible()
-  assert "re-render" in btn.get_attribute("title")
-  btn.click()
+  btn.click()                                                    # ticket 196: opens a menu, no action yet
+  expect(page.locator(".actions-modal")).to_be_visible()
+  expect(page.locator("#toast")).not_to_contain_text("re-rendering")
+  page.locator(".actions-modal .menu-item", has_text="Flush thumbnails").click()
+  expect(page.locator(".actions-modal")).to_have_count(0)
   expect(page.locator("#toast")).to_contain_text("re-rendering")
   wait_for(lambda: urllib.request.urlopen(f"{server.url}/img/Thumb/{file_id}").status == 200)
 
@@ -1838,7 +1841,9 @@ def test_rename_button_hidden_under_a_rating_filter(page, server):
 def test_loupe_export_button_exports_only_that_photo(page, server):
   # The loupe's Export button acts as if this one photo were the only selection.
   open_loupe(page, server, index=1)                                        # IMG_0002
-  page.locator(".hud").get_by_role("button", name="export", exact=True).click()
+  expect(page.locator(".hud").get_by_role("button", name="export", exact=True)).to_have_count(0)
+  page.locator(".hud button.debug-menu").click()                          # ticket 196: export lives in the menu
+  page.locator(".actions-modal .menu-item", has_text="Export").click()
   expect(page.locator("h3")).to_have_text("Export 1 photo(s)")
   page.locator(".confirm-card button.danger").click()
   expect(page.locator("#toast")).to_contain_text("queued 1 for export")
@@ -2849,3 +2854,17 @@ def test_sort_by_ai_rating_orders_the_grid_best_first(page, server):
   page.locator('select[aria-label="sort"]').select_option("ai")
   assert "sort=ai" in page.url
   expect(page.locator(".cell").first).to_have_attribute("data-id", str(ids[2]))
+
+
+def test_actions_menu_closes_with_escape_and_close_button_without_acting(page, server):
+  # ticket 196: the "..." menu is a modal; dismissing it does nothing.
+  open_loupe(page, server)
+  page.locator(".hud button.debug-menu").click()
+  expect(page.locator(".actions-modal .menu-item")).to_have_count(2)       # Export, Flush thumbnails
+  page.keyboard.press("Escape")
+  expect(page.locator(".actions-modal")).to_have_count(0)
+  expect(page.locator(".loupe")).to_be_visible()                           # Escape closed only the menu
+  page.locator(".hud button.debug-menu").click()
+  page.locator(".actions-modal").get_by_role("button", name="Close").click()
+  expect(page.locator(".actions-modal")).to_have_count(0)
+  expect(page.locator("#toast")).not_to_contain_text("re-rendering")

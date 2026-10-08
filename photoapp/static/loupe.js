@@ -157,6 +157,7 @@ export function close() {
   closeFiles();
   closeFilterPicker();
   closeDeleteModal();
+  closeActionsMenu();   // ticket 196
   exitCropMode();   // ticket 115: leaving the viewer drops an unsaved crop
   stopVideo();      // ticket 193
   ui.zoom.reset();
@@ -391,14 +392,12 @@ function renderHud() {
                     onclick: (e) => { e.stopPropagation(); toggleCropMode(); }}),
       p.is_video ? null : el('button', {text: '⟲', title: 'rotate left 90° (R)',
                     onclick: (e) => { e.stopPropagation(); rotateLeft(); }}),
-      el('button', {text: 'export', title: 'export this photo',
-                    onclick: (e) => { e.stopPropagation(); exportAction.open([p.id]); }}),
       el('button', {text: 'files', title: 'files / tunings (I)', class: filesOpen ? 'on' : '', onclick: () => filesOpen ? closeFiles() : openFiles()}),
       brokenFileId === p.file_id
         ? el('button', {class: 'broken-thumb', title: 'this thumbnail failed to load -- click to re-render it',
                         text: '⚠ fix thumbnail', onclick: rerenderThumbs})
-        : el('button', {class: 'debug-menu', title: 'debug: re-render this photo’s thumbnails',
-                        text: '⋯', onclick: rerenderThumbs}),
+        : el('button', {class: 'debug-menu', title: 'more actions', text: '⋯',
+                        onclick: (e) => { e.stopPropagation(); openActionsMenu(); }}),
       el('button', {text: '✕', title: 'close (Esc)', onclick: closeToGrid})));
 }
 
@@ -1336,6 +1335,41 @@ async function unlink(file) {
   } catch (e) { toast(e.message, true); }
 }
 
+// Ticket 196: the "⋯" button opens this modal menu instead of acting at once. Each item is
+// {label, hint, run}; add new per-photo actions here. The modal closes before the action runs.
+function actionsMenuItems(photo) {
+  const items = [];
+  if (!photo.is_video) {    // export skips videos (ticket 195)
+    items.push({label: 'Export…', hint: 'export this photo as a JPEG',
+                run: () => exportAction.open([photo.id])});
+  }
+  items.push({label: 'Flush thumbnails', hint: 'delete and re-render this photo’s cached thumbnails',
+              run: rerenderThumbs});
+  return items;
+}
+
+function openActionsMenu() {
+  closeActionsMenu();
+  const photo = current();
+  if (!photo) return;
+  ui.actionsModal = el('div', {class: 'confirm-modal actions-modal', onclick: closeActionsMenu},
+    el('div', {class: 'confirm-card', role: 'menu', onclick: (e) => e.stopPropagation()},
+      el('h3', {text: 'Actions'}),
+      actionsMenuItems(photo).map((item) => el('button', {
+        class: 'menu-item', role: 'menuitem', title: item.hint,
+        onclick: () => { closeActionsMenu(); item.run(); }},
+        el('span', {class: 'label', text: item.label}),
+        el('span', {class: 'hint', text: item.hint}))),
+      el('div', {class: 'row'}, el('button', {text: 'Close', onclick: closeActionsMenu}))));
+  document.body.append(ui.actionsModal);
+  const first = ui.actionsModal.querySelector('.menu-item');
+  if (first) first.focus();
+}
+
+function closeActionsMenu() {
+  if (ui.actionsModal) { ui.actionsModal.remove(); ui.actionsModal = null; }
+}
+
 // Modal confirmation before moving a single file to trash (ticket 082) -- deliberately its own
 // small modal, not the Files panel or a route: this acts on one file, not a whole review set.
 function confirmDeleteFile(file) {
@@ -1370,6 +1404,7 @@ async function deleteFile(file) {
 
 function onKey(e) {
   if (ui.deleteModal) { if (e.key === 'Escape') closeDeleteModal(); return; }
+  if (ui.actionsModal) { if (e.key === 'Escape') closeActionsMenu(); return; }   // ticket 196
   // Ticket 115: crop mode swallows the normal hotkeys (an accidental rating key while dragging a
   // handle would be surprising); Escape discards the crop.
   if (cropMode) { if (e.key === 'Escape') exitCropMode(); return; }
