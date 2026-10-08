@@ -77,6 +77,8 @@ def test_parse_probe_basic_and_rotation():
 def test_parse_probe_date_precedence():
   tags = {"creation_time": "2018-06-05T17:14:30.000000Z"}
   assert video.parse_probe(probe_json(tags=tags), "VID_20170101_000000.mp4")["exif_date"] \
+      == "2017-01-01 00:00:00"        # local time from the name wins over the UTC container tag
+  assert video.parse_probe(probe_json(tags=tags), "holiday.mp4")["exif_date"] \
       == "2018-06-05 17:14:30+0000"
   # an unset clock falls through to the file name, then to nothing (mtime is the sort fallback)
   bad = {"creation_time": "1970-01-01T00:00:00.000000Z"}

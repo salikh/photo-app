@@ -208,6 +208,8 @@ def move_thumbnails(conn, thumbs_dir, file_id, old_path, new_path):
 
 
 def _record(conn, file_id, size, path, source):
+  if source == "placeholder":      # ticket 188: a stand-in, not this file's thumbnail
+    return
   conn.execute(
       "INSERT INTO thumbs (file_id, size, path, bytesize, source) "
       "VALUES (?, ?, ?, ?, ?) ON CONFLICT(file_id, size) DO UPDATE SET "
@@ -254,6 +256,10 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, ro
   if path:
     logging.vlog(7, "%s: %s already cached", file_path, size)
     return path, "existing"
+  if fileinfo.is_video(file_path):
+    # Ticket 188: a clean frame; crop, rotation and RAW settings do not apply to a video.
+    from photoapp import video_thumbs      # imports this module, so not at the top
+    return video_thumbs.make(pictures_dir, thumbs_dir, file_path, size)
   if size in CROPPED_SIZES and not crop_lib.is_default(crop):
     original = os.path.join(pictures_dir, file_path)
     dest = thumb_path(thumbs_dir, size, file_path)
@@ -311,6 +317,8 @@ def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
   if made is None:
     return None
   path, source = made
+  if source == "placeholder":      # ticket 188: nothing real was made
+    return None
   _record(conn, file_id, size, path, source)
   return path
 

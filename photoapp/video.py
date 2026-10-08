@@ -161,7 +161,7 @@ def _rate(text):
 
 def parse_probe(info, name):
   """Metadata dict from ffprobe's JSON: width, height (rotation applied), duration, fps,
-  video_codec, exif_date (container creation time, else the file name's timestamp, else None --
+  video_codec, exif_date (the file name's local timestamp, else the container's UTC creation time, else None --
   the library's date sort then falls back to the file's mtime). Missing pieces are None."""
   stream = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
   fmt = info.get("format") or {}
@@ -172,8 +172,10 @@ def parse_probe(info, name):
     duration = float(fmt.get("duration") or stream.get("duration"))
   except (TypeError, ValueError):
     duration = None
-  exif_date = (_container_date(fmt.get("tags")) or _container_date(stream.get("tags"))
-               or date_from_filename(name))
+  # The file name's timestamp is the camera's local time, like a still's EXIF date; the container
+  # tag is UTC (a Samsung clip named ...121911 carries 03:19:11Z in Japan), so it comes second.
+  exif_date = (date_from_filename(name) or _container_date(fmt.get("tags"))
+               or _container_date(stream.get("tags")))
   return {"width": width, "height": height, "duration": duration,
           "fps": _rate(stream.get("avg_frame_rate")) or _rate(stream.get("r_frame_rate")),
           "video_codec": stream.get("codec_name"), "exif_date": exif_date}
