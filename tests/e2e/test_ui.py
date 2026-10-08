@@ -2868,3 +2868,29 @@ def test_actions_menu_closes_with_escape_and_close_button_without_acting(page, s
   page.locator(".actions-modal").get_by_role("button", name="Close").click()
   expect(page.locator(".actions-modal")).to_have_count(0)
   expect(page.locator("#toast")).not_to_contain_text("re-rendering")
+
+
+def _next_to(popover, anchor, viewport):
+  """ticket 198: the popover touches the anchor's column and sits just above/below it, in view."""
+  assert popover["x"] >= 0 and popover["y"] >= 0
+  assert popover["x"] + popover["width"] <= viewport["width"] + 1
+  assert popover["y"] + popover["height"] <= viewport["height"] + 1
+  gap_below = popover["y"] - (anchor["y"] + anchor["height"])
+  gap_above = anchor["y"] - (popover["y"] + popover["height"])
+  assert 0 <= gap_below <= 20 or 0 <= gap_above <= 20, (popover, anchor)
+  overlap = min(popover["x"] + popover["width"], anchor["x"] + anchor["width"]) - max(popover["x"], anchor["x"])
+  assert overlap > 0, (popover, anchor)          # horizontally aligned with the anchor, not elsewhere
+
+
+@pytest.mark.parametrize("viewport", [{"width": 1280, "height": 800}, {"width": 600, "height": 700}])
+def test_loupe_popovers_open_next_to_the_clicked_element(page, server, viewport):
+  page.set_viewport_size(viewport)
+  open_loupe(page, server)
+  tag = page.locator(".hud .filter-tag")
+  tag.click()
+  _next_to(page.locator(".filter-picker").bounding_box(), tag.bounding_box(), viewport)
+  tag.click()                                                              # toggles it closed
+  expect(page.locator(".filter-picker")).to_have_count(0)
+  more = page.locator(".hud button.debug-menu")
+  more.click()
+  _next_to(page.locator(".actions-modal .confirm-card").bounding_box(), more.bounding_box(), viewport)

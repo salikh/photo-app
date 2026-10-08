@@ -2,7 +2,7 @@
 // preloading, tunings panel. The list of photos is state.photos.
 
 import {get, post, imgUrl, setRevision, seedRevisions} from './api.js';
-import {el, toast, isTyping, enqueue, retryImage, setChildren, fmtBytes, formatDuration, playOverlay} from './util.js';
+import {el, toast, isTyping, enqueue, retryImage, setChildren, fmtBytes, formatDuration, playOverlay, placeNear} from './util.js';
 import {href} from './route.js';
 import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
@@ -404,7 +404,7 @@ function renderHud() {
         ? el('button', {class: 'broken-thumb', title: 'this thumbnail failed to load -- click to re-render it',
                         text: '⚠ fix thumbnail', onclick: rerenderThumbs})
         : el('button', {class: 'debug-menu', title: 'more actions', text: '⋯',
-                        onclick: (e) => { e.stopPropagation(); openActionsMenu(); }}),
+                        onclick: (e) => { e.stopPropagation(); openActionsMenu(e.currentTarget); }}),
       el('button', {text: '✕', title: 'close (Esc)', onclick: closeToGrid})));
 }
 
@@ -1268,13 +1268,14 @@ function renderFilterPanel() {
         el('span', {class: 'star-lbl', text: `★${n}`}),
         option(`rating<=${n}`, '≤'), option(`rating:${n}`, '='), option(`rating>=${n}`, '≥')))));
   ui.stage.append(ui.filterPanel);
+  placeNear(ui.filterPanel, ui.hud.querySelector('.filter-tag'));   // ticket 198: next to the filter tag
 }
 
 function openFilterPicker() {
   filterPanelOpen = true;
   closeFilterPanelOnly();
+  renderHud();            // first: the panel is placed next to the (re-rendered) filter tag
   renderFilterPanel();
-  renderHud();
 }
 
 function closeFilterPanelOnly() {
@@ -1355,7 +1356,7 @@ function actionsMenuItems(photo) {
   return items;
 }
 
-function openActionsMenu() {
+function openActionsMenu(anchor) {
   closeActionsMenu();
   const photo = current();
   if (!photo) return;
@@ -1369,6 +1370,7 @@ function openActionsMenu() {
         el('span', {class: 'hint', text: item.hint}))),
       el('div', {class: 'row'}, el('button', {text: 'Close', onclick: closeActionsMenu}))));
   document.body.append(ui.actionsModal);
+  placeNear(ui.actionsModal.querySelector('.confirm-card'), anchor);   // ticket 198: next to the "⋯"
   const first = ui.actionsModal.querySelector('.menu-item');
   if (first) first.focus();
 }

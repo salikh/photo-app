@@ -85,6 +85,27 @@ export function formatDuration(seconds) {
   return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
 }
 
+// Ticket 198: put an already-attached popover right next to the element that opened it: below it
+// when there is room, else above, left edges aligned (else right edges), always inside the viewport.
+// The node must be position: fixed (see .filter-picker, .actions-modal .confirm-card).
+export function placeNear(node, anchor, {gap = 6, margin = 8} = {}) {
+  if (!node || !anchor || !anchor.isConnected) return;
+  node.style.visibility = 'hidden';
+  const a = anchor.getBoundingClientRect();
+  const w = node.offsetWidth, h = node.offsetHeight;
+  const vw = document.documentElement.clientWidth, vh = document.documentElement.clientHeight;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, Math.max(lo, hi)));
+  let top = a.bottom + gap;
+  if (top + h > vh - margin) top = a.top - gap - h;
+  let left = a.left;
+  if (left + w > vw - margin) left = a.right - w;
+  node.style.top = `${clamp(top, margin, vh - h - margin)}px`;
+  node.style.left = `${clamp(left, margin, vw - w - margin)}px`;
+  node.style.right = 'auto';
+  node.style.bottom = 'auto';
+  node.style.visibility = '';
+}
+
 // replaceChildren that ignores null/false and flattens arrays (the native
 // method would render null as the text "null").
 export function setChildren(node, ...children) {
