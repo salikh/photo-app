@@ -127,6 +127,16 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   outline-offset: -3px;
 }
 .cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cell .play {
+  position: absolute; left: 50%; top: 50%; width: 32%; max-width: 56px; min-width: 24px;
+  transform: translate(-50%, -50%); pointer-events: none;
+}
+.cell .dur {
+  position: absolute; right: 4px; bottom: 22px; padding: 0 5px; border-radius: 3px; font-size: 11px;
+  background: var(--overlay-bg); color: var(--overlay-text); pointer-events: none;
+}
+.cell video.anim { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.cell.animating .play { display: none; }
 .cell.selected { outline: 3px solid var(--accent); }
 .cell.rejected img { opacity: 0.35; }
 .cell.leaving { opacity: 0; transform: scale(0.92); transition: opacity 0.15s, transform 0.15s; pointer-events: none; }
@@ -179,6 +189,19 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   transition: transform 0.18s ease-out; -webkit-user-drag: none; pointer-events: none;
 }
 .stage.dragging img.main { transition: none; }
+/* Ticket 193: the player fills the stage like the still does; the fallback sits over the still. */
+.stage video.main-video { position: absolute; inset: 0; width: 100%; height: 100%; background: #000; object-fit: contain; }
+.stage.panel-open video.main-video { right: var(--files-panel-w); width: auto; }
+.stage .video-fallback {
+  position: absolute; left: 50%; bottom: 12%; transform: translateX(-50%); max-width: 90%;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px 16px;
+  border-radius: 8px; background: var(--overlay-bg); color: var(--overlay-text); text-align: center;
+}
+.stage .video-fallback[hidden] { display: none; }
+.stage .video-fallback .play { width: 44px; }
+.stage .video-fallback .fallback-anim { max-width: 320px; max-height: 180px; border-radius: 4px; }
+.stage .video-fallback p { margin: 0; }
+.stage .video-fallback a { color: var(--accent); }
 /* Ticket 094: the provisional-render overlay sits exactly on top of the committed image
    (positioned by the stage's own bounds, not img.main's natural flex-centered size) so the
    compare hotkey can hide/reveal it without any layout shift. Deliberately not img.main itself
@@ -296,6 +319,9 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   background: var(--bg-hover); overflow: hidden; opacity: 0.6; cursor: pointer; display: block;
 }
 .filmstrip .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-user-drag: none; }
+.filmstrip .thumb .play {
+  position: absolute; left: 50%; top: 50%; width: 22px; transform: translate(-50%, -50%); pointer-events: none;
+}
 .filmstrip .thumb.current { opacity: 1; outline: 2px solid var(--accent); outline-offset: -2px; }
 @media (max-width: 699px) {
   .filmstrip { --thumb-w: 66px; --thumb-h: 44px; }   /* slim, still 44 px tall to tap */

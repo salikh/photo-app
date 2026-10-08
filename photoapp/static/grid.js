@@ -1,7 +1,7 @@
 // Folder view: breadcrumb-independent folder chips, the photo grid, selection.
 
 import {get, post, imgUrl, seedRevisions} from './api.js';
-import {el, toast, retryImage, enqueue, setChildren} from './util.js';
+import {el, toast, retryImage, enqueue, setChildren, playOverlay, formatDuration} from './util.js';
 import {href, hrefPage} from './route.js';
 import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
@@ -96,8 +96,8 @@ export function makeCell(photo) {
     e.preventDefault(); e.stopPropagation();
     if (e.shiftKey) selectRange(photo.id); else toggle(photo.id);
   }});
-  return el('a', {
-    class: 'cell' + (photo.rating === REJECT ? ' rejected' : '') + (state.selected.has(photo.id) ? ' selected' : ''),
+  const cell = el('a', {
+    class: 'cell' + (photo.is_video ? ' video' : '') + (photo.rating === REJECT ? ' rejected' : '') + (state.selected.has(photo.id) ? ' selected' : ''),
     href: href({...state.route, photo: photo.id}), dataset: {id: photo.id},
     // recursive (ticket 086): several subfolders can share a filename, so disambiguate on hover.
     title: state.route && state.route.recursive ? photo.path : photo.name,
@@ -105,7 +105,38 @@ export function makeCell(photo) {
       if (e.shiftKey) { e.preventDefault(); selectRange(photo.id); }
       else if (state.selecting || e.ctrlKey || e.metaKey) { e.preventDefault(); toggle(photo.id); }
     },
-  }, img, check, el('div', {class: 'badges'}, badges(photo)));
+  }, img, photo.is_video ? playOverlay() : null,
+     photo.is_video && photo.duration != null
+       ? el('span', {class: 'dur', text: formatDuration(photo.duration)}) : null,
+     check, el('div', {class: 'badges'}, badges(photo)));
+  if (photo.is_video && photo.has_anim) attachAnimation(cell, photo);
+  return cell;
+}
+
+// Ticket 192: the animated WebM preview plays (muted, looped) only while the mouse is over the
+// tile or the tile has keyboard focus -- never the whole grid at once (CPU, bandwidth). A touch
+// device keeps the still; the loupe plays the real video. If the file is missing or cannot be
+// decoded the <video> is dropped and the still stays.
+function attachAnimation(cell, photo) {
+  const start = () => {
+    if (cell.querySelector('video.anim')) return;
+    const video = el('video', {class: 'anim', loop: true, playsinline: true, preload: 'auto',
+                               src: `/anim/AnimThumb/${photo.file_id}`});
+    video.muted = true;
+    video.addEventListener('error', () => video.remove());
+    video.addEventListener('playing', () => cell.classList.add('animating'));
+    cell.querySelector('img').after(video);
+    video.play().catch(() => video.remove());
+  };
+  const stop = () => {
+    cell.classList.remove('animating');
+    const video = cell.querySelector('video.anim');
+    if (video) { video.pause(); video.removeAttribute('src'); video.remove(); }
+  };
+  cell.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') start(); });
+  cell.addEventListener('pointerleave', stop);
+  cell.addEventListener('focusin', start);
+  cell.addEventListener('focusout', stop);
 }
 
 // ticket 095: the anchor for Shift+Click range selection -- the last plain/Ctrl-click id, held

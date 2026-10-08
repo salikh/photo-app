@@ -2,7 +2,7 @@
 // preloading, tunings panel. The list of photos is state.photos.
 
 import {get, post, imgUrl, setRevision, seedRevisions} from './api.js';
-import {el, toast, isTyping, enqueue, retryImage, setChildren, fmtBytes} from './util.js';
+import {el, toast, isTyping, enqueue, retryImage, setChildren, fmtBytes, formatDuration, playOverlay} from './util.js';
 import {href} from './route.js';
 import {afterKey, step, label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
@@ -56,8 +56,16 @@ function build() {
   // session's DNG fetch + WASM compile).
   ui.tuningBusy = el('div', {class: 'tuning-busy', hidden: true});
   ui.preview = el('div', {class: 'rate-preview'});
+  // Ticket 193: the original video, streamed with Range requests. Sits over the Medium still
+  // (which stays as its poster and as the fallback picture).
+  ui.video = el('video', {class: 'main-video', controls: true, playsinline: true, preload: 'metadata',
+                          hidden: true});
+  ui.video.addEventListener('error', () => { if (ui.video.getAttribute('src')) showVideoFallback(current()); });
+  // Keep keyboard focus on the page so the arrow keys keep navigating instead of seeking.
+  ui.video.addEventListener('focus', () => ui.video.blur());
+  ui.videoFallback = el('div', {class: 'video-fallback', hidden: true});
   ui.stage = el('div', {class: 'stage'},
-    ui.img, ui.cropShade, ui.tuning, ui.rowPreview, ui.tuningBusy, ui.preview,
+    ui.img, ui.video, ui.videoFallback, ui.cropShade, ui.tuning, ui.rowPreview, ui.tuningBusy, ui.preview,
     el('button', {class: 'nav-hint prev', 'aria-label': 'previous', text: '‹', onclick: (e) => { e.stopPropagation(); go(-1); }}),
     el('button', {class: 'nav-hint next', 'aria-label': 'next', text: '›', onclick: (e) => { e.stopPropagation(); go(1); }}));
   ui.strip = createFilmstrip((id) => {
@@ -78,7 +86,8 @@ function build() {
   window.addEventListener('resize', updateCropShade);
 
   attachSwipe(ui.stage, {
-    enabled: () => !zoomed,
+    // A drag on the video's own controls (seek bar, volume) is not a swipe (ticket 193).
+    enabled: (e) => !zoomed && !(e && e.target.closest && e.target.closest('video.main-video')),
     onDrag(dx, dy, axis) {
       ui.stage.classList.add('dragging');
       ui.img.style.transform = axis === 'x' ? `translateX(${dx}px)` : `translateY(${dy * 0.4}px)`;
@@ -149,6 +158,7 @@ export function close() {
   closeFilterPicker();
   closeDeleteModal();
   exitCropMode();   // ticket 115: leaving the viewer drops an unsaved crop
+  stopVideo();      // ticket 193
   ui.zoom.reset();
   zoomed = false;
   ui.stage.classList.remove('zoomed');
@@ -170,6 +180,7 @@ function show(i) {
   ui.img.alt = photo.name;
   updateCropShade();
   retryOnce(ui.img, photo);
+  showVideo(photo);
   renderHud();
   renderFilmstrip(true);                 // centered on the current photo
   preload(delta);
@@ -178,6 +189,52 @@ function show(i) {
     history.replaceState(null, '', href(state.route));
   }
   if (filesOpen) openFiles();
+}
+
+// ------------------------------------------------------------------ video playback (ticket 193)
+
+function stopVideo() {
+  if (!ui.video) return;
+  ui.video.pause();
+  ui.video.removeAttribute('src');
+  ui.video.removeAttribute('poster');
+  ui.video.load();                 // drops the pending Range download of the previous video
+}
+
+// A video plays in <video controls>; a still photo leaves all of this hidden. If the browser cannot
+// play the container/codec (AVI, WMV, old codecs: the `error` event) the Medium still stays, with
+// the animated preview if there is one and a link to the original (showVideoFallback).
+function showVideo(photo) {
+  stopVideo();
+  ui.video.hidden = true;
+  ui.videoFallback.hidden = true;
+  ui.stage.classList.toggle('is-video', !!photo.is_video);
+  if (!photo.is_video) return;
+  ui.video.poster = imgUrl('Medium', photo.file_id);
+  ui.video.src = `/video/${photo.file_id}`;
+  ui.video.hidden = false;
+}
+
+function showVideoFallback(photo) {
+  if (!photo || !photo.is_video || current() !== photo) return;
+  stopVideo();
+  ui.video.hidden = true;
+  const ext = (photo.path.match(/\.[^./]+$/) || [''])[0];
+  const preview = photo.has_anim
+    ? el('video', {class: 'fallback-anim', autoplay: true, loop: true, playsinline: true,
+                   src: `/anim/AnimSmall/${photo.file_id}`})
+    : null;
+  if (preview) preview.muted = true;
+  setChildren(ui.videoFallback,
+    preview, playOverlay(),
+    el('p', {text: `This browser cannot play ${ext || 'this'} video.`}),
+    el('a', {href: `/video/${photo.file_id}`, download: photo.name, text: 'Download the original'}));
+  ui.videoFallback.hidden = false;
+}
+
+function toggleVideoPlayback() {
+  if (ui.video.hidden) return;
+  if (ui.video.paused) ui.video.play().catch(() => {}); else ui.video.pause();
 }
 
 // A RAW without a preview is rendered in the background; retry a few times. If it is still
@@ -325,10 +382,11 @@ function renderHud() {
       el('button', {text: '♥', title: 'fav (F)', class: p.fav ? 'on' : '', onclick: toggleFav}),
       el('button', {text: 'tag', title: 'tags (T)', onclick: openTagInput}),
       el('button', {text: '↶', title: 'undo (U)', onclick: undo}),
-      el('button', {text: 'crop', title: 'crop this photo (non-destructive)',
+      // Ticket 193: crop and rotation do not apply to a video.
+      p.is_video ? null : el('button', {text: 'crop', title: 'crop this photo (non-destructive)',
                     class: cropMode ? 'on' : '',
                     onclick: (e) => { e.stopPropagation(); toggleCropMode(); }}),
-      el('button', {text: '⟲', title: 'rotate left 90° (R)',
+      p.is_video ? null : el('button', {text: '⟲', title: 'rotate left 90° (R)',
                     onclick: (e) => { e.stopPropagation(); rotateLeft(); }}),
       el('button', {text: 'export', title: 'export this photo',
                     onclick: (e) => { e.stopPropagation(); exportAction.open([p.id]); }}),
@@ -587,13 +645,6 @@ function formatCamera(make, model) {
 
 // Tickets 084/111/156: camera (make/model), lens, focal length, aperture/shutter speed/ISO and
 // exif_date, one line, omitting whatever's absent.
-function formatDuration(seconds) {   // ticket 187: 75 -> "1:15", 3725 -> "1:02:05"
-  const s = Math.round(seconds);
-  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
-  const two = (n) => String(n).padStart(2, '0');
-  return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
-}
-
 function videoMetaText(f) {
   const parts = [f.duration != null ? formatDuration(f.duration) : null,
                  f.width && f.height ? `${f.width}x${f.height}` : null, f.video_codec,
@@ -1329,7 +1380,9 @@ function onKey(e) {
   }
   if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
   const key = e.key;
-  if (key === 'ArrowRight' || key === ' ') go(1);
+  const isVideo = !!(current() && current().is_video);
+  if (key === ' ' && isVideo) { e.preventDefault(); toggleVideoPlayback(); }   // ticket 193: play/pause
+  else if (key === 'ArrowRight' || key === ' ') go(1);
   else if (key === 'ArrowLeft' || key === 'Backspace') go(-1);
   else if (key === 'ArrowUp') rateStep(1);
   else if (key === 'ArrowDown') rateStep(-1);
@@ -1338,6 +1391,7 @@ function onKey(e) {
   else if (/^[0-5]$/.test(key) || key === 'x' || key === 'X') { const p = current(); setRating(afterKey(p.rating, key, p.previous_stars)); }
   else if (key === 'f' || key === 'F') toggleFav();
   else if (key === 't' || key === 'T') openTagInput();
+  else if (isVideo && /^[zZrR+=\-_]$/.test(key)) { /* no zoom / rotate for a video */ }
   else if (key === 'z' || key === 'Z') toggleZoom();
   else if (key === '+' || key === '=') whenShown(() => ui.zoom.zoomIn());
   else if (key === '-' || key === '_') whenShown(() => ui.zoom.zoomOut());

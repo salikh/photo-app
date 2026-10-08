@@ -20,7 +20,7 @@ export function attachSwipe(element, handlers) {
       if (start) { start = null; if (handlers.onCancel) handlers.onCancel(); }
       return;
     }
-    if (e.button > 0 || (handlers.enabled && !handlers.enabled())) return;
+    if (e.button > 0 || (handlers.enabled && !handlers.enabled(e))) return;
     start = {x: e.clientX, y: e.clientY, t: performance.now(), axis: null, id: e.pointerId};
     element.setPointerCapture(e.pointerId);
   });

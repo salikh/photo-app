@@ -8,7 +8,7 @@
 // unless the user has just been scrolling or touching the strip.
 
 import {imgUrl} from './api.js';
-import {el, retryImage} from './util.js';
+import {el, playOverlay, retryImage} from './util.js';
 
 const GAP = 4;                 // between thumbnails
 const BUFFER = 8;              // thumbnails kept in the DOM beyond each edge of the view
@@ -98,6 +98,7 @@ export function createFilmstrip(onPick) {
       const img = el('img', {src: imgUrl('Thumb', photo.file_id), alt: photo.name, decoding: 'async', draggable: 'false'});
       retryImage(img);
       node.append(img);
+      if (photo.is_video) node.append(playOverlay());      // ticket 192
     }
   }
 

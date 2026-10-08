@@ -58,6 +58,33 @@ export function retryImage(img, attempts = 6) {
   });
 }
 
+// Ticket 192: the play indicator of every video tile (white triangle in a translucent dark circle).
+// A client-side overlay, never part of a thumbnail JPEG, so it also marks videos whose still is
+// only a placeholder or that the browser cannot play.
+export function playOverlay() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'play');
+  svg.setAttribute('viewBox', '0 0 48 48');
+  svg.setAttribute('aria-hidden', 'true');
+  const circle = document.createElementNS(ns, 'circle');
+  for (const [k, v] of Object.entries({cx: 24, cy: 24, r: 22, fill: 'rgba(0,0,0,0.55)',
+                                       stroke: '#fff', 'stroke-width': 2})) circle.setAttribute(k, v);
+  const tri = document.createElementNS(ns, 'path');
+  tri.setAttribute('d', 'M19 15 L35 24 L19 33 Z');
+  tri.setAttribute('fill', '#fff');
+  svg.append(circle, tri);
+  return svg;
+}
+
+// Ticket 187: 75 -> "1:15", 3725 -> "1:02:05".
+export function formatDuration(seconds) {
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  const two = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
 // replaceChildren that ignores null/false and flattens arrays (the native
 // method would render null as the text "null").
 export function setChildren(node, ...children) {
