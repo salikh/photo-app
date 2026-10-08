@@ -45,6 +45,18 @@ from photoapp import thumbs
 from photoapp import trash
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+# Ticket 204: the app's own files (index.html, CSS, JS modules) are always revalidated (ETag, so an
+# unchanged file costs a 304). Without a Cache-Control header Safari reused an old style.css for days
+# -- the page's `?v=` query was bumped by hand and had stayed at 121 since ticket 121.
+REVALIDATE = {"Cache-Control": "no-cache"}
+
+
+class RevalidatingStaticFiles(StaticFiles):
+  def file_response(self, *args, **kwargs):
+    response = super().file_response(*args, **kwargs)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 WEB_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 
 
@@ -302,7 +314,7 @@ def create_app(conn, settings):
 
   @app.get("/")
   def index():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"), headers=REVALIDATE)
 
   @app.get("/favicon.ico")
   def favicon():
@@ -950,6 +962,6 @@ def create_app(conn, settings):
       raise HTTPException(404, str(e))
     return FileResponse(path, media_type="image/x-adobe-dng", headers=cache)
 
-  app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+  app.mount("/static", RevalidatingStaticFiles(directory=STATIC_DIR), name="static")
 
   return app

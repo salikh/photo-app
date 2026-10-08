@@ -163,3 +163,22 @@ def test_video_tiles_without_thumbnails_fill_in_and_do_not_block_the_folder(page
       "[...document.querySelectorAll('.cell.video img')].every(i => i.complete && i.naturalWidth > 0)"),
       timeout=30)
   page.errors.clear()      # the expected 404 + Retry-After answers are logged by the browser
+
+
+@pytest.mark.parametrize("viewport", [{"width": 810, "height": 1080}, {"width": 1180, "height": 820}])
+def test_video_is_centered_with_and_without_the_files_pane_on_tablet_sizes(page, vserver, viewport):
+  # ticket 204 (iPad): only the player is visible, filling the stage left of the pane.
+  page.set_viewport_size(viewport)
+  pid = photos(vserver)["a.mp4"]["id"]
+  page.goto(f"{vserver.url}/#/clips?photo={pid}")
+  expect(page.locator("video.main-video")).to_be_visible()
+  expect(page.locator(".stage img.main")).to_be_hidden()
+  for pane in (False, True):
+    if pane:
+      page.keyboard.press("i")
+      expect(page.locator(".files-panel")).to_be_visible()
+    s = page.locator(".stage").bounding_box()
+    v = page.locator("video.main-video").bounding_box()
+    right = page.locator(".files-panel").bounding_box()["x"] if pane else s["x"] + s["width"]
+    assert abs(v["x"] - s["x"]) < 2 and abs(v["x"] + v["width"] - right) < 2, (pane, v, s, right)
+    assert abs(v["y"] - s["y"]) < 2 and abs(v["height"] - s["height"]) < 2

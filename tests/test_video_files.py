@@ -320,3 +320,16 @@ def test_video_without_ffmpeg_gets_the_placeholder_at_once(settings):
     assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
   finally:
     video.configure(video.Tools())
+
+
+# ---- ticket 204: the app's own files are always revalidated ---------------------------------------
+
+def test_static_files_and_index_are_revalidated_not_cached_blindly(settings):
+  c, _, _ = served_app(settings)[:3]
+  for url in ("/", "/static/style.css", "/static/loupe.js"):
+    r = c.get(url)
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", url
+    if url != "/":                                        # (the tiny index is simply always re-sent)
+      again = c.get(url, headers={"If-None-Match": r.headers["etag"]})
+      assert again.status_code == 304, url                # unchanged: a cheap revalidation
+  assert "style.css?v=" not in c.get("/").text and "/static/style.css" in c.get("/").text

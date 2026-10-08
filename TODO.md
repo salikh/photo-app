@@ -8,7 +8,7 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* Tickets 196 (loupe "⋯" actions menu), 197 (video + Files panel), 198 (popovers next to their control), 199 (filter picker click-outside) 200 (rating AND tag filters) 201 (AnimSmall covers the whole video) 202 (video filter hang) and 203 (AnimSmall uncut up to 75 s) are done. Epic 184 (video support, 185-195), epic 173 (AI photo ranking, 174-182) and epic 169 (35mm-equivalent focal length, 170-172) are done — see
+*No open tickets right now.* Tickets 196 (loupe "⋯" actions menu), 197 (video + Files panel), 198 (popovers next to their control), 199 (filter picker click-outside) 200 (rating AND tag filters) 201 (AnimSmall covers the whole video) 202 (video filter hang) 203 (AnimSmall uncut up to 75 s) and 204 (stale CSS on iPad) are done. Epic 184 (video support, 185-195), epic 173 (AI photo ranking, 174-182) and epic 169 (35mm-equivalent focal length, 170-172) are done — see
 `STATUS.md`. Ticket 168 (Files-pane camera-make dedup), epic 164 (Pentax lens type, 165-167), epic
 160 (PEF support, 161-163), epic 156 (lens metadata, 157-159), the ten build-order epics, v1
 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131 (132-138), epic 144 (145-148),
