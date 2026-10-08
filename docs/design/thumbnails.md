@@ -214,5 +214,6 @@ the plan for actually building it.
   (a single frame for the grid's Thumb).
 - **Measured 2026-10-08** on 8 random videos of the real library (mp4/mov, 1-390 MB, 2-309 s, read
   from the NAS): the four stills 0.3-0.4 s together; AnimThumb 0.4-3.0 s (6-223 KB); AnimSmall
-  0.6-9.9 s (30 KB-1.1 MB). Typically about **8 s per video**, so the ~770-video backlog is about
-  1.7 hours on one worker.
+  0.6-9.9 s (30 KB-1.1 MB) -- that was the old 8 x 1 s `AnimSmall`. With ticket 201's `AnimSmall` (whole
+  clip up to 60 s, else 5 x 15 s): 45 s clip 1.2 MB / 18 s, 199 s clip 2.6 MB / 48 s. So a video now takes
+  about 25-60 s in all, and the ~770-video backlog roughly 4-5 hours on one worker.
