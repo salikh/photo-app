@@ -317,6 +317,15 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN fps REAL;
     ALTER TABLE files ADD COLUMN video_codec TEXT;
     """,
+    """
+    -- Ticket 190: a video whose thumbnails could not be made (undecodable, ffmpeg timeout) is not
+    -- retried on every populate pass: skipped until retry_after passes or the file changes
+    -- (file_mtime no longer matches files.mtime). Cleared by a forced re-render (thumbs.clear).
+    CREATE TABLE video_failures (
+      file_id INTEGER PRIMARY KEY REFERENCES files(id),
+      error TEXT NOT NULL, failed_at REAL NOT NULL, file_mtime REAL
+    );
+    """,
 ]
 
 

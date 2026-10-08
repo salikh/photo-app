@@ -193,3 +193,57 @@ def test_populator_reports_a_failing_file_and_continues(settings, monkeypatch):
   assert by_state["failed"]["error"]
   assert by_state["done"]
   assert thumbs.usage(conn)["Thumb"]["files"] == 1               # the good file still got done
+
+
+# --- videos (ticket 190) ----------------------------------------------------------------------
+
+from photoapp import video
+from tests.test_video_tools import make_clip, needs_ffmpeg
+
+
+def scanned_video(conn, settings, name="v.mp4", real=True):
+  path = os.path.join(settings.pictures_dir, name)
+  if real:
+    os.makedirs(settings.pictures_dir, exist_ok=True)
+    make_clip(video.Tools(), path, seconds=3)
+  else:
+    touch(path)
+  scan.scan(conn, settings.pictures_dir)
+  return conn.execute("SELECT id FROM files WHERE path = ?", (name,)).fetchone()[0]
+
+
+@needs_ffmpeg
+def test_populate_video_makes_stills_and_animations_then_is_complete(conn, settings):
+  fid = scanned_video(conn, settings)
+  assert [r["id"] for r in thumb_populate.find_missing_files(conn)] == [fid]
+  made = thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, fid, "v.mp4")
+  assert set(made) == set(thumbs.SIZES) | set(thumbs.ANIM_SIZES)
+  sizes = {r["size"] for r in conn.execute("SELECT size FROM thumbs WHERE file_id = ?", (fid,))}
+  assert sizes == set(made)
+  assert thumb_populate.find_missing_files(conn) == []
+  assert thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, fid, "v.mp4") == []
+
+
+@needs_ffmpeg
+def test_failed_video_is_recorded_and_not_requeued_until_retry_or_change(conn, settings):
+  fid = scanned_video(conn, settings, real=False)
+  made = thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, fid, "v.mp4")
+  assert made == []
+  assert conn.execute("SELECT error FROM video_failures WHERE file_id = ?", (fid,)).fetchone()
+  assert thumb_populate.find_missing_files(conn) == []
+  later = 8 * 86400 + __import__("time").time()
+  assert [r["id"] for r in thumb_populate.find_missing_files(conn, now=later)] == [fid]
+  conn.execute("UPDATE files SET mtime = mtime + 1 WHERE id = ?", (fid,))      # the file changed
+  assert [r["id"] for r in thumb_populate.find_missing_files(conn)] == [fid]
+  thumbs.clear(settings.thumbs_dir, conn, fid, "v.mp4")                         # forced re-render
+  assert conn.execute("SELECT COUNT(*) FROM video_failures").fetchone()[0] == 0
+
+
+def test_videos_are_not_queued_without_ffmpeg(conn, settings):
+  fid = scanned_video(conn, settings, real=False)
+  video.configure(video.Tools("no-such-ffmpeg-xyz", "no-such-ffprobe-xyz"))
+  try:
+    assert thumb_populate.find_missing_files(conn) == []
+  finally:
+    video.configure(video.Tools())
+  assert [r["id"] for r in thumb_populate.find_missing_files(conn)] == [fid]

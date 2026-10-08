@@ -188,3 +188,29 @@ balance/highlight recovery against real Bayer data) — see [103](../tickets/103
 how to actually produce that lossy DNG, since rawpy has no DNG-writing API) through
 [106](../tickets/106.md). Not implemented; this paragraph is the seam described, that ticket is
 the plan for actually building it.
+
+## Videos (epic 184)
+
+- **Stills** (ticket 188): the same four sizes in the same tree (`Thumb/NAME.mp4.jpg`). One frame from
+  10% into the clip (then 25/40/60%, then the start) -- the first that is not near-black. ffmpeg applies
+  the rotation tag; the pixel aspect ratio is made square. The images are clean frames: the "this is a
+  video" play indicator is a client-side SVG overlay, never drawn into a JPEG. If no frame can be
+  decoded (ffmpeg missing, broken file) `thumbs.make()` returns a shared flat placeholder
+  (`<thumbs_dir>/_placeholder/<Size>.jpg`, source `placeholder`) that is **never recorded** in the
+  `thumbs` table, so the real thumbnail is made once the problem is gone.
+- **Animations** (ticket 189): `AnimThumb` (300 px, 12 fps) and `AnimSmall` (640 px, 15 fps), muted
+  VP9 WebM at `<thumbs_dir>/AnimThumb/NAME.mp4.webm`. Eight 1 s fragments, each centred in one of
+  eight equal slices of the clip (input-side `-ss` per fragment, so a long file on the NAS is not read
+  end to end); a clip of 8 s or less is used whole. They are `thumbs` rows with those size names but
+  are not in `thumbs.SIZES`; `thumbs.ANIM_SIZES` lists them and `clear()`/`move_thumbnails()` cover
+  them. `source` holds the recipe (`video_thumbs.RECIPE`); bump it to regenerate.
+- **Population** (ticket 190): `thumb_populate` extracts one frame for all missing stills, then makes
+  the animations, one video at a time on the existing low-priority single-worker queue (ffmpeg runs
+  under `nice`; 120 s per frame, 600 s per animation). A failure is stored in `video_failures` and the
+  video is skipped for 7 days or until the file changes; `thumbs.clear()` (a forced re-render) removes
+  the record. With no ffmpeg no video is queued at all. On-demand requests make only what was asked
+  (a single frame for the grid's Thumb).
+- **Measured 2026-10-08** on 8 random videos of the real library (mp4/mov, 1-390 MB, 2-309 s, read
+  from the NAS): the four stills 0.3-0.4 s together; AnimThumb 0.4-3.0 s (6-223 KB); AnimSmall
+  0.6-9.9 s (30 KB-1.1 MB). Typically about **8 s per video**, so the ~770-video backlog is about
+  1.7 hours on one worker.

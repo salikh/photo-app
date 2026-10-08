@@ -202,6 +202,7 @@ def clear(thumbs_dir, conn, file_id, file_path):
         "DELETE FROM thumbs WHERE file_id = ? AND size = ?", (file_id, size)).rowcount
     if existed or deleted:
       cleared.append(size)
+  conn.execute("DELETE FROM video_failures WHERE file_id = ?", (file_id,))   # ticket 190
   conn.commit()
   logging.info("%s: cleared cached thumbnails %s for a forced re-render", file_path, cleared)
   return cleared

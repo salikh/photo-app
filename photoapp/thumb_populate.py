@@ -16,11 +16,16 @@ take the fast embedded-preview shortcut or actually demosaic, at every size -- s
 no longer needs its own RAW-specific logic at all. See docs/design/thumbnails.md.
 """
 
+import time
+
 from absl import logging
 
+from photoapp import fileinfo
 from photoapp import jobs
 from photoapp import paths
 from photoapp import thumbs
+from photoapp import video
+from photoapp import video_thumbs
 
 
 def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumbs.SIZES):
@@ -33,6 +38,8 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
   to run repeatedly and never overwrites anything a person or another job
   already produced.
   """
+  if fileinfo.is_video(rel_path):
+    return _populate_video(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes)
   missing = [s for s in sizes if not thumbs.lookup(thumbs_dir, s, rel_path)]
   if not missing:
     logging.vlog(7, "%s: nothing missing, skipping", rel_path)
@@ -47,7 +54,47 @@ def populate_file(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes=thumb
   return made
 
 
-def find_missing_files(conn, limit=None, sizes=thumbs.SIZES, rel_dir=None):
+# Ticket 190: a video that failed is left alone this long (or until the file changes).
+VIDEO_RETRY_SECONDS = 7 * 86400
+
+
+def _populate_video(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes):
+  """Static sizes from one extracted frame, then the animated previews. Failures are recorded so
+  a broken or too-slow video is not retried on every pass."""
+  missing_anim = [s for s in thumbs.ANIM_SIZES if not thumbs.anim_lookup(thumbs_dir, s, rel_path)]
+  made, errors = [], []
+  if any(not thumbs.lookup(thumbs_dir, s, rel_path) for s in sizes):
+    frames = video_thumbs.render_all(pictures_dir, thumbs_dir, rel_path)
+    for size, path in frames.items():
+      thumbs.record(conn, file_id, size, path, "ffmpeg")
+      made.append(size)
+    if not frames:
+      errors.append("no decodable frame")
+  for size in missing_anim:
+    path = video_thumbs.make_anim(pictures_dir, thumbs_dir, rel_path, size)
+    if path:
+      thumbs.record(conn, file_id, size, path, video_thumbs.RECIPE)
+      made.append(size)
+    else:
+      errors.append(f"{size} failed")
+      break         # the clip is the problem; do not spend another timeout on the next size
+  if errors:
+    mtime = conn.execute("SELECT mtime FROM files WHERE id = ?", (file_id,)).fetchone()["mtime"]
+    conn.execute(
+        "INSERT INTO video_failures (file_id, error, failed_at, file_mtime) VALUES (?, ?, ?, ?)"
+        " ON CONFLICT(file_id) DO UPDATE SET error = excluded.error,"
+        " failed_at = excluded.failed_at, file_mtime = excluded.file_mtime",
+        (file_id, "; ".join(errors), time.time(), mtime))
+    logging.warning("%s: video thumbnails incomplete (%s); not retried for %d days",
+                    rel_path, "; ".join(errors), VIDEO_RETRY_SECONDS // 86400)
+  else:
+    conn.execute("DELETE FROM video_failures WHERE file_id = ?", (file_id,))
+  conn.commit()
+  return made
+
+
+def find_missing_files(conn, limit=None, sizes=thumbs.SIZES, rel_dir=None,
+                       anim_sizes=thumbs.ANIM_SIZES, now=None):
   """[(id, path)] of live files that lack at least one of `sizes`.
 
   rel_dir (ticket 080): only files directly in that directory (not its subdirectories, matching
@@ -57,8 +104,25 @@ def find_missing_files(conn, limit=None, sizes=thumbs.SIZES, rel_dir=None):
   clauses = " OR ".join(
       "NOT EXISTS (SELECT 1 FROM thumbs t WHERE t.file_id = f.id AND t.size = ?)"
       for _ in sizes)
-  q = f"SELECT f.id, f.path FROM files f WHERE f.missing = 0 AND ({clauses})"
   args = list(sizes)
+  exts = sorted(fileinfo.VIDEO_EXTENSIONS)
+  is_video = "(" + " OR ".join("lower(f.path) LIKE ?" for _ in exts) + ")"
+  video_args = ["%" + e for e in exts]
+  if video.default_tools().available():
+    # Ticket 190: videos also need their animated sizes, unless they failed recently (and are
+    # unchanged since). Without ffmpeg no video is ever queued (it could only fail).
+    if anim_sizes:
+      clauses += " OR (" + is_video + " AND (" + " OR ".join(
+          "NOT EXISTS (SELECT 1 FROM thumbs t WHERE t.file_id = f.id AND t.size = ?)"
+          for _ in anim_sizes) + "))"
+      args += video_args + list(anim_sizes)
+    where = (f"({clauses}) AND NOT EXISTS (SELECT 1 FROM video_failures vf WHERE vf.file_id = f.id"
+             " AND vf.file_mtime IS f.mtime AND vf.failed_at > ?)")
+    args.append((time.time() if now is None else now) - VIDEO_RETRY_SECONDS)
+  else:
+    where = f"({clauses}) AND NOT {is_video}"
+    args += video_args
+  q = f"SELECT f.id, f.path FROM files f WHERE f.missing = 0 AND {where}"
   if rel_dir is not None:
     lo, hi = paths.subtree_range(rel_dir)
     q += f" AND f.path >= ? AND f.path < ? AND {paths.direct_children_sql('f.path')}"
