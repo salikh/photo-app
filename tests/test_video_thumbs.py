@@ -158,3 +158,62 @@ def test_make_anim_of_a_broken_file_returns_none(tmp_path):
   os.makedirs(pics)
   open(os.path.join(pics, "bad.mp4"), "wb").write(b"not a video")
   assert video_thumbs.make_anim(pics, str(tmp_path / "t"), "bad.mp4", "AnimSmall") is None
+
+
+# ---- ticket 201: AnimSmall is representative of the whole video -----------------------------------
+
+def test_anim_small_is_the_whole_clip_up_to_a_minute_else_five_15s_fragments():
+  long_edge, fps, n, length, whole = video_thumbs.ANIM_SPEC["AnimSmall"]
+  assert (n, length, whole) == (5, 15.0, 60.0)
+  assert video_thumbs.segment_starts(45, n, length, whole) == []                 # whole
+  assert video_thumbs.segment_starts(60, n, length, whole) == []
+  starts = video_thumbs.segment_starts(300, n, length, whole)                    # 5 slices of 60 s
+  assert starts == [22.5, 82.5, 142.5, 202.5, 262.5]
+  # 60-75 s: five 15 s fragments would overlap, so they shrink to tile the clip
+  assert video_thumbs.fragment_length(64, n, length) == pytest.approx(12.8)
+  tiled = video_thumbs.segment_starts(64, n, length, whole)
+  assert tiled[0] == 0 and tiled[-1] == pytest.approx(64 - 12.8, abs=0.01)
+  cmd = video_thumbs.anim_command("/x/a.mp4", "/o/a.webm", 300, 640, 15, n, length, whole)
+  assert cmd.count("-ss") == 5 and cmd.count("15.000") == 5
+  whole_cmd = video_thumbs.anim_command("/x/a.mp4", "/o/a.webm", 45, 640, 15, n, length, whole)
+  assert whole_cmd.count("-i") == 1 and whole_cmd[:2] == ["-t", "60"]
+
+
+def test_anim_thumb_recipe_is_unchanged():
+  assert video_thumbs.ANIM_SPEC["AnimThumb"] == (300, 12, 8, 1.0, 8.0)
+  assert video_thumbs.segment_starts(80) == [4.5, 14.5, 24.5, 34.5, 44.5, 54.5, 64.5, 74.5]
+
+
+def test_invalidate_stale_removes_old_recipe_anim_small_only(tmp_path, conn):
+  th = str(tmp_path)
+  conn.execute("INSERT INTO files (path, mtime) VALUES ('a.mp4', 1), ('b.mp4', 1)")
+  ids = [r[0] for r in conn.execute("SELECT id FROM files ORDER BY path")]
+  made = {}
+  for fid, name, size, source in ((ids[0], "a.mp4", "AnimSmall", "anim-v1"),     # stale
+                                  (ids[0], "a.mp4", "AnimThumb", "anim-v1"),     # current: kept
+                                  (ids[1], "b.mp4", "AnimSmall", "anim-v2")):    # current: kept
+    p = thumbs.anim_path(th, size, name)
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    open(p, "wb").write(b"x")
+    thumbs.record(conn, fid, size, p, source)
+    made[(name, size)] = p
+  assert video_thumbs.invalidate_stale(conn, th) == 1
+  assert not os.path.exists(made[("a.mp4", "AnimSmall")])
+  assert os.path.exists(made[("a.mp4", "AnimThumb")]) and os.path.exists(made[("b.mp4", "AnimSmall")])
+  rows = {(r["file_id"], r["size"]) for r in conn.execute("SELECT file_id, size FROM thumbs")}
+  assert rows == {(ids[0], "AnimThumb"), (ids[1], "AnimSmall")}
+  assert video_thumbs.invalidate_stale(conn, th) == 0                            # idempotent
+
+
+@needs_ffmpeg
+def test_make_anim_small_of_a_long_clip_is_five_fragments(tmp_path):
+  pics, th = str(tmp_path / "p"), str(tmp_path / "t")
+  os.makedirs(pics)
+  make_clip(video.Tools(), os.path.join(pics, "a.mp4"), seconds=100)
+  path = video_thumbs.make_anim(pics, th, "a.mp4", "AnimSmall")
+  v, info = probe_stream(path)
+  assert 72 < float(info["format"]["duration"]) < 78                              # 5 x 15 s
+  short = os.path.join(pics, "s.mp4")
+  make_clip(video.Tools(), short, seconds=20)
+  path = video_thumbs.make_anim(pics, th, "s.mp4", "AnimSmall")
+  assert 19 < float(probe_stream(path)[1]["format"]["duration"]) < 21            # the whole clip

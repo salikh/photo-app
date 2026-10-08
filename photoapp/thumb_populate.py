@@ -73,7 +73,7 @@ def _populate_video(conn, pictures_dir, thumbs_dir, file_id, rel_path, sizes):
   for size in missing_anim:
     path = video_thumbs.make_anim(pictures_dir, thumbs_dir, rel_path, size)
     if path:
-      thumbs.record(conn, file_id, size, path, video_thumbs.RECIPE)
+      thumbs.record(conn, file_id, size, path, video_thumbs.ANIM_RECIPES[size])
       made.append(size)
     else:
       errors.append(f"{size} failed")
@@ -188,6 +188,8 @@ class Populator:
     """Queue every file that still needs one of self.sizes, or (ticket 080) only those directly
     in rel_dir, to bump a just-opened folder's missing thumbnails ahead of the standing backlog
     (see jobs.JobQueue's newest_first). Returns how many were found."""
+    if rel_dir is None:
+      video_thumbs.invalidate_stale(conn, self.thumbs_dir)    # ticket 201: older recipes are remade
     rows = find_missing_files(conn, limit, self.sizes, rel_dir)
     if rel_dir is None and logging.vlog_is_on(1):
       logging.vlog(1, "enqueue_missing: %d files to queue, missing per size: %s",

@@ -198,12 +198,14 @@ the plan for actually building it.
   decoded (ffmpeg missing, broken file) `thumbs.make()` returns a shared flat placeholder
   (`<thumbs_dir>/_placeholder/<Size>.jpg`, source `placeholder`) that is **never recorded** in the
   `thumbs` table, so the real thumbnail is made once the problem is gone.
-- **Animations** (ticket 189): `AnimThumb` (300 px, 12 fps) and `AnimSmall` (640 px, 15 fps), muted
-  VP9 WebM at `<thumbs_dir>/AnimThumb/NAME.mp4.webm`. Eight 1 s fragments, each centred in one of
-  eight equal slices of the clip (input-side `-ss` per fragment, so a long file on the NAS is not read
+- **Animations** (tickets 189, 201): `AnimThumb` (300 px, 12 fps, the hover preview) and `AnimSmall` (640 px, 15 fps, shown when the browser cannot play the original), muted
+  VP9 WebM at `<thumbs_dir>/AnimThumb/NAME.mp4.webm`. `AnimThumb`: eight 1 s fragments (a clip of 8 s or less whole); `AnimSmall`: the whole clip up to 60 s,
+  else five 15 s fragments (they shrink to tile a 60-75 s clip). Fragments are each centred in one of
+  equal slices of the clip (input-side `-ss` per fragment, so a long file on the NAS is not read
   end to end); a clip of 8 s or less is used whole. They are `thumbs` rows with those size names but
   are not in `thumbs.SIZES`; `thumbs.ANIM_SIZES` lists them and `clear()`/`move_thumbnails()` cover
-  them. `source` holds the recipe (`video_thumbs.RECIPE`); bump it to regenerate.
+  them. `source` holds the size's recipe (`video_thumbs.ANIM_RECIPES`); bump it and the populator's
+  `invalidate_stale()` removes the older ones so they are remade (ticket 201).
 - **Population** (ticket 190): `thumb_populate` extracts one frame for all missing stills, then makes
   the animations, one video at a time on the existing low-priority single-worker queue (ffmpeg runs
   under `nice`; 120 s per frame, 600 s per animation). A failure is stored in `video_failures` and the

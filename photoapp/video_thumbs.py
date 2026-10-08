@@ -136,36 +136,50 @@ def render_all(pictures_dir, thumbs_dir, file_path, tools=None):
 
 # ---- animated thumbnails (ticket 189) ------------------------------------------------------------
 
-SEGMENTS = 8              # fragments per preview
-SEGMENT_SECONDS = 1.0
-RECIPE = "anim-v1"        # recorded as the thumbs row's source; bump when the recipe changes
-# size name -> (long edge px, frames per second)
-ANIM_SPEC = {"AnimThumb": (300, 12), "AnimSmall": (640, 15)}
-ANIM_TIMEOUT = 600
+RECIPE = "anim-v1"        # the AnimThumb recipe (recorded as its thumbs row's source)
+# size name -> (long edge px, fps, fragments, fragment seconds, "whole clip" up to this many seconds)
+# AnimThumb: the hover preview, eight 1 s fragments (a clip of 8 s or less is played whole).
+# AnimSmall (ticket 201): what the loupe shows when the browser cannot play the original, so it should
+# stand in for it: a clip under a minute whole, a longer one as five 15 s fragments spread over it.
+ANIM_SPEC = {"AnimThumb": (300, 12, 8, 1.0, 8.0), "AnimSmall": (640, 15, 5, 15.0, 60.0)}
+# size name -> recipe recorded in its thumbs row; a row with another recipe is stale (see invalidate_stale)
+ANIM_RECIPES = {"AnimThumb": RECIPE, "AnimSmall": "anim-v2"}
+ANIM_TIMEOUT = 900
 
 
-def segment_starts(duration, n=SEGMENTS, length=SEGMENT_SECONDS):
-  """Start offsets of the fragments: each is centred in one of n equal slices of the clip. A clip
-  no longer than n*length has no room to skip anything, so an empty list means "use the whole
-  clip" (see anim_command)."""
-  if duration is None or duration <= n * length:
+def segment_starts(duration, n=8, length=1.0, whole_up_to=None):
+  """Start offsets of the fragments: each is centred in one of n equal slices of the clip. A clip no
+  longer than whole_up_to (default n*length, i.e. no room to skip anything) is used whole: [].
+  When the clip is shorter than n fragments the fragments shrink to tile it (see fragment_length)."""
+  if whole_up_to is None:
+    whole_up_to = n * length
+  if duration is None or duration <= whole_up_to:
     return []
+  length = fragment_length(duration, n, length)
   slice_len = duration / n
   return [round(min(max((i + 0.5) * slice_len - length / 2, 0.0), duration - length), 3)
           for i in range(n)]
 
 
-def anim_command(source, dest, duration, long_edge, fps, n=SEGMENTS, length=SEGMENT_SECONDS):
+def fragment_length(duration, n, length):
+  """The fragment length actually used: `length`, or less when n of them would not fit."""
+  return min(length, duration / n) if duration else length
+
+
+def anim_command(source, dest, duration, long_edge, fps, n=8, length=1.0, whole_up_to=None):
   """ffmpeg argument list that writes the muted VP9 WebM preview of source to dest."""
+  if whole_up_to is None:
+    whole_up_to = n * length
   scale = (f"scale='if(gt(iw,ih),min({long_edge},iw),-2)':'if(gt(iw,ih),-2,min({long_edge},ih))'"
            f":flags=lanczos,fps={fps},setsar=1,setpts=PTS-STARTPTS")
-  starts = segment_starts(duration, n, length)
+  starts = segment_starts(duration, n, length, whole_up_to)
   args = []
-  if not starts:                        # short (or unknown length): the whole clip, capped at n*length
-    args += ["-t", f"{n * length:g}", "-i", source, "-an", "-vf", scale]
+  if not starts:                        # a short (or unknown length) clip: the whole of it, capped
+    args += ["-t", f"{whole_up_to:g}", "-i", source, "-an", "-vf", scale]
   else:
+    frag = fragment_length(duration, n, length)
     for t in starts:
-      args += ["-ss", f"{t:.3f}", "-t", f"{length:g}", "-i", source]
+      args += ["-ss", f"{t:.3f}", "-t", f"{frag:.3f}", "-i", source]
     chains = "".join(f"[{i}:v]{scale}[v{i}];" for i in range(len(starts)))
     inputs = "".join(f"[v{i}]" for i in range(len(starts)))
     args += ["-an", "-filter_complex", f"{chains}{inputs}concat=n={len(starts)}:v=1:a=0[out]",
@@ -175,13 +189,33 @@ def anim_command(source, dest, duration, long_edge, fps, n=SEGMENTS, length=SEGM
   return args
 
 
+def invalidate_stale(conn, thumbs_dir):
+  """Delete every animated thumbnail made with an older recipe than its size's current one (rows
+  and files), so the populator remakes it. Returns how many were removed (ticket 201)."""
+  removed = 0
+  for size, recipe in ANIM_RECIPES.items():
+    rows = conn.execute("SELECT file_id, path FROM thumbs WHERE size = ? AND source != ?",
+                        (size, recipe)).fetchall()
+    for r in rows:
+      try:
+        os.remove(r["path"])
+      except FileNotFoundError:
+        pass
+      conn.execute("DELETE FROM thumbs WHERE file_id = ? AND size = ?", (r["file_id"], size))
+      removed += 1
+  if removed:
+    conn.commit()
+    logging.info("removed %d animated thumbnail(s) made with an older recipe", removed)
+  return removed
+
+
 def make_anim(pictures_dir, thumbs_dir, file_path, size, tools=None):
   """Write the animated preview of this size ("AnimThumb" / "AnimSmall") and return its path, or
   None if the clip cannot be decoded (ffmpeg missing, broken file, timeout). The write is atomic."""
   tools = tools or video.default_tools()
   if size not in ANIM_SPEC or not tools.available():
     return None
-  long_edge, fps = ANIM_SPEC[size]
+  long_edge, fps, n, length, whole_up_to = ANIM_SPEC[size]
   source = os.path.join(pictures_dir, file_path)
   try:
     try:
@@ -192,7 +226,7 @@ def make_anim(pictures_dir, thumbs_dir, file_path, size, tools=None):
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     tmp = dest + ".tmp"
     try:
-      tools.ffmpeg_run(anim_command(source, tmp, duration, long_edge, fps), timeout=ANIM_TIMEOUT)
+      tools.ffmpeg_run(anim_command(source, tmp, duration, long_edge, fps, n, length, whole_up_to), timeout=ANIM_TIMEOUT)
       if not os.path.getsize(tmp):
         raise video.VideoError("ffmpeg wrote an empty file")
       os.replace(tmp, dest)
