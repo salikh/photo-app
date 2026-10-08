@@ -308,6 +308,15 @@ MIGRATIONS = [
     ALTER TABLE files ADD COLUMN ai_score REAL;
     ALTER TABLE files ADD COLUMN ai_score_version TEXT;
     """,
+    """
+    -- Ticket 187: video metadata (from ffprobe). duration is seconds, fps frames per second,
+    -- video_codec the first video stream's codec name (h264, mpeg4, ...). NULL for images and for
+    -- videos not probed yet (ffprobe missing). width/height/exif_date of a video are filled by the
+    -- same scan, rotation-aware (a portrait phone clip stored as rotated landscape is portrait).
+    ALTER TABLE files ADD COLUMN duration REAL;
+    ALTER TABLE files ADD COLUMN fps REAL;
+    ALTER TABLE files ADD COLUMN video_codec TEXT;
+    """,
 ]
 
 

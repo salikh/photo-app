@@ -30,6 +30,7 @@ from photoapp import ratings
 from photoapp import raw_preview_dng
 from photoapp import thumbs
 from photoapp import trash
+from photoapp import video
 from photoapp import xmp
 
 
@@ -60,8 +61,9 @@ def _upsert_file(conn, rel_path, record):
   conn.execute(
       "INSERT INTO files (path, hash, mime_type, width, height, bytesize,"
       " mtime, exif_date, aperture, shutter_speed, iso, focal_length,"
-      " camera_make, camera_model, lens_model, focal_length_35mm, missing) VALUES"
-      " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
+      " camera_make, camera_model, lens_model, focal_length_35mm, duration, fps, video_codec,"
+      " missing) VALUES"
+      " (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0) "
       "ON CONFLICT(path) DO UPDATE SET hash = excluded.hash,"
       " mime_type = excluded.mime_type, width = excluded.width,"
       " height = excluded.height, bytesize = excluded.bytesize,"
@@ -71,12 +73,29 @@ def _upsert_file(conn, rel_path, record):
       " camera_make = excluded.camera_make, camera_model = excluded.camera_model,"
       " lens_model = excluded.lens_model,"
       " focal_length_35mm = excluded.focal_length_35mm,"
+      " duration = excluded.duration, fps = excluded.fps, video_codec = excluded.video_codec,"
       " missing = 0",
       (rel_path, record["hash"], record["mime_type"], record["width"],
        record["height"], record["bytesize"], record["mtime"],
        record["exif_date"], record["aperture"], record["shutter_speed"],
        record["iso"], record["focal_length"], record["camera_make"],
-       record["camera_model"], record["lens_model"], record["focal_length_35mm"]))
+       record["camera_model"], record["lens_model"], record["focal_length_35mm"],
+       record.get("duration"), record.get("fps"), record.get("video_codec")))
+
+
+def _with_video_info(filepath, record):
+  """Ticket 187: for a video, overlay size / date / duration / fps / codec from ffprobe onto the
+  record (Pillow cannot read a video). Without ffprobe the record simply lacks the duration key,
+  which makes the metadata cache re-probe it once ffprobe exists. Images are returned unchanged."""
+  if not fileinfo.is_video(filepath):
+    return record
+  info = video.read_info(filepath)
+  if info is not None:
+    record = dict(record)
+    for key in ("width", "height", "duration", "fps", "video_codec"):
+      record[key] = info[key]
+    record["exif_date"] = info["exif_date"] or record.get("exif_date")
+  return record
 
 
 def import_single_file(conn, pictures_dir, rel_path, hashes=None):
@@ -90,13 +109,13 @@ def import_single_file(conn, pictures_dir, rel_path, hashes=None):
    focal_length, camera_make, camera_model, lens_model, focal_length_35mm) = \
       fileinfo.read_image_metadata(full)
   file_hash = fileinfo.get_or_compute_hash(full, rel_path, st.st_mtime, hashes)
-  _upsert_file(conn, rel_path, {
+  _upsert_file(conn, rel_path, _with_video_info(full, {
       "hash": file_hash, "mime_type": mime_type, "width": width, "height": height,
       "bytesize": st.st_size, "mtime": st.st_mtime, "exif_date": exif_date,
       "aperture": aperture, "shutter_speed": shutter_speed, "iso": iso,
       "focal_length": focal_length, "camera_make": camera_make,
       "camera_model": camera_model, "lens_model": lens_model,
-      "focal_length_35mm": focal_length_35mm})
+      "focal_length_35mm": focal_length_35mm}))
   return conn.execute("SELECT id FROM files WHERE path = ?", (rel_path,)).fetchone()["id"]
 
 
@@ -147,13 +166,14 @@ def _apply_move(conn, pictures_dir, thumbs_dir, file_id, old_path, new_path, rec
       "UPDATE files SET path = ?, hash = ?, mime_type = ?, width = ?, height = ?,"
       " bytesize = ?, mtime = ?, exif_date = ?, aperture = ?, shutter_speed = ?, iso = ?,"
       " focal_length = ?, camera_make = ?, camera_model = ?, lens_model = ?,"
-      " focal_length_35mm = ?, missing = 0"
+      " focal_length_35mm = ?, duration = ?, fps = ?, video_codec = ?, missing = 0"
       " WHERE id = ?",
       (new_path, record["hash"], record["mime_type"], record["width"], record["height"],
        record["bytesize"], record["mtime"], record["exif_date"], record["aperture"],
        record["shutter_speed"], record["iso"], record["focal_length"],
        record["camera_make"], record["camera_model"], record["lens_model"],
-       record["focal_length_35mm"], file_id))
+       record["focal_length_35mm"], record.get("duration"), record.get("fps"),
+       record.get("video_codec"), file_id))
   moved = []
   if thumbs_dir:
     moved = thumbs.move_thumbnails(conn, thumbs_dir, file_id, old_path, new_path)
@@ -207,6 +227,7 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
   # on-disk record is missing/incomplete (ticket 126: the default columns don't carry it).
   known = _lookup_files(conn, rel_dir, filenames, "id, path, mtime, bytesize, missing, hash")
   existing = metacache.load_records(dirpath) if metadata_cache else {}
+  probing = video.default_tools().available()    # ticket 187
 
   def work(name):
     filepath = os.path.join(dirpath, name)
@@ -227,7 +248,8 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
       if cache_valid:
         cached = _patch_cheap(filepath, name, cached)
       if (cache_valid and metacache.has_all_keys(cached)
-          and not metacache.record_is_stale(cached)):
+          and not metacache.record_is_stale(cached)
+          and not metacache.record_lacks_video_info(name, cached, probing)):
         return name, rel_path, dict(cached), False
       # Valid but incomplete (a key added later), or no usable record: re-read the metadata.
       (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
@@ -242,15 +264,15 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
       if file_hash is None:
         file_hash = fileinfo.get_or_compute_hash(
             filepath, rel_path, st.st_mtime, hashes)
-      logging.vlog(7, "scanned %s (%s, %dx%d)", rel_path, mime_type, width, height)
-      return name, rel_path, {
+      logging.vlog(7, "scanned %s (%s, %sx%s)", rel_path, mime_type, width, height)
+      return name, rel_path, _with_video_info(filepath, {
           "hash": file_hash, "mime_type": mime_type, "width": width,
           "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
           "exif_date": exif_date, "aperture": aperture,
           "shutter_speed": shutter_speed, "iso": iso,
           "focal_length": focal_length, "camera_make": camera_make,
           "camera_model": camera_model, "lens_model": lens_model,
-          "focal_length_35mm": focal_length_35mm}, True
+          "focal_length_35mm": focal_length_35mm}), True
 
     if (old is not None and old["mtime"] == st.st_mtime
         and old["bytesize"] == st.st_size and not old["missing"]):
@@ -260,15 +282,15 @@ def _scan_files(conn, pictures_dir, dirpath, rel_dir, filenames, hashes,
         fileinfo.read_image_metadata(filepath)
     file_hash = fileinfo.get_or_compute_hash(
         filepath, rel_path, st.st_mtime, hashes)
-    logging.vlog(7, "scanned %s (%s, %dx%d)", rel_path, mime_type, width, height)
-    return name, rel_path, {
+    logging.vlog(7, "scanned %s (%s, %sx%s)", rel_path, mime_type, width, height)
+    return name, rel_path, _with_video_info(filepath, {
         "hash": file_hash, "mime_type": mime_type, "width": width,
         "height": height, "bytesize": st.st_size, "mtime": st.st_mtime,
         "exif_date": exif_date, "aperture": aperture,
         "shutter_speed": shutter_speed, "iso": iso,
         "focal_length": focal_length, "camera_make": camera_make,
         "camera_model": camera_model, "lens_model": lens_model,
-        "focal_length_35mm": focal_length_35mm}, True
+        "focal_length_35mm": focal_length_35mm}), True
 
   results = [r for r in pool.map(work, filenames) if r is not None]
   # Ticket 128: a file at a path not yet known whose content uniquely matches one gone row is
@@ -434,7 +456,8 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
     # Ticket 162: likewise for a stale record that predates an extraction fix (a PEF cached before
     # the TIFF EXIF fallback), so it is re-read once instead of reused all-None forever.
     if (row is not None and row["mtime"] == mtime
-        and not (metadata_cache and metacache.index_lacks_keys(dirpath, images))):
+        and not (metadata_cache and metacache.index_lacks_keys(
+            dirpath, images, probing=video.default_tools().available()))):
       progress.dirs_skipped += 1
       logging.vlog(7, "%s: unchanged, skipping (%d files)", rel_dir, len(images))
       sync_sidecars()

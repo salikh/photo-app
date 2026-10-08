@@ -182,6 +182,7 @@ def _photo_json(r, tags):
       "rev": r["thumb_rev"],
       "implied": implied_tags(r["path"]),
       "is_video": fileinfo.is_video(r["path"]),   # ticket 185
+      "duration": r["duration"],                   # ticket 187: seconds, None for stills
   }
 
 
@@ -207,7 +208,7 @@ def list_photos(conn, rel_dir=".", sort="date", filter="all", offset=0,
   rows = conn.execute(
       "SELECT p.id, p.rating, p.fav, p.conflict, p.previous_stars, rf.id AS file_id, rf.path,"
       " rf.width, rf.height, rf.exif_date, rf.crop_x, rf.crop_y, rf.crop_w, rf.crop_h,"
-      " rf.rotation, rf.thumb_rev,"
+      " rf.rotation, rf.thumb_rev, rf.duration,"
       " (SELECT COUNT(*) FROM files x WHERE x.photo_id = p.id AND"
       "  x.missing = 0) AS nfiles"
       " FROM photos p JOIN files rf ON rf.id = p.representative_file_id"
@@ -285,7 +286,7 @@ def photo_detail(conn, photo_id, ai_model=None):
   files = [dict(r) for r in conn.execute(
       "SELECT id, path, role, derived_from, link_source, mime_type, width,"
       " height, bytesize, exif_date, aperture, shutter_speed, iso, focal_length,"
-      " camera_make, camera_model, lens_model, focal_length_35mm, ai_score, crop_x, crop_y, crop_w, crop_h,"
+      " camera_make, camera_model, lens_model, focal_length_35mm, duration, fps, video_codec, ai_score, crop_x, crop_y, crop_w, crop_h,"
       " rotation, thumb_rev, missing,"
       f" hash, exported_from_file_id, {', '.join(raw_settings.COLUMNS)} FROM files"
       " WHERE photo_id = ? ORDER BY (id = ?) DESC, path",

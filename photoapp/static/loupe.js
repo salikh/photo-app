@@ -587,7 +587,22 @@ function formatCamera(make, model) {
 
 // Tickets 084/111/156: camera (make/model), lens, focal length, aperture/shutter speed/ISO and
 // exif_date, one line, omitting whatever's absent.
+function formatDuration(seconds) {   // ticket 187: 75 -> "1:15", 3725 -> "1:02:05"
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  const two = (n) => String(n).padStart(2, '0');
+  return h ? `${h}:${two(m)}:${two(sec)}` : `${m}:${two(sec)}`;
+}
+
+function videoMetaText(f) {
+  const parts = [f.duration != null ? formatDuration(f.duration) : null,
+                 f.width && f.height ? `${f.width}x${f.height}` : null, f.video_codec,
+                 f.fps ? `${Math.round(f.fps)} fps` : null, f.exif_date].filter((p) => p != null);
+  return parts.length ? parts.join('  ·  ') : null;
+}
+
 function cameraMetaText(f) {
+  if (f.is_video) return videoMetaText(f);
   const parts = [formatCamera(f.camera_make, f.camera_model), f.lens_model,
                   formatFocalLength(f.focal_length, f.focal_length_35mm),
                   formatAperture(f.aperture), formatShutterSpeed(f.shutter_speed),

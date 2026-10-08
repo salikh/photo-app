@@ -22,7 +22,9 @@ def main(argv):
   settings = config.Settings.load()
   logging.info("config file: %s; pictures %s, thumbnails %s", settings.config_file or "none",
                settings.pictures_dir, settings.thumbs_dir)
-  video.tools_from(settings).warn_once_if_missing()   # ticket 186
+  tools = video.tools_from(settings)
+  video.configure(tools)
+  tools.warn_once_if_missing()   # ticket 186
   conn = db.connect(settings.db_path)
   restored = manual_links.restore_if_empty(conn, settings.state_dir)
   if restored:

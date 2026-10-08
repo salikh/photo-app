@@ -52,3 +52,15 @@ def test_probe_a_generated_clip(tmp_path):
   stream = next(s for s in info["streams"] if s["codec_type"] == "video")
   assert (stream["width"], stream["height"]) == (160, 120)
   assert 2.5 < float(info["format"]["duration"]) < 3.5
+
+
+@needs_ffmpeg
+def test_read_info_of_a_generated_clip(tmp_path):
+  t = video.Tools()
+  clip = str(tmp_path / "VID_20180605_171430.mp4")
+  make_clip(t, clip)
+  info = video.read_info(clip, t)
+  assert (info["width"], info["height"], info["video_codec"]) == (160, 120, "h264")
+  assert info["fps"] == 10 and 2.5 < info["duration"] < 3.5
+  assert info["exif_date"] == "2018-06-05 17:14:30"
+  assert video.read_info(str(tmp_path / "missing.mp4"), t) is None

@@ -33,6 +33,8 @@ does, for trees this app doesn't own.
 import json
 import os
 
+from photoapp import fileinfo
+
 INDEX_JSON_NAME = "index.json"
 
 # Keys of a complete per-file cache record. ``mtime`` is the cache-validity key
@@ -121,7 +123,16 @@ def record_lacks_focal_length_35mm(record):
   return "focal_length_35mm" not in record
 
 
-def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
+def record_lacks_video_info(name, record, probing):
+  """True if a video's cache record has no ffprobe data yet and ffprobe can run now (ticket 187).
+
+  A record written while ffprobe was missing lacks the duration key (a present None counts as
+  complete: an unprobeable file is not retried on every scan). Images never lack it.
+  """
+  return probing and fileinfo.is_video(name) and "duration" not in record
+
+
+def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS, probing=False):
   """True if any of names lacks a complete record in dirpath's index.json, or has a stale/lens-less/
   pre-focal_length_35mm one.
 
@@ -136,7 +147,8 @@ def index_lacks_keys(dirpath, names, required_keys=REQUIRED_KEYS):
   return any(not has_all_keys(records.get(n, {}), required_keys)
              or record_is_stale(records.get(n, {}))
              or record_lacks_lens(records.get(n, {}))
-             or record_lacks_focal_length_35mm(records.get(n, {})) for n in names)
+             or record_lacks_focal_length_35mm(records.get(n, {}))
+             or record_lacks_video_info(n, records.get(n, {}), probing) for n in names)
 
 
 def write_record(dirpath, name, record):
