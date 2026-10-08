@@ -56,7 +56,10 @@ if [ "$DRY" = 1 ] && [ ! -x "$INSTALL/.venv/bin/python" ]; then
   echo "  [dry-run] would check dependencies against requirements.txt"
 else
   say "checking dependencies"
-  if as_user "$INSTALL/.venv/bin/pip" install --dry-run -q -r "$SRC/requirements.txt" 2>&1 | grep -q "Would install"; then
+  # No -q: it also suppresses the "Would install ..." line that is matched below.
+  PIP_OUT=$(as_user "$INSTALL/.venv/bin/pip" install --dry-run -r "$SRC/requirements.txt" 2>&1) \
+    || { echo "$PIP_OUT" >&2; die "pip could not resolve requirements.txt"; }
+  if echo "$PIP_OUT" | grep -q "^Would install"; then
     if [ "$INSTALL_DEPS" = 1 ]; then
       run as_user $PIP_CMD
     else
