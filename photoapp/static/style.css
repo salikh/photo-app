@@ -132,7 +132,7 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   transform: translate(-50%, -50%); pointer-events: none;
 }
 .cell .dur {
-  position: absolute; right: 4px; bottom: 22px; padding: 0 5px; border-radius: 3px; font-size: 11px;
+  position: absolute; right: 4px; bottom: 16px; padding: 0 5px; border-radius: 3px; font-size: calc(11px + 2pt);
   background: var(--overlay-bg); color: var(--overlay-text); pointer-events: none;
 }
 .cell video.anim { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
