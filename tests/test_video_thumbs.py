@@ -162,21 +162,19 @@ def test_make_anim_of_a_broken_file_returns_none(tmp_path):
 
 # ---- ticket 201: AnimSmall is representative of the whole video -----------------------------------
 
-def test_anim_small_is_the_whole_clip_up_to_a_minute_else_five_15s_fragments():
+def test_anim_small_is_the_whole_clip_up_to_75s_else_five_15s_fragments():
   long_edge, fps, n, length, whole = video_thumbs.ANIM_SPEC["AnimSmall"]
-  assert (n, length, whole) == (5, 15.0, 60.0)
-  assert video_thumbs.segment_starts(45, n, length, whole) == []                 # whole
-  assert video_thumbs.segment_starts(60, n, length, whole) == []
+  assert (n, length, whole) == (5, 15.0, 75.0)
+  for duration in (45, 60, 64, 75):                                              # never cut up to 75 s
+    assert video_thumbs.segment_starts(duration, n, length, whole) == [], duration
   starts = video_thumbs.segment_starts(300, n, length, whole)                    # 5 slices of 60 s
   assert starts == [22.5, 82.5, 142.5, 202.5, 262.5]
-  # 60-75 s: five 15 s fragments would overlap, so they shrink to tile the clip
-  assert video_thumbs.fragment_length(64, n, length) == pytest.approx(12.8)
-  tiled = video_thumbs.segment_starts(64, n, length, whole)
-  assert tiled[0] == 0 and tiled[-1] == pytest.approx(64 - 12.8, abs=0.01)
+  just_over = video_thumbs.segment_starts(76, n, length, whole)                  # 5 x 15 s still fit
+  assert len(just_over) == 5 and just_over[0] >= 0 and just_over[-1] + 15 <= 76
   cmd = video_thumbs.anim_command("/x/a.mp4", "/o/a.webm", 300, 640, 15, n, length, whole)
   assert cmd.count("-ss") == 5 and cmd.count("15.000") == 5
-  whole_cmd = video_thumbs.anim_command("/x/a.mp4", "/o/a.webm", 45, 640, 15, n, length, whole)
-  assert whole_cmd.count("-i") == 1 and whole_cmd[:2] == ["-t", "60"]
+  whole_cmd = video_thumbs.anim_command("/x/a.mp4", "/o/a.webm", 70, 640, 15, n, length, whole)
+  assert whole_cmd.count("-i") == 1 and whole_cmd[:2] == ["-t", "75"]
 
 
 def test_anim_thumb_recipe_is_unchanged():
@@ -189,9 +187,9 @@ def test_invalidate_stale_removes_old_recipe_anim_small_only(tmp_path, conn):
   conn.execute("INSERT INTO files (path, mtime) VALUES ('a.mp4', 1), ('b.mp4', 1)")
   ids = [r[0] for r in conn.execute("SELECT id FROM files ORDER BY path")]
   made = {}
-  for fid, name, size, source in ((ids[0], "a.mp4", "AnimSmall", "anim-v1"),     # stale
+  for fid, name, size, source in ((ids[0], "a.mp4", "AnimSmall", "anim-v2"),     # stale
                                   (ids[0], "a.mp4", "AnimThumb", "anim-v1"),     # current: kept
-                                  (ids[1], "b.mp4", "AnimSmall", "anim-v2")):    # current: kept
+                                  (ids[1], "b.mp4", "AnimSmall", "anim-v3")):    # current: kept
     p = thumbs.anim_path(th, size, name)
     os.makedirs(os.path.dirname(p), exist_ok=True)
     open(p, "wb").write(b"x")

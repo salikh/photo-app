@@ -58,7 +58,7 @@ lists it; the loupe's `video` chip filters by it). Needs the system `ffmpeg`/`ff
 (duration, size, codec, date) and thumbnails; without them videos are listed with a placeholder
 thumbnail and the app logs one warning at start. Thumbnails: the usual four JPEG sizes (a frame from
 early in the clip) plus two muted WebM previews (`AnimThumb`: eight 1-second fragments spread over the clip; `AnimSmall`: the whole
-clip up to a minute, else five 15-second fragments) that play when the mouse is over a tile. They are made by the background
+clip up to 75 seconds, else five 15-second fragments) that play when the mouse is over a tile. They are made by the background
 populator, one video at a time (about 8 s for the hover preview plus 20-50 s for the larger one that
 stands in for a format the browser cannot play; ~770 videos is several hours), and a video that
 fails is retried after 7 days or when the file changes. The loupe plays the original (HTTP Range); a

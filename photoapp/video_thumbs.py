@@ -140,17 +140,19 @@ RECIPE = "anim-v1"        # the AnimThumb recipe (recorded as its thumbs row's s
 # size name -> (long edge px, fps, fragments, fragment seconds, "whole clip" up to this many seconds)
 # AnimThumb: the hover preview, eight 1 s fragments (a clip of 8 s or less is played whole).
 # AnimSmall (ticket 201): what the loupe shows when the browser cannot play the original, so it should
-# stand in for it: a clip under a minute whole, a longer one as five 15 s fragments spread over it.
-ANIM_SPEC = {"AnimThumb": (300, 12, 8, 1.0, 8.0), "AnimSmall": (640, 15, 5, 15.0, 60.0)}
+# stand in for it: a clip of up to 75 s (= 5 x 15 s, where fragments would cover it anyway) whole, a
+# longer one as five 15 s fragments spread over it.
+ANIM_SPEC = {"AnimThumb": (300, 12, 8, 1.0, 8.0), "AnimSmall": (640, 15, 5, 15.0, 75.0)}
 # size name -> recipe recorded in its thumbs row; a row with another recipe is stale (see invalidate_stale)
-ANIM_RECIPES = {"AnimThumb": RECIPE, "AnimSmall": "anim-v2"}
+ANIM_RECIPES = {"AnimThumb": RECIPE, "AnimSmall": "anim-v3"}
 ANIM_TIMEOUT = 900
 
 
 def segment_starts(duration, n=8, length=1.0, whole_up_to=None):
   """Start offsets of the fragments: each is centred in one of n equal slices of the clip. A clip no
   longer than whole_up_to (default n*length, i.e. no room to skip anything) is used whole: [].
-  When the clip is shorter than n fragments the fragments shrink to tile it (see fragment_length)."""
+  Fragments shrink to tile a clip shorter than n of them (see fragment_length); AnimSmall never gets
+  there, as its whole_up_to equals n * length."""
   if whole_up_to is None:
     whole_up_to = n * length
   if duration is None or duration <= whole_up_to:

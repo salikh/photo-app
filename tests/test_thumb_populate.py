@@ -253,7 +253,7 @@ def test_videos_are_not_queued_without_ffmpeg(conn, settings):
 def test_populator_remakes_anim_small_made_with_an_old_recipe(conn, settings):
   fid = scanned_video(conn, settings)
   thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, fid, "v.mp4")
-  conn.execute("UPDATE thumbs SET source = 'anim-v1' WHERE file_id = ? AND size = 'AnimSmall'", (fid,))
+  conn.execute("UPDATE thumbs SET source = 'anim-v2' WHERE file_id = ? AND size = 'AnimSmall'", (fid,))
   conn.commit()
   pop = thumb_populate.Populator(settings.db_path, settings.pictures_dir, settings.thumbs_dir)
   assert pop.enqueue_missing(conn) == 1                                           # stale one removed, requeued
@@ -261,4 +261,4 @@ def test_populator_remakes_anim_small_made_with_an_old_recipe(conn, settings):
   assert thumbs.anim_lookup(settings.thumbs_dir, "AnimThumb", "v.mp4")
   thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, fid, "v.mp4")
   src = conn.execute("SELECT source FROM thumbs WHERE file_id = ? AND size = 'AnimSmall'", (fid,)).fetchone()[0]
-  assert src == "anim-v2"
+  assert src == "anim-v3"

@@ -199,8 +199,8 @@ the plan for actually building it.
   (`<thumbs_dir>/_placeholder/<Size>.jpg`, source `placeholder`) that is **never recorded** in the
   `thumbs` table, so the real thumbnail is made once the problem is gone.
 - **Animations** (tickets 189, 201): `AnimThumb` (300 px, 12 fps, the hover preview) and `AnimSmall` (640 px, 15 fps, shown when the browser cannot play the original), muted
-  VP9 WebM at `<thumbs_dir>/AnimThumb/NAME.mp4.webm`. `AnimThumb`: eight 1 s fragments (a clip of 8 s or less whole); `AnimSmall`: the whole clip up to 60 s,
-  else five 15 s fragments (they shrink to tile a 60-75 s clip). Fragments are each centred in one of
+  VP9 WebM at `<thumbs_dir>/AnimThumb/NAME.mp4.webm`. `AnimThumb`: eight 1 s fragments (a clip of 8 s or less whole); `AnimSmall`: the whole clip up to 75 s,
+  else five 15 s fragments (ticket 203: it was 60 s, and 60-75 s clips were re-cut into tiles). Fragments are each centred in one of
   equal slices of the clip (input-side `-ss` per fragment, so a long file on the NAS is not read
   end to end); a clip of 8 s or less is used whole. They are `thumbs` rows with those size names but
   are not in `thumbs.SIZES`; `thumbs.ANIM_SIZES` lists them and `clear()`/`move_thumbnails()` cover
@@ -215,5 +215,5 @@ the plan for actually building it.
 - **Measured 2026-10-08** on 8 random videos of the real library (mp4/mov, 1-390 MB, 2-309 s, read
   from the NAS): the four stills 0.3-0.4 s together; AnimThumb 0.4-3.0 s (6-223 KB); AnimSmall
   0.6-9.9 s (30 KB-1.1 MB) -- that was the old 8 x 1 s `AnimSmall`. With ticket 201's `AnimSmall` (whole
-  clip up to 60 s, else 5 x 15 s): 45 s clip 1.2 MB / 18 s, 199 s clip 2.6 MB / 48 s. So a video now takes
+  clip up to 75 s, else 5 x 15 s): 45 s clip 1.2 MB / 18 s, 199 s clip 2.6 MB / 48 s. So a video now takes
   about 25-60 s in all, and the ~770-video backlog roughly 4-5 hours on one worker.
