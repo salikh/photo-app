@@ -8,7 +8,9 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-*No open tickets right now.* Epic 173 (AI photo ranking, 174-182) and epic 169 (35mm-equivalent focal length, 170-172) are done — see
+**Open: epic [184](docs/tickets/184.md) — video files in the library (185-195).** Order: 185, 186 → 187, 188 → 189 → 190, 191 → 192, 193 → 194 → 195.
+
+Epic 173 (AI photo ranking, 174-182) and epic 169 (35mm-equivalent focal length, 170-172) are done — see
 `STATUS.md`. Ticket 168 (Files-pane camera-make dedup), epic 164 (Pentax lens type, 165-167), epic
 160 (PEF support, 161-163), epic 156 (lens metadata, 157-159), the ten build-order epics, v1
 filtering, every cross-cutting ticket, epic 102 (103-107), epic 131 (132-138), epic 144 (145-148),
@@ -16,7 +18,7 @@ tickets 139-143, 149-155 and tickets 108-115, 117-124, 127, 128 and 130 are done
 
 ## Restart notes
 
-- No work in progress, no open tickets. Epic 173 (AI photo ranking, 174-182) is the most
+- Epic 184 (video support) is planned, not started; first actionable tickets are 185 and 186. Before it, epic 173 (AI photo ranking, 174-182) is the most
   recent completed work; see `STATUS.md` for that and everything before it. New requests should be
   filed as tickets in `docs/tickets/NNN.md` first.
 - Version control is **jj** (colocated with git); commit each logical step with `jj commit -m ...
