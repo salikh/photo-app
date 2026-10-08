@@ -365,10 +365,13 @@ function renderHud() {
     el('span', {class: 'stars' + (p.rating === REJECT ? ' reject' : ''), text: label(p.rating)}),
     p.fav ? el('span', {class: 'fav-on', text: '♥'}) : null,
     p.conflict ? el('span', {class: 'conflict', title: 'sidecars disagree', text: '⚠ conflict'}) : null,
-    p.tags.map((t) => el('span', {class: 'tag', text: t})),
+    // Ticket 194: a tag chip is also a shortcut to filter the view by that tag.
+    p.tags.map((t) => el('span', {class: 'tag', title: `show only tag: ${t}`, role: 'button',
+      onclick: (e) => { e.stopPropagation(); switchFilterTo('tag:' + t); }, text: t})),
     // Ticket 123: dot-directory names in the path read as implicit tags (a hidden folder's name).
     (p.implied || []).map((t) => el('span', {class: 'tag implied',
-      title: 'from a hidden folder name', text: t})),
+      title: t === 'video' ? 'a video file (click: show only videos)' : 'from a hidden folder name',
+      role: 'button', onclick: (e) => { e.stopPropagation(); switchFilterTo('tag:' + t); }, text: t})),
     // Deliberately not class "tag" -- .hud .tag is also used for the photo's own tags, and tests
     // (and a future feature) count them separately from this filter-switcher button.
     state.route

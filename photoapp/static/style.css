@@ -207,6 +207,7 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
    compare hotkey can hide/reveal it without any layout shift. Deliberately not img.main itself
    (a distinct class, not an additional one) -- several tests and zoom/swipe selectors assume
    `.stage img.main` resolves to exactly the one committed image. */
+.hud .tag[role=button] { cursor: pointer; }
 .stage img.tuning {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
   pointer-events: none; -webkit-user-drag: none; transition: none;

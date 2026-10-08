@@ -269,7 +269,18 @@ def tags_in_view(conn, rel_dir=".", recursive=False):
       " JOIN files rf ON rf.id = p.representative_file_id"
       " WHERE " + scope_sql + " AND rf.missing = 0"
       " GROUP BY t.tag ORDER BY t.tag", scope_args).fetchall()
-  return {"dir": rel_dir, "tags": [{"tag": r["tag"], "count": r["n"]} for r in rows]}
+  tags = {r["tag"]: r["n"] for r in rows}
+  # Ticket 194: the implied 'video' tag is offered like a real one, so the existing tag dropdown
+  # lists "video (N)" -- counted with the filter's own condition, so it equals what clicking shows.
+  cond, cond_args = filter_condition("tag:" + fileinfo.VIDEO_TAG)
+  videos = conn.execute(
+      "SELECT COUNT(*) FROM photos p JOIN files rf ON rf.id = p.representative_file_id"
+      " WHERE " + scope_sql + " AND rf.missing = 0 AND " + cond, scope_args + cond_args).fetchone()[0]
+  if videos:
+    tags[fileinfo.VIDEO_TAG] = videos
+  else:
+    tags.pop(fileinfo.VIDEO_TAG, None)
+  return {"dir": rel_dir, "tags": [{"tag": t, "count": n} for t, n in sorted(tags.items())]}
 
 
 def _ai_answers(conn, file_id, ai_model):

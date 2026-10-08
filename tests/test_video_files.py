@@ -166,3 +166,19 @@ def test_anim_thumbnail_route_and_has_anim_flag(settings):
   p = c.get("/api/photos", params={"dir": "v", "sort": "name"}).json()["photos"][0]
   assert p["has_anim"] is True
   assert c.get(f"/api/photos/{p['id']}").json()["files"][0]["has_anim"] is True
+
+
+def test_video_tag_is_offered_in_the_tag_dropdown_with_a_matching_count(settings):
+  d = settings.pictures_dir
+  make_jpeg(os.path.join(d, "t", "a.jpg"))
+  touch(os.path.join(d, "t", "b.mp4"))
+  touch(os.path.join(d, "t", "c.MOV"))
+  conn = db.open_state(settings.state_dir)
+  scan.scan(conn, d)
+  c = TestClient(api.create_app(conn, settings))
+  tags = c.get("/api/photos/tags", params={"dir": "t"}).json()["tags"]
+  assert tags == [{"tag": "video", "count": 2}]
+  shown = c.get("/api/photos", params={"dir": "t", "filter": "tag:video"}).json()
+  assert shown["total"] == 2
+  assert c.get("/api/photos/tags", params={"dir": "."}).json()["tags"] == []   # not recursive
+  assert c.get("/api/photos/tags", params={"dir": ".", "recursive": 1}).json()["tags"] == tags
