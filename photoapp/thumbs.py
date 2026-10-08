@@ -48,6 +48,29 @@ def thumb_path(thumbs_dir, size, file_path):
   return os.path.join(thumbs_dir, size, thumb_relpath(file_path))
 
 
+# Ticket 189: animated video thumbnails. They are rows of the same `thumbs` table with these size
+# names (so primary key, usage accounting and cleanup need no new schema) but live as
+# <thumbs_dir>/AnimThumb/NAME.mp4.webm, and are deliberately not in SIZES: SIZES is "the stills
+# every file has", and every loop over it (lacking(), the populator) would otherwise ask a JPEG
+# photo for a WebM.
+ANIM_SIZES = ("AnimThumb", "AnimSmall")
+
+
+def anim_path(thumbs_dir, size, file_path):
+  return os.path.join(thumbs_dir, size, file_path + ".webm")
+
+
+def anim_lookup(thumbs_dir, size, file_path):
+  path = anim_path(thumbs_dir, size, file_path)
+  return path if os.path.isfile(path) else None
+
+
+def _all_paths(thumbs_dir, file_path):
+  """[(size, path)] of every possible cached rendition of a source path, stills and animations."""
+  return ([(s, thumb_path(thumbs_dir, s, file_path)) for s in SIZES]
+          + [(s, anim_path(thumbs_dir, s, file_path)) for s in ANIM_SIZES])
+
+
 def lookup(thumbs_dir, size, file_path):
   """Existing thumbnail path for exactly this size, or None."""
   path = thumb_path(thumbs_dir, size, file_path)
@@ -171,8 +194,7 @@ def clear(thumbs_dir, conn, file_id, file_path):
   from scratch through the normal path (make/ensure, or the RAW job queue) -- clearing is the
   whole fix; no rendering happens here. Returns the sizes that had something to clear."""
   cleared = []
-  for size in SIZES:
-    path = thumb_path(thumbs_dir, size, file_path)
+  for size, path in _all_paths(thumbs_dir, file_path):
     existed = os.path.exists(path)
     if existed:
       os.remove(path)
@@ -194,11 +216,10 @@ def move_thumbnails(conn, thumbs_dir, file_id, old_path, new_path):
   Returns the sizes moved.
   """
   moved = []
-  for size in SIZES:
-    src = thumb_path(thumbs_dir, size, old_path)
+  for (size, src), (_, dest) in zip(_all_paths(thumbs_dir, old_path),
+                                     _all_paths(thumbs_dir, new_path)):
     if not os.path.isfile(src):
       continue
-    dest = thumb_path(thumbs_dir, size, new_path)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     os.replace(src, dest)
     conn.execute("UPDATE thumbs SET path = ? WHERE file_id = ? AND size = ?",

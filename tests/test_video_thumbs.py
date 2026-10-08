@@ -82,3 +82,79 @@ def test_a_black_start_is_skipped(tmp_path):
       os.path.join(pics, "b.mp4")])
   path, _ = thumbs.make(pics, th, "b.mp4", "Medium")
   assert not video_thumbs.is_dark(Image.open(path))
+
+
+# ---- ticket 189: animated thumbnails --------------------------------------------------------
+
+def test_segment_starts_are_slice_centres():
+  starts = video_thumbs.segment_starts(80)             # 8 slices of 10 s, 1 s fragments
+  assert starts == [4.5, 14.5, 24.5, 34.5, 44.5, 54.5, 64.5, 74.5]
+  assert video_thumbs.segment_starts(8) == [] and video_thumbs.segment_starts(3) == []
+  assert video_thumbs.segment_starts(None) == []
+  assert all(0 <= t <= 8.9 for t in video_thumbs.segment_starts(9))     # never past the end
+
+
+def test_anim_command_shape():
+  cmd = video_thumbs.anim_command("/x/a.mp4", "/o/a.webm", 80, 300, 12)
+  assert cmd.count("-ss") == 8 and cmd.count("-i") == 8 and "concat=n=8:v=1:a=0[out]" in " ".join(cmd)
+  assert "libvpx-vp9" in cmd and "-an" in cmd and cmd[-2:] == ["-y", "/o/a.webm"]
+  short = video_thumbs.anim_command("/x/a.mp4", "/o/a.webm", 3, 300, 12)
+  assert short.count("-i") == 1 and "-filter_complex" not in short
+
+
+def test_anim_paths_clear_and_move(tmp_path, conn):
+  th = str(tmp_path)
+  for size in thumbs.ANIM_SIZES:
+    p = thumbs.anim_path(th, size, "d/a.mp4")
+    os.makedirs(os.path.dirname(p)); open(p, "wb").write(b"x")
+  conn.execute("INSERT INTO files (path, mtime) VALUES ('d/a.mp4', 1)")
+  fid = conn.execute("SELECT id FROM files").fetchone()[0]
+  thumbs.record(conn, fid, "AnimThumb", thumbs.anim_path(th, "AnimThumb", "d/a.mp4"), "anim-v1")
+  assert thumbs.move_thumbnails(conn, th, fid, "d/a.mp4", "d/b.mp4") == ["AnimThumb", "AnimSmall"]
+  assert thumbs.anim_lookup(th, "AnimSmall", "d/b.mp4") and not thumbs.anim_lookup(th, "AnimSmall", "d/a.mp4")
+  assert conn.execute("SELECT path FROM thumbs").fetchone()[0].endswith("AnimThumb/d/b.mp4.webm")
+  assert thumbs.clear(th, conn, fid, "d/b.mp4") == ["AnimThumb", "AnimSmall"]
+  assert not thumbs.anim_lookup(th, "AnimThumb", "d/b.mp4")
+
+
+def test_make_anim_without_ffmpeg_returns_none(tmp_path):
+  none = video.Tools("no-such-ffmpeg-xyz", "no-such-ffprobe-xyz")
+  assert video_thumbs.make_anim(str(tmp_path), str(tmp_path / "t"), "a.mp4", "AnimThumb", none) is None
+
+
+def probe_stream(path):
+  info = video.Tools().probe(path)
+  v = next(s for s in info["streams"] if s["codec_type"] == "video")
+  return v, info
+
+
+@needs_ffmpeg
+def test_make_anim_long_clip_is_eight_seconds_vp9_without_audio(tmp_path):
+  pics, th = str(tmp_path / "p"), str(tmp_path / "t")
+  os.makedirs(pics)
+  make_clip(video.Tools(), os.path.join(pics, "a.mp4"), seconds=20)
+  path = video_thumbs.make_anim(pics, th, "a.mp4", "AnimThumb")
+  assert path.endswith("AnimThumb/a.mp4.webm") and not os.path.exists(path + ".tmp")
+  v, info = probe_stream(path)
+  assert v["codec_name"] == "vp9" and (v["width"], v["height"]) == (160, 120)   # never upscaled
+  assert all(s["codec_type"] == "video" for s in info["streams"])
+  assert 7 < float(info["format"]["duration"]) < 9
+
+
+@needs_ffmpeg
+def test_make_anim_short_clip_is_played_whole_and_downscaled(tmp_path):
+  pics, th = str(tmp_path / "p"), str(tmp_path / "t")
+  os.makedirs(pics)
+  video.Tools().ffmpeg_run(["-f", "lavfi", "-i", "testsrc=duration=3:size=1280x720:rate=25",
+                            "-pix_fmt", "yuv420p", "-y", os.path.join(pics, "s.mp4")])
+  path = video_thumbs.make_anim(pics, th, "s.mp4", "AnimThumb")
+  v, info = probe_stream(path)
+  assert (v["width"], v["height"]) == (300, 168) and 2.5 < float(info["format"]["duration"]) < 3.6
+
+
+@needs_ffmpeg
+def test_make_anim_of_a_broken_file_returns_none(tmp_path):
+  pics = str(tmp_path / "p")
+  os.makedirs(pics)
+  open(os.path.join(pics, "bad.mp4"), "wb").write(b"not a video")
+  assert video_thumbs.make_anim(pics, str(tmp_path / "t"), "bad.mp4", "AnimSmall") is None

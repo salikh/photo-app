@@ -132,3 +132,74 @@ def render_all(pictures_dir, thumbs_dir, file_path, tools=None):
     return {}
   return {s: thumbs.save(frame, thumbs.thumb_path(thumbs_dir, s, file_path), thumbs.LONG_EDGE[s])
           for s in missing}
+
+
+# ---- animated thumbnails (ticket 189) ------------------------------------------------------------
+
+SEGMENTS = 8              # fragments per preview
+SEGMENT_SECONDS = 1.0
+RECIPE = "anim-v1"        # recorded as the thumbs row's source; bump when the recipe changes
+# size name -> (long edge px, frames per second)
+ANIM_SPEC = {"AnimThumb": (300, 12), "AnimSmall": (640, 15)}
+ANIM_TIMEOUT = 600
+
+
+def segment_starts(duration, n=SEGMENTS, length=SEGMENT_SECONDS):
+  """Start offsets of the fragments: each is centred in one of n equal slices of the clip. A clip
+  no longer than n*length has no room to skip anything, so an empty list means "use the whole
+  clip" (see anim_command)."""
+  if duration is None or duration <= n * length:
+    return []
+  slice_len = duration / n
+  return [round(min(max((i + 0.5) * slice_len - length / 2, 0.0), duration - length), 3)
+          for i in range(n)]
+
+
+def anim_command(source, dest, duration, long_edge, fps, n=SEGMENTS, length=SEGMENT_SECONDS):
+  """ffmpeg argument list that writes the muted VP9 WebM preview of source to dest."""
+  scale = (f"scale='if(gt(iw,ih),min({long_edge},iw),-2)':'if(gt(iw,ih),-2,min({long_edge},ih))'"
+           f":flags=lanczos,fps={fps},setsar=1,setpts=PTS-STARTPTS")
+  starts = segment_starts(duration, n, length)
+  args = []
+  if not starts:                        # short (or unknown length): the whole clip, capped at n*length
+    args += ["-t", f"{n * length:g}", "-i", source, "-an", "-vf", scale]
+  else:
+    for t in starts:
+      args += ["-ss", f"{t:.3f}", "-t", f"{length:g}", "-i", source]
+    chains = "".join(f"[{i}:v]{scale}[v{i}];" for i in range(len(starts)))
+    inputs = "".join(f"[v{i}]" for i in range(len(starts)))
+    args += ["-an", "-filter_complex", f"{chains}{inputs}concat=n={len(starts)}:v=1:a=0[out]",
+             "-map", "[out]"]
+  args += ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "40", "-pix_fmt", "yuv420p", "-row-mt", "1",
+           "-deadline", "good", "-cpu-used", "5", "-f", "webm", "-y", dest]
+  return args
+
+
+def make_anim(pictures_dir, thumbs_dir, file_path, size, tools=None):
+  """Write the animated preview of this size ("AnimThumb" / "AnimSmall") and return its path, or
+  None if the clip cannot be decoded (ffmpeg missing, broken file, timeout). The write is atomic."""
+  tools = tools or video.default_tools()
+  if size not in ANIM_SPEC or not tools.available():
+    return None
+  long_edge, fps = ANIM_SPEC[size]
+  source = os.path.join(pictures_dir, file_path)
+  try:
+    try:
+      duration = float(tools.probe(source).get("format", {}).get("duration"))
+    except (TypeError, ValueError):
+      duration = None
+    dest = thumbs.anim_path(thumbs_dir, size, file_path)
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    tmp = dest + ".tmp"
+    try:
+      tools.ffmpeg_run(anim_command(source, tmp, duration, long_edge, fps), timeout=ANIM_TIMEOUT)
+      if not os.path.getsize(tmp):
+        raise video.VideoError("ffmpeg wrote an empty file")
+      os.replace(tmp, dest)
+    finally:
+      if os.path.exists(tmp):
+        os.unlink(tmp)
+  except (video.VideoError, OSError) as e:
+    logging.warning("%s: animated %s thumbnail failed: %s", file_path, size, e)
+    return None
+  return dest
