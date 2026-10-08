@@ -87,12 +87,32 @@ def hash_file(path):
   return digest.hexdigest()
 
 
+# Ticket 185: video containers the library indexes. A video is a normal file (its own Photo, never
+# grouped with a RAW/JPEG); metadata and thumbnails come from ffmpeg (tickets 186-189), not Pillow.
+VIDEO_EXTENSIONS = {
+    '.mp4', '.m4v', '.mov', '.avi', '.3gp', '.mpg', '.mpeg', '.mkv', '.mts', '.m2ts', '.wmv',
+    '.webm',
+}
+
+# The tag every video is implicitly given (see library.implied_tags); never written to a sidecar.
+VIDEO_TAG = "video"
+
+
 def is_raw(name):
   return os.path.splitext(name)[1].lower() in RAW_EXTENSIONS
 
 
 def is_image(name):
   return os.path.splitext(name)[1].lower() in IMAGE_EXTENSIONS
+
+
+def is_video(name):
+  return os.path.splitext(name)[1].lower() in VIDEO_EXTENSIONS
+
+
+def is_media(name):
+  """A file the scanner indexes: an image or a video."""
+  return is_image(name) or is_video(name)
 
 
 # Ticket 101: filenames that are never scanned into the database at all, checked before
@@ -425,6 +445,11 @@ def read_image_metadata(filepath):
   """
   mime_type = width = height = exif_date = aperture = shutter_speed = iso = None
   focal_length = camera_make = camera_model = lens_model = focal_length_35mm = None
+  if is_video(filepath):
+    # Ticket 185: Pillow cannot open a video. Size and date come from ffprobe (ticket 187).
+    mime_type, _ = mimetypes.guess_type(filepath)
+    return (mime_type, width, height, exif_date, aperture, shutter_speed, iso,
+            focal_length, camera_make, camera_model, lens_model, focal_length_35mm)
   try:
     with Image.open(filepath) as img:
       width, height = img.size

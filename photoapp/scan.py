@@ -413,7 +413,7 @@ def _scan_subtree(conn, pictures_dir, scan_dir, recursive, hashes, progress,
       dirnames[:] = []
     filenames = [n for n in filenames if not fileinfo.is_ignored(n)]   # ticket 101
     rel_dir = _rel(pictures_dir, dirpath)
-    images = sorted(n for n in filenames if fileinfo.is_image(n))
+    images = sorted(n for n in filenames if fileinfo.is_media(n))
     progress.dirs_seen += 1
     progress.files_seen += len(images)
     seen.update(images if rel_dir == "." else

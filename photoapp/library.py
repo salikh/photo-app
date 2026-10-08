@@ -45,9 +45,13 @@ def implied_tags(path):
   """Dot-prefixed directory names in path, e.g. 'a/.picasa/b.jpg' -> ['.picasa'].
 
   A file in a hidden directory is implicitly tagged with that directory's name even when no sidecar
-  says so (ticket 123), so a dot-tag filter can unhide and match it.
+  says so (ticket 123), so a dot-tag filter can unhide and match it. Ticket 185: a video file is
+  likewise implicitly tagged 'video'.
   """
-  return [seg for seg in path.split('/')[:-1] if seg.startswith('.')]
+  tags = [seg for seg in path.split('/')[:-1] if seg.startswith('.')]
+  if fileinfo.is_video(path):
+    tags.append(fileinfo.VIDEO_TAG)
+  return tags
 
 
 def filter_condition(name, one_star_is_unrated=False):
@@ -81,6 +85,13 @@ def filter_condition(name, one_star_is_unrated=False):
       # Ticket 123: a dot-tag also matches a file under a directory of that name (an implied tag).
       return ("(EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?)"
               " OR instr('/' || rf.path || '/', '/' || ? || '/') > 0)"), (tag, tag)
+    if tag == fileinfo.VIDEO_TAG:
+      # Ticket 185: the implied tag of every video file (matched by extension, like a dot-tag
+      # matches a directory name), as well as a real 'video' tag.
+      exts = sorted(fileinfo.VIDEO_EXTENSIONS)
+      like = " OR ".join("lower(rf.path) LIKE ?" for _ in exts)
+      return (f"(EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?) OR {like})",
+              (tag,) + tuple("%" + e for e in exts))
     return "EXISTS (SELECT 1 FROM tags t WHERE t.photo_id = p.id AND t.tag = ?)", (tag,)
   raise ValueError(
       f"filter must be one of {FILTERS}, rating:1..5, rating>=1..5, rating<=1..5, or tag:NAME")
@@ -170,6 +181,7 @@ def _photo_json(r, tags):
       "exif_date": r["exif_date"], "crop": crop, "rotation": r["rotation"] or 0,
       "rev": r["thumb_rev"],
       "implied": implied_tags(r["path"]),
+      "is_video": fileinfo.is_video(r["path"]),   # ticket 185
   }
 
 
@@ -281,6 +293,7 @@ def photo_detail(conn, photo_id, ai_model=None):
   for f in files:
     f["ai_answers"] = _ai_answers(conn, f["id"], ai_model) if f["ai_score"] is not None else None
     f["is_raw"] = fileinfo.is_raw(f["path"])   # ticket 085: only a RAW file gets settings sliders
+    f["is_video"] = fileinfo.is_video(f["path"])   # ticket 185
     # Ticket 099: "exported from" jump-to-original -- dir + photo_id of the source Photo, so the
     # frontend can build a link the same shape route.href already takes. Ticket 152: path too, for
     # the link's display text (dir alone read as "<dir> (photo <id>)", not a real path).
