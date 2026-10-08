@@ -1258,7 +1258,7 @@ function renderFilterPanel() {
       onclick: ok ? () => switchFilterTo(value) : null,
     }, el('span', {class: 'lbl', text}), count != null ? el('span', {class: 'n', text: String(count)}) : null);
   };
-  ui.filterPanel = el('div', {class: 'filter-picker', onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation()},
+  const picker = el('div', {class: 'filter-picker', onclick: (e) => e.stopPropagation(), onpointerdown: (e) => e.stopPropagation()},
     el('div', {class: 'filter-row'},
       filterPrimary().filter(([value]) => !/^rating:/.test(value))
         .map(([value, text]) => option(value, text))),
@@ -1267,8 +1267,11 @@ function renderFilterPanel() {
       starValues().map((n) => el('div', {class: 'filter-star-row'},
         el('span', {class: 'star-lbl', text: `★${n}`}),
         option(`rating<=${n}`, '≤'), option(`rating:${n}`, '='), option(`rating>=${n}`, '≥')))));
-  ui.stage.append(ui.filterPanel);
-  placeNear(ui.filterPanel, ui.hud.querySelector('.filter-tag'));   // ticket 198: next to the filter tag
+  // Ticket 199: like the actions menu, a light dimming backdrop; a click on it dismisses the picker.
+  ui.filterPanel = el('div', {class: 'popover-backdrop', onclick: closeFilterPicker,
+                              onpointerdown: (e) => e.stopPropagation()}, picker);
+  root.append(ui.filterPanel);
+  placeNear(picker, ui.hud.querySelector('.filter-tag'));   // ticket 198: next to the filter tag
 }
 
 function openFilterPicker() {
@@ -1362,7 +1365,6 @@ function openActionsMenu(anchor) {
   if (!photo) return;
   ui.actionsModal = el('div', {class: 'confirm-modal actions-modal', onclick: closeActionsMenu},
     el('div', {class: 'confirm-card', role: 'menu', onclick: (e) => e.stopPropagation()},
-      el('h3', {text: 'Actions'}),
       actionsMenuItems(photo).map((item) => el('button', {
         class: 'menu-item', role: 'menuitem', title: item.hint,
         onclick: () => { closeActionsMenu(); item.run(); }},

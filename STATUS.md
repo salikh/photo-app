@@ -478,3 +478,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [196](docs/tickets/196.md) loupe "⋯" opens a modal actions menu (Export…, Flush thumbnails); the dedicated export button is gone
 - [x] [197](docs/tickets/197.md) bug: Files panel ('i') over a video showed the still next to the player; the still is hidden while the player shows
 - [x] [198](docs/tickets/198.md) the loupe's filter picker and "⋯" menu open next to the clicked control (`util.placeNear`)
+- [x] [199](docs/tickets/199.md) filter picker: dimming backdrop, click outside dismisses; the actions popover has no title

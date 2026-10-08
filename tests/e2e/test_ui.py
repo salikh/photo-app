@@ -2890,8 +2890,9 @@ def test_loupe_popovers_open_next_to_the_clicked_element(page, server, viewport)
   tag = page.locator(".hud .filter-tag")
   tag.click()
   _next_to(page.locator(".filter-picker").bounding_box(), tag.bounding_box(), viewport)
-  tag.click()                                                              # toggles it closed
+  page.mouse.click(5, 5)                                                   # ticket 199: outside dismisses it
   expect(page.locator(".filter-picker")).to_have_count(0)
+  expect(page.locator(".loupe")).to_be_visible()
   more = page.locator(".hud button.debug-menu")
   more.click()
   _next_to(page.locator(".actions-modal .confirm-card").bounding_box(), more.bounding_box(), viewport)

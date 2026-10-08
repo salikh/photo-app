@@ -394,6 +394,9 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 }
 .confirm-card h3 { margin: 0 0 12px; }
 /* ticket 196: the loupe's "more actions" menu */
+/* ticket 199: the backdrop behind a popover (filter picker): only dims a little and catches the
+   click that dismisses it */
+.popover-backdrop { position: fixed; inset: 0; z-index: 25; background: rgba(0, 0, 0, 0.2); }
 /* ticket 198: a popover next to the "⋯", not a centred dialog; the backdrop only dims and catches clicks */
 .actions-modal { display: block; background: rgba(0, 0, 0, 0.2); padding: 0; }
 .actions-modal .confirm-card { position: fixed; width: auto; min-width: 260px; max-width: min(360px, calc(100vw - 16px)); box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); }
