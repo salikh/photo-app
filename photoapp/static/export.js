@@ -70,8 +70,7 @@ export async function open(ids) {
         'Writes a full-size JPEG of each (videos: the original) to the folder below (subfolders are mirrored so ' +
         'same-named photos from different folders don’t collide).'}),
       el('label', {class: 'export-label'}, 'Target folder', input),
-      el('label', {class: 'export-label'}, gps, ' Include GPS location in the exported files ',
-        el('span', {class: 'meta', text: '(off unless ticked, every time)'})),
+      el('label', {class: 'export-label'}, gps, ' Include GPS location in the exported files'),
       up.node,
       el('div', {class: 'row'},
         el('button', {text: 'Cancel', onclick: close}),
