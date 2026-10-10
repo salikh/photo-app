@@ -35,11 +35,14 @@ export async function open(ids) {
 
   const input = el('input', {type: 'text', value: target, class: 'export-target',
                              'aria-label': 'target folder'});
+  // Ticket 208: never remembered, unchecked every time the dialog opens.
+  const gps = el('input', {type: 'checkbox', class: 'export-gps', 'aria-label': 'include GPS'});
   const confirmBtn = el('button', {class: 'danger', text: `Export ${ids.length} photo(s)`,
     onclick: async () => {
       confirmBtn.disabled = true;
       try {
-        const r = await post('/api/export', {ids, dir: route.dir, target: input.value});
+        const r = await post('/api/export', {ids, dir: route.dir, target: input.value,
+                                          include_gps: gps.checked});
         toast(`queued ${r.queued.length} for export` +
               (r.missing.length ? `, ${r.missing.length} could not be found` : '') +
               (r.skipped_videos ? `, ${r.skipped_videos} video(s) skipped` : '') +
@@ -59,6 +62,8 @@ export async function open(ids) {
         'Writes a full-size JPEG of each to the folder below (subfolders are mirrored so ' +
         'same-named photos from different folders don’t collide).'}),
       el('label', {class: 'export-label'}, 'Target folder', input),
+      el('label', {class: 'export-label'}, gps, ' Include GPS location in the exported files ',
+        el('span', {class: 'meta', text: '(off unless ticked, every time)'})),
       el('div', {class: 'row'},
         el('button', {text: 'Cancel', onclick: close}),
         confirmBtn)));

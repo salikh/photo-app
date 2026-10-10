@@ -3,6 +3,7 @@
 import dataclasses
 import functools
 import io
+import json
 import mimetypes
 import os
 import sqlite3
@@ -95,6 +96,7 @@ class ExportBody(pydantic.BaseModel):
   ids: list[int]
   dir: str
   target: str
+  include_gps: bool = False   # ticket 208: off unless asked for on this very export
 
 
 class AiRateBody(pydantic.BaseModel):
@@ -205,7 +207,9 @@ def create_app(conn, settings):
                        (job["file_id"],)).fetchone()
     if row is None:
       raise RuntimeError("file is gone")
-    export.export_file(conn, settings, job["file_id"], row["path"], job["target"])
+    options = json.loads(job["options"]) if job["options"] else {}
+    export.export_file(conn, settings, job["file_id"], row["path"], job["target"],
+                       include_gps=bool(options.get("include_gps")))
     export.link_exported_file(conn, settings, job["file_id"], job["target"])
     logging.vlog(5, "%s: exported to %s", row["path"], job["target"])
 
@@ -438,7 +442,9 @@ def create_app(conn, settings):
           dest = export.resolve_dest_path(app.state.db, settings.pictures_dir, candidate,
                                           r["file_id"], taken)
           taken.add(dest)
-          job_id = app.state.jobs.enqueue("export", file_id=r["file_id"], target=dest)
+          job_id = app.state.jobs.enqueue("export", file_id=r["file_id"], target=dest,
+                                          options={"include_gps": True} if body.include_gps
+                                          else None)
           queued.append({"photo_id": r["photo_id"], "job_id": job_id})
       missing = sorted(set(body.ids) - {r["photo_id"] for r in rows} - set(skipped_videos))
       return {"queued": queued, "missing": missing, "skipped_videos": len(skipped_videos)}

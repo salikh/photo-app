@@ -326,6 +326,10 @@ MIGRATIONS = [
       error TEXT NOT NULL, failed_at REAL NOT NULL, file_mtime REAL
     );
     """,
+    """
+    -- Ticket 208: per-job options (JSON), e.g. {"include_gps": true} on an export job.
+    ALTER TABLE jobs ADD COLUMN options TEXT;
+    """,
 ]
 
 

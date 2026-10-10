@@ -9,6 +9,7 @@ import os
 import shutil
 
 from photoapp import crop as crop_lib
+from photoapp import exif_write
 from photoapp import fileinfo
 from photoapp import grouping
 from photoapp import paths
@@ -110,7 +111,7 @@ def resolve_dest_path(conn, pictures_dir, candidate, file_id, taken=None):
     n += 1
 
 
-def export_file(conn, settings, file_id, file_path, dest):
+def export_file(conn, settings, file_id, file_path, dest, include_gps=False):
   """Render a Huge-equivalent JPEG of one file and write it to dest, creating parent directories as
   needed. Raises ExportError if no preview could be produced (e.g. a RAW with no usable embedded
   preview and nothing Pillow can decode -- the same case that would otherwise defer to the slow
@@ -122,7 +123,16 @@ def export_file(conn, settings, file_id, file_path, dest):
   shaded-out margin makes no sense, so the crop/rotation is applied for real: the full-frame image
   is rendered and cropped/rotated in one pass, straight from the original (never the full-frame,
   lossy Huge) -- the same pixel rectangle Thumb/Small use.
+
+  Ticket 207: either way the finished JPEG then gets the source's EXIF (exif_write); GPS only when
+  include_gps (ticket 208).
   """
+  _render(conn, settings, file_id, file_path, dest)
+  exif_write.write_export_exif(conn, settings, file_id, dest, include_gps)
+  return dest
+
+
+def _render(conn, settings, file_id, file_path, dest):
   if fileinfo.is_video(file_path):         # ticket 195
     raise ExportError("videos are not exported")
   file_crop = crop_lib.get(conn, file_id)

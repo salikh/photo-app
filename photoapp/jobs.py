@@ -9,6 +9,7 @@ never steal each other's work.
 """
 
 import datetime
+import json
 import os
 import subprocess
 import threading
@@ -76,11 +77,12 @@ class JobQueue:
     can share one low-priority queue/worker, registered as each part of the app sets itself up)."""
     self._handlers[kind] = fn
 
-  def enqueue(self, kind, file_id=None, target=None):
+  def enqueue(self, kind, file_id=None, target=None, options=None):
     """Queue a job unless the same kind+file_id+target is already queued or running.
 
     Most jobs are scoped to a file (file_id); a directory-scoped job (ticket 076's scan_dir)
-    passes target instead and leaves file_id None.
+    passes target instead and leaves file_id None. options (a dict, ticket 208) is stored as JSON
+    and is not part of the dedupe key.
     """
     with self._conn_lock:
       row = self._conn.execute(
@@ -89,8 +91,9 @@ class JobQueue:
       if row:
         return row["id"]
       cur = self._conn.execute(
-          "INSERT INTO jobs (kind, file_id, target, state, created_at) "
-          "VALUES (?, ?, ?, 'queued', ?)", (kind, file_id, target, _now()))
+          "INSERT INTO jobs (kind, file_id, target, state, created_at, options) "
+          "VALUES (?, ?, ?, 'queued', ?, ?)",
+          (kind, file_id, target, _now(), json.dumps(options) if options else None))
       self._conn.commit()
     self._wake.set()
     return cur.lastrowid
