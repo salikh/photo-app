@@ -64,6 +64,18 @@ flags.DEFINE_string(
 flags.DEFINE_string(
     "ffprobe_path", None,
     "ffprobe binary used to read video metadata (ticket 186). Default: `ffprobe` from $PATH.")
+flags.DEFINE_string(
+    "gphotos_client_file", None,
+    "OAuth client JSON downloaded from the Google Cloud console (type 'Desktop app'), used by "
+    "`python -m photoapp.google_auth` and the Google Photos export (epic 205). Default: "
+    "<state_dir>/gphotos_client.json. Holds a secret; chmod 600.")
+flags.DEFINE_string(
+    "gphotos_token_file", None,
+    "Where google_auth stores the refresh token (epic 205). Default: <state_dir>/gphotos_token.json; "
+    "written with mode 600.")
+flags.DEFINE_string(
+    "gphotos_api_base_url", "https://photoslibrary.googleapis.com",
+    "Google Photos Library API root. Only tests point this elsewhere (a fake server).")
 flags.DEFINE_integer("job_workers", 2, "Background worker threads (RAW renders).")
 flags.DEFINE_integer("nightly_scan_hour", 3, "Local hour (0-23) of the nightly rescan; -1 disables it.")
 flags.DEFINE_integer("scan_workers", 8, "Threads reading files during a scan (network file systems are latency bound).")
@@ -187,10 +199,21 @@ class Settings:
   ai_model: str = "gemini-3.5-flash-lite"
   ffmpeg_path: str = None
   ffprobe_path: str = None
+  gphotos_client_file: str = None
+  gphotos_token_file: str = None
+  gphotos_api_base_url: str = "https://photoslibrary.googleapis.com"
 
   @property
   def db_path(self):
     return self.database_path or os.path.join(self.state_dir, "app.sqlite")
+
+  @property
+  def gphotos_client_path(self):
+    return self.gphotos_client_file or os.path.join(self.state_dir, "gphotos_client.json")
+
+  @property
+  def gphotos_token_path(self):
+    return self.gphotos_token_file or os.path.join(self.state_dir, "gphotos_token.json")
 
   def gemini_api_key(self, environ=None):
     """The Google API key for AI rating (ticket 174): $GEMINI_API_KEY, else the key file (default
@@ -248,4 +271,7 @@ class Settings:
         load_stop_threshold=f.load_stop_threshold,
         mem_start_percent=f.mem_start_percent, mem_stop_percent=f.mem_stop_percent,
         gemini_api_key_file=_expand(f.gemini_api_key_file), ai_model=f.ai_model,
+        gphotos_client_file=_expand(f.gphotos_client_file),
+        gphotos_token_file=_expand(f.gphotos_token_file),
+        gphotos_api_base_url=f.gphotos_api_base_url,
         ffmpeg_path=f.ffmpeg_path, ffprobe_path=f.ffprobe_path)

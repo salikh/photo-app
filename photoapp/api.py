@@ -28,6 +28,7 @@ from photoapp import ai_rating
 from photoapp import export
 from photoapp import export_backfill
 from photoapp import fileinfo
+from photoapp import gphotos_auth
 from photoapp import grouping
 from photoapp import jobs
 from photoapp import library
@@ -401,6 +402,17 @@ def create_app(conn, settings):
       with app.state.db_lock:
         return trash.trash_photos(app.state.db, settings, body.ids)
     return run_db(attempt)
+
+  app.state.gphotos_credentials = gphotos_auth.Credentials(
+      settings.gphotos_client_path, settings.gphotos_token_path)
+
+  @app.get("/api/gphotos/status")
+  def gphotos_status():
+    """Ticket 210: whether the Google Photos upload can be offered (client file + token present).
+    Says nothing about whether Google still accepts the token; that shows up when a job runs."""
+    ok = app.state.gphotos_credentials.configured()
+    return {"configured": ok,
+            "hint": None if ok else "run `python -m photoapp.google_auth` (see docs/google-photos.md)"}
 
   @app.get("/api/export/default_path")
   def export_default_path(dir: str = "."):

@@ -76,3 +76,8 @@ load_worker_enabled = true     # fill in missing thumbnails when the machine is 
 # (`apt install ffmpeg`). Defaults: `ffmpeg` / `ffprobe` from $PATH.
 # ffmpeg_path = "/usr/bin/ffmpeg"
 # ffprobe_path = "/usr/bin/ffprobe"
+
+# Google Photos export (epic 205): the OAuth client JSON from the Cloud console and where
+# `python -m photoapp.google_auth` keeps the refresh token. Defaults are in <state_dir>.
+# gphotos_client_file = "~/.local/share/photos/gphotos_client.json"
+# gphotos_token_file = "~/.local/share/photos/gphotos_token.json"

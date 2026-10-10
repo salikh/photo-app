@@ -13,6 +13,9 @@ are the flag names, see `photos.example.toml`); the command line wins over the f
 | `--thumbs_dir` | `<state_dir>/thumbs` | thumbnail cache (sizes are created on demand) |
 | `--state_dir` | `$XDG_DATA_HOME/photos` (`~/.local/share/photos`) | database, XMP backups, manual link log |
 | `--gemini_api_key_file` | `<state_dir>/gemini_api_key` | file with the Google API key for AI rating (`$GEMINI_API_KEY` wins) |
+| `--gphotos_client_file` | `<state_dir>/gphotos_client.json` | OAuth client JSON from the Google Cloud console (Google Photos export, epic 205); a secret |
+| `--gphotos_token_file` | `<state_dir>/gphotos_token.json` | refresh token written by `python -m photoapp.google_auth` (mode 600) |
+| `--gphotos_api_base_url` | Google's | only tests change it |
 | `--ai_model` | `gemini-3.5-flash-lite` | Gemini model that rates photos |
 | `--database_path` | `<state_dir>/app.sqlite` | the sqlite file, when it should live elsewhere |
 | `--hashes_db` | none | `tools/archive/catalog.py` database whose hashes are reused by scans |
@@ -248,6 +251,7 @@ is the file's ctime (bumped by the move itself, unlike mtime, which a same-files
 | `app.sqlite` ratings the database itself decided (`photos.rating_source` = `app`, `import`, `hash-recovery`) that are **not** in any sidecar (an import without `--write_xmp`) | **no**: the newest rating wins whether it is in the database or in a sidecar, so a database-only rating is real data | yes, copy the file |
 | `app.sqlite` tables `activity_log` (undo history) and `manual_links` | **no** | yes, copy the file |
 | `manual_links.jsonl` | it is the durable copy of `manual_links` | **yes** |
+| `gphotos_client.json`, `gphotos_token.json` (Google Photos OAuth, epic 205) | no, secrets | keep a private copy of the client JSON; the token can be re-made with `google_auth` |
 | `gemini_api_key` (Google API key for AI rating, ticket 174; or set `$GEMINI_API_KEY`) | no, a secret | keep a private copy; `chmod 600` |
 | `xmp_backups/` (first-seen copy of every sidecar the app changed) | no | yes, it is the safety net |
 
