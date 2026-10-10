@@ -987,6 +987,7 @@ def test_delete_this_file_button_shows_modal_and_moves_to_trash(page, server):
   server.app.state.scanner.wait()
   ids = photo_ids(server)
   page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()   # a key pressed before the loupe exists is lost
   page.keyboard.press("i")
   expect(page.locator(".files-panel .file")).to_have_count(2)
 
@@ -1014,6 +1015,7 @@ def test_delete_this_file_modal_cancel_leaves_file_untouched(page, server):
   server.app.state.scanner.wait()
   ids = photo_ids(server)
   page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".loupe")).to_be_visible()   # a key pressed before the loupe exists is lost
   page.keyboard.press("i")
   page.locator(".files-panel .file", has_text="IMG_0001.DNG").get_by_role(
       "button", name="Delete").click()
@@ -2513,7 +2515,7 @@ def test_pinch_out_zooms_the_photo_around_the_fingers_and_never_the_page(phone, 
   x0, y0 = (z["SW"] - z["W"] * fit) / 2, (z["SH"] - z["H"] * fit) / 2       # where the fitted photo sat
   before = ((mid[0] - z["left"] - x0) / fit, (mid[1] - z["top"] - y0) / fit)
   after = ((mid[0] - z["left"] - z["x"]) / z["scale"], (mid[1] - z["top"] - z["y"]) / z["scale"])
-  assert abs(before[0] - after[0]) < 4 and abs(before[1] - after[1]) < 4, (before, after)
+  assert abs(before[0] - after[0]) < 4 and abs(before[1] - after[1]) < 4, (before, after, z)
   assert z["pageScale"] == 1                                                 # the browser did not zoom the page
   assert phone.locator(".hud").bounding_box() == hud_before                  # buttons untouched
   assert phone.locator(".filmstrip").bounding_box() == strip_before
@@ -2571,7 +2573,10 @@ def test_dragging_pans_a_zoomed_photo_but_never_out_of_view(phone, server):
 def test_double_tap_zooms_to_the_tapped_point(phone, server):
   open_loupe(phone, server)
   phone.wait_for_timeout(500)
-  tap = (300, 350)
+  # The middle of the stage, so the photo point under the finger is far enough from every edge for
+  # the pan clamp not to move it (a fixed y near the bottom of a short photo hit the clamp).
+  z0 = zoom_state(phone)
+  tap = (z0["left"] + 150, z0["top"] + z0["SH"] / 2)
   phone.touchscreen.tap(*tap)
   phone.touchscreen.tap(*tap)
   expect(phone.locator(".stage.zoomed")).to_have_count(1)
@@ -2582,7 +2587,7 @@ def test_double_tap_zooms_to_the_tapped_point(phone, server):
   x0, y0 = (z["SW"] - z["W"] * fit) / 2, (z["SH"] - z["H"] * fit) / 2
   before = ((tap[0] - z["left"] - x0) / fit, (tap[1] - z["top"] - y0) / fit)
   after = ((tap[0] - z["left"] - z["x"]) / z["scale"], (tap[1] - z["top"] - z["y"]) / z["scale"])
-  assert abs(before[0] - after[0]) < 4 and abs(before[1] - after[1]) < 4, (before, after)
+  assert abs(before[0] - after[0]) < 4 and abs(before[1] - after[1]) < 4, (before, after, z)
 
 
 def test_a_two_finger_pinch_at_fit_size_does_not_navigate_or_rate(phone, server):
