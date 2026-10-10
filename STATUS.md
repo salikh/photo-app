@@ -484,3 +484,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [202](docs/tickets/202.md) bug: the `video` filter hung on "Loading…" (video stills were extracted inside the image request, starving the browser's connections); now a `video_thumb` job + retry, placeholder when ffmpeg is missing/failed
 - [x] [203](docs/tickets/203.md) bug: `AnimSmall` is the uncut clip up to 75 s (was 60 s); recipe `anim-v3` invalidates older ones
 - [x] [204](docs/tickets/204.md) bug: iPad showed the loupe video misplaced -- a stale cached `style.css` (hand-bumped `?v=121`); the app's own files are now always revalidated
+- [x] [205](docs/tickets/205.md) epic: export to Google Photos as an album (206 research, 207 EXIF in exports, 208 per-export GPS opt-in, 209 videos in export, 210 OAuth CLI, 211 API client + fake server, 212 upload job, 213 album list/ranking, 214 export dialog, 215 docs); setup in `docs/google-photos.md`

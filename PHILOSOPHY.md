@@ -29,6 +29,12 @@ permanently purged. Epic 131 built on exactly this — making that durability *p
 backup on another machine, not just durable on this one, precisely because "another copy of the
 same archive, out there somewhere, in an unknown state" is not a hypothetical here.
 
+Photos only leave this machine on an explicit request, and then less than the whole file: the one
+outbound path (epic 205, [docs/google-photos.md](docs/google-photos.md)) is an opt-in step of Export,
+it sends the exported copy, never the original, and location data is stripped unless it is ticked
+afresh on every export. Google Photos stays *its own* authority (this app keeps no album records), the
+same way the archive, not the database, is the authority here.
+
 ## No auth here isn't "not exposed" — it's a boundary
 
 This app has no login of its own, and that's easy to misread as "LAN-only, never on the internet."

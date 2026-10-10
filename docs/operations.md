@@ -267,3 +267,12 @@ Only the undo history is lost.
 - A rating, fav or tag change is written to the sidecars of the original and its camera JPG (so they
   stay in sync in darktable); sidecars of exports and other tunings are never modified.
 - Every change is in the activity log and can be undone; undo refuses if the value changed since.
+
+## Google Photos export
+
+Optional step of Export (epic 205): setup, behaviour and Google's limits are in
+[google-photos.md](google-photos.md); the reasoning in [design/google-photos.md](design/google-photos.md).
+Flags: `--gphotos_client_file`, `--gphotos_token_file` (see the table above). Jobs of kind
+`gphotos_upload` appear on the Jobs page with a progress note and *Retry failed*. The OAuth client JSON
+and token are secrets in `<state_dir>`; losing the token only means running `google_auth` again.
+

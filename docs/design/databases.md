@@ -96,7 +96,7 @@ records which of the several render paths produced it (`existing`, `pillow`, `dc
 `dcraw-half`, `dcraw-full`, `libraw`, ...) — informational, nothing currently branches on it. See
 [thumbnails.md](thumbnails.md).
 
-**`jobs`** — the shared background-job table, `id`/`kind`/`state`
+**`jobs`** — the shared background-job table (ticket 208/212 added `options`, a JSON blob a job carries, and `note`, a progress line), `id`/`kind`/`state`
 (`queued`/`running`/`done`/`failed`)/`error`/`created_at`/`finished_at`. Most jobs are scoped to a
 file (`file_id`); `target` (added for ticket 076) instead holds a relative directory path for a
 directory-scoped job (`scan_dir`), leaving `file_id` `NULL`. Several independent `JobQueue`

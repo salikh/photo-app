@@ -25,6 +25,8 @@ anticipated — each such departure is called out explicitly.
   another real race bug found and fixed along the way
 - [databases.md](databases.md) — every sqlite database the app touches: where each lives, its schema table by
   table, and why the state database is separate from the library and split the way it is
+- [google-photos.md](google-photos.md) — exporting to a Google Photos album: why no album bookkeeping, how ordering and
+  retry work, why GPS is a per-export opt-in
 - [trash.md](trash.md) — why deleting a rejected photo is a move into `.trash/`, not a delete, and why
   `.trash/` must never be scanned (a real bug this avoided, confirmed with a test before the fix)
 - [move.md](move.md) — moving photos to another library folder: why it repoints `files.path` and
