@@ -131,3 +131,28 @@ def test_not_authorized_or_nameless_requests_are_refused(settings, fake, tmp_pat
   r = c.post("/api/export", json={**body, "gphotos": {"album_title": "  "}})
   assert r.status_code == 400 and "album name" in r.text
   assert c.post("/api/export", json=body).status_code == 200    # plain export still works
+
+
+def test_albums_endpoint_ranks_by_name_and_year_and_flags_an_exact_match(settings, fake, tmp_path):
+  app, c, conn, ids = setup_app(settings, fake, tmp_path)
+  for title in ("Berlin 2019", "2024 trip", "Birthday 2024", "trip 2024", "Zoo"):
+    fake.albums[title] = {"title": title, "items": []}
+  got = c.get("/api/gphotos/albums", params={"name": "2024 trip"}).json()["albums"]
+  assert [a["title"] for a in got][:2] == ["2024 trip", "trip 2024"]
+  assert got[0]["exact"] and got[1]["exact"] is False
+  assert [a["title"] for a in got][-1] in ("Zoo", "Berlin 2019")
+  assert c.get("/api/gphotos/albums").json()["albums"][0]["score"] == 0.0
+
+
+def test_albums_endpoint_needs_google_setup(settings, fake, tmp_path):
+  app, c, conn, ids = setup_app(settings, fake, tmp_path, authorized=False)
+  assert c.get("/api/gphotos/albums").status_code == 400
+
+
+def test_default_album_name_follows_the_folder():
+  from photoapp import export
+  assert export.default_album_name(".") == "Photos"
+  assert export.default_album_name("2024/trip") == "2024 trip"
+  assert export.default_album_name("2024/trip/day1") == "day1"
+  assert export.default_album_name("misc") == "misc"
+  assert export.default_album_name("2024") == "2024"

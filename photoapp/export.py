@@ -40,6 +40,18 @@ def default_target(pictures_dir, rel_dir):
   return base if rel_dir in ("", ".") else os.path.join(base, rel_dir)
 
 
+def default_album_name(rel_dir):
+  """Default Google Photos album title for an export started from rel_dir (epic 205): the folder's
+  own name, prefixed with its parent when that is a year folder ("2024/trip" -> "2024 trip"), and
+  "Photos" for the library root."""
+  parts = [p for p in rel_dir.split("/") if p not in ("", ".")]
+  if not parts:
+    return "Photos"
+  if len(parts) >= 2 and len(parts[-2]) == 4 and parts[-2].isdigit():
+    return f"{parts[-2]} {parts[-1]}"
+  return parts[-1]
+
+
 def validate_target(settings, target):
   """Refuse a target that resolves inside pictures_dir/thumbs_dir/state_dir, with one exception:
   pictures_dir's own EXPORT_SUBDIR (default_target's result, or anywhere under it) is exactly what

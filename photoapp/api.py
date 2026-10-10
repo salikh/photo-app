@@ -30,6 +30,7 @@ from photoapp import export_backfill
 from photoapp import fileinfo
 from photoapp import gphotos
 from photoapp import gphotos_auth
+from photoapp import gphotos_rank
 from photoapp import gphotos_upload
 from photoapp import grouping
 from photoapp import jobs
@@ -429,13 +430,29 @@ def create_app(conn, settings):
     return {"configured": ok,
             "hint": None if ok else "run `python -m photoapp.google_auth` (see docs/google-photos.md)"}
 
+  @app.get("/api/gphotos/albums")
+  def gphotos_albums(name: str = ""):
+    """Ticket 213: the albums this app created in Google Photos (the API shows no others), ranked by
+    how well they match `name`; `exact` marks a same-title album (case-insensitive) so the export
+    dialog can warn before creating a second one."""
+    creds = app.state.gphotos_credentials
+    if not creds.configured():
+      raise HTTPException(400, "Google Photos is not set up: run `python -m photoapp.google_auth`")
+    client = gphotos.Client(settings.gphotos_api_base_url, creds.access_token)
+    try:
+      albums = client.list_albums()
+    except (gphotos.GPhotosError, gphotos_auth.AuthError) as e:
+      raise HTTPException(502, str(e))
+    return {"albums": gphotos_rank.rank(albums, name)}
+
   @app.get("/api/export/default_path")
   def export_default_path(dir: str = "."):
     try:
       rel_dir = library._norm_dir(dir)
     except ValueError as e:
       raise HTTPException(400, str(e))
-    return {"path": export.default_target(settings.pictures_dir, rel_dir)}
+    return {"path": export.default_target(settings.pictures_dir, rel_dir),
+            "album": export.default_album_name(rel_dir)}
 
   @app.post("/api/export")
   def start_export(body: ExportBody):
