@@ -104,7 +104,11 @@ class JobQueue:
     -- both NULL for a target-scoped job (e.g. scan_dir) or a file_id whose row is gone."""
     with self._conn_lock:
       return [dict(r) for r in self._conn.execute(
-          "SELECT j.*, f.path AS path, f.photo_id AS photo_id FROM jobs j"
+          "SELECT j.id, j.kind, j.file_id, j.target, j.state, j.error, j.note, j.created_at,"
+          " j.started_at, j.finished_at,"
+          " (j.kind = 'gphotos_upload' AND j.state = 'done' AND"
+          "  COALESCE(json_array_length(j.options, '$.failed'), 0) > 0) AS retryable,"
+          " f.path AS path, f.photo_id AS photo_id FROM jobs j"
           " LEFT JOIN files f ON f.id = j.file_id ORDER BY j.id DESC LIMIT ?", (limit,))]
 
   def counts(self):

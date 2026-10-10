@@ -28,7 +28,9 @@ from photoapp import ai_rating
 from photoapp import export
 from photoapp import export_backfill
 from photoapp import fileinfo
+from photoapp import gphotos
 from photoapp import gphotos_auth
+from photoapp import gphotos_upload
 from photoapp import grouping
 from photoapp import jobs
 from photoapp import library
@@ -93,10 +95,16 @@ class TagsBody(pydantic.BaseModel):
   remove: list[str] = []
 
 
+class GPhotosTarget(pydantic.BaseModel):
+  album_title: str = ""      # a new album with this title ...
+  album_id: str = ""         # ... or add to this existing (app-created) album
+
+
 class ExportBody(pydantic.BaseModel):
   ids: list[int]
   dir: str
   target: str
+  gphotos: GPhotosTarget | None = None   # epic 205: also upload the export to Google Photos
   include_gps: bool = False   # ticket 208: off unless asked for on this very export
 
 
@@ -230,6 +238,13 @@ def create_app(conn, settings):
                                                     "video_thumb": video_thumb},
                                  settings.job_workers)
   app.state.jobs.add_handler("export", export_job)
+
+  def gphotos_upload_job(conn, job):
+    """Ticket 212: see photoapp.gphotos_upload."""
+    creds = app.state.gphotos_credentials
+    client = gphotos.Client(settings.gphotos_api_base_url, creds.access_token)
+    gphotos_upload.run(conn, settings, job, client)
+  app.state.jobs.add_handler("gphotos_upload", gphotos_upload_job)
 
   # Ticket 179: the Gemini transport is swappable (tests set app.state.gemini_transport to a fake).
   app.state.gemini_transport = None
@@ -437,6 +452,12 @@ def create_app(conn, settings):
       export.validate_target(settings, body.target)
     except (ValueError, export.ExportError) as e:
       raise HTTPException(400, str(e))
+    gp = body.gphotos
+    if gp is not None:
+      if not app.state.gphotos_credentials.configured():
+        raise HTTPException(400, "Google Photos is not set up: run `python -m photoapp.google_auth`")
+      if not gp.album_id and not gp.album_title.strip():
+        raise HTTPException(400, "give an album name for Google Photos")
 
     def attempt():
       with app.state.db_lock:
@@ -445,7 +466,10 @@ def create_app(conn, settings):
             f"SELECT p.id AS photo_id, rf.id AS file_id, rf.path FROM photos p "
             f"JOIN files rf ON rf.id = p.representative_file_id WHERE p.id IN ({placeholders})",
             body.ids).fetchall()
+        order = {pid: i for i, pid in enumerate(body.ids)}   # the grid order the caller gave
+        rows = sorted(rows, key=lambda r: order[r["photo_id"]])
         queued = []
+        upload_items = []
         taken = set()
         for r in rows:
           candidate = export.dest_path(body.target, rel_dir, r["path"])
@@ -456,8 +480,44 @@ def create_app(conn, settings):
                                           options={"include_gps": True} if body.include_gps
                                           else None)
           queued.append({"photo_id": r["photo_id"], "job_id": job_id})
+          upload_items.append({"file_id": r["file_id"], "dest": dest, "export_job_id": job_id})
+        upload_job = None
+        if gp is not None and upload_items:
+          title = gp.album_title.strip()
+          upload_job = app.state.jobs.enqueue(
+              "gphotos_upload", target=f"Google Photos: {title or gp.album_id} #{uuid.uuid4().hex[:6]}",
+              options={"album_id": gp.album_id or None, "album_title": title,
+                       "items": upload_items})
       missing = sorted(set(body.ids) - {r["photo_id"] for r in rows})
-      return {"queued": queued, "missing": missing}
+      return {"queued": queued, "missing": missing, "upload_job": upload_job}
+    return run_db(attempt)
+
+  @app.post("/api/gphotos/jobs/{job_id}/retry")
+  def gphotos_retry(job_id: int):
+    """Ticket 212: re-queue just the files that failed in a finished upload job, into the same album
+    (safe to repeat: identical bytes are one media item on Google's side)."""
+    def attempt():
+      with app.state.db_lock:
+        row = app.state.db.execute(
+            "SELECT kind, state, options FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row is None or row["kind"] != "gphotos_upload" or row["state"] != "done":
+          raise HTTPException(404, "no finished Google Photos upload with that id")
+        opts = json.loads(row["options"])
+        failed = opts.get("failed") or []
+        if not failed:
+          raise HTTPException(400, "nothing failed in that upload")
+        items = [{"file_id": f["file_id"], "dest": f["dest"], "export_job_id": None}
+                 for f in failed]
+        new_id = app.state.jobs.enqueue(
+            "gphotos_upload", target=f"Google Photos retry: {opts.get('album_title') or opts['album_id']}"
+                                     f" #{uuid.uuid4().hex[:6]}",
+            options={"album_id": opts.get("album_id"), "album_title": opts.get("album_title", ""),
+                     "items": items})
+        # the failures are now the new job's business; this one no longer offers a retry
+        app.state.db.execute("UPDATE jobs SET options = ? WHERE id = ?",
+                             (json.dumps({**opts, "failed": []}), job_id))
+        app.state.db.commit()
+      return {"job_id": new_id, "retrying": len(items)}
     return run_db(attempt)
 
   @app.post("/api/ai/rate")

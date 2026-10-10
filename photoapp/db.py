@@ -330,6 +330,10 @@ MIGRATIONS = [
     -- Ticket 208: per-job options (JSON), e.g. {"include_gps": true} on an export job.
     ALTER TABLE jobs ADD COLUMN options TEXT;
     """,
+    """
+    -- Ticket 212: a short human-readable progress/result line for a job (e.g. "uploaded 120 of 300").
+    ALTER TABLE jobs ADD COLUMN note TEXT;
+    """,
 ]
 
 

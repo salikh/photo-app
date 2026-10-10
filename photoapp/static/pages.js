@@ -136,11 +136,17 @@ function renderJobs(main, j) {
     el('p', {class: 'status', text:
       `Total: ${p.total} (all time so far)   Incomplete: ${p.incomplete}`}),
     kinds.length ? jobsTable(kinds, p) : el('p', {class: 'status', text: 'No jobs.'}),
-    j.jobs.length ? table(['#', 'Kind', 'File', 'State', 'Error'], j.jobs.map((x) => el('tr', {},
+    j.jobs.length ? table(['#', 'Kind', 'File', 'State', 'Error / progress'], j.jobs.map((x) => el('tr', {},
       el('td', {text: x.id}), el('td', {text: x.kind}),
       el('td', {}, x.path ? photoLink(x.path, x.photo_id) : (x.target || x.file_id || '')),
       el('td', {class: x.state === 'failed' ? 'bad' : x.state === 'done' ? 'ok' : '', text: x.state}),
-      el('td', {text: x.error || ''})))) : '');
+      el('td', {}, x.error || x.note || '',
+        // ticket 212: a finished Google Photos upload with failed files offers a retry of just those
+        x.retryable ? el('button', {text: 'Retry failed', onclick: async (e) => {
+          e.target.disabled = true;
+          const r = await post(`/api/gphotos/jobs/${x.id}/retry`, {});
+          toast(`retrying ${r.retrying} file(s)`);
+        }}) : null)))) : '');
 }
 
 export async function jobsPage(main) {
