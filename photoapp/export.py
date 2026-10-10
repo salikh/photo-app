@@ -72,7 +72,9 @@ def within_dir(rel_dir, file_path):
 def dest_path(target_root, rel_dir, file_path):
   """Full destination file path for file_path, mirroring its position under rel_dir. Just the
   mirroring -- see resolve_dest_path (ticket 098) for basename-collision disambiguation."""
-  name = os.path.basename(thumbs.thumb_relpath(file_path))
+  # A video keeps its own name (ticket 209); an image becomes the .jpg that export renders.
+  name = os.path.basename(file_path if fileinfo.is_video(file_path)
+                          else thumbs.thumb_relpath(file_path))
   sub = within_dir(rel_dir, file_path)
   return os.path.join(target_root, sub, name) if sub else os.path.join(target_root, name)
 
@@ -127,14 +129,35 @@ def export_file(conn, settings, file_id, file_path, dest, include_gps=False):
   Ticket 207: either way the finished JPEG then gets the source's EXIF (exif_write); GPS only when
   include_gps (ticket 208).
   """
+  if fileinfo.is_video(file_path):         # ticket 209: no rendering, the original is the export
+    return _place_video(settings, file_path, dest)
   _render(conn, settings, file_id, file_path, dest)
   exif_write.write_export_exif(conn, settings, file_id, dest, include_gps)
   return dest
 
 
+def _place_video(settings, file_path, dest):
+  """Ticket 209: put a video into the export tree as a hard link to the original (free on the same
+  filesystem), else a copy. A re-export replaces an earlier file at dest."""
+  original = os.path.join(settings.pictures_dir, file_path)
+  os.makedirs(os.path.dirname(dest), exist_ok=True)
+  if os.path.lexists(dest):
+    os.remove(dest)
+  try:
+    os.link(original, dest)
+  except OSError:                          # another filesystem, or one without hard links
+    shutil.copy2(original, dest)
+  return dest
+
+
+def file_to_upload(conn, settings, source_file_id, exported_path):
+  """The file to send to Google Photos for one exported Photo (tickets 209/212). Today that is the
+  exported file itself -- the rendered JPEG, or the original video. A later video-tuning epic
+  replaces this one function with 'the tuning currently selected for this video'."""
+  return exported_path
+
+
 def _render(conn, settings, file_id, file_path, dest):
-  if fileinfo.is_video(file_path):         # ticket 195
-    raise ExportError("videos are not exported")
   file_crop = crop_lib.get(conn, file_id)
   file_rotation = rotation_lib.get(conn, file_id)
   if crop_lib.is_default(file_crop) and rotation_lib.is_default(file_rotation):

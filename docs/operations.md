@@ -63,7 +63,7 @@ populator, one video at a time (about 8 s for the hover preview plus 20-50 s for
 stands in for a format the browser cannot play; ~770 videos is several hours), and a video that
 fails is retried after 7 days or when the file changes. The loupe plays the original (HTTP Range); a
 browser that cannot decode it (AVI, WMV) gets the still, the preview and a download link. Videos are
-skipped by AI rating and export. See [design/thumbnails.md](design/thumbnails.md).
+skipped by AI rating; export hard-links (or copies) the original into `Exported/` (ticket 209). See [design/thumbnails.md](design/thumbnails.md).
 
 ## Scanning the library
 

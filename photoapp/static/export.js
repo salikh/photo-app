@@ -45,7 +45,6 @@ export async function open(ids) {
                                           include_gps: gps.checked});
         toast(`queued ${r.queued.length} for export` +
               (r.missing.length ? `, ${r.missing.length} could not be found` : '') +
-              (r.skipped_videos ? `, ${r.skipped_videos} video(s) skipped` : '') +
               ' — see the Jobs page for progress');
         close();
       } catch (e) {
@@ -59,7 +58,7 @@ export async function open(ids) {
     el('div', {class: 'confirm-card', onclick: (e) => e.stopPropagation()},
       el('h3', {text: `Export ${ids.length} photo(s)`}),
       el('p', {class: 'meta', text:
-        'Writes a full-size JPEG of each to the folder below (subfolders are mirrored so ' +
+        'Writes a full-size JPEG of each (videos: the original) to the folder below (subfolders are mirrored so ' +
         'same-named photos from different folders don’t collide).'}),
       el('label', {class: 'export-label'}, 'Target folder', input),
       el('label', {class: 'export-label'}, gps, ' Include GPS location in the exported files ',

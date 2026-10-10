@@ -435,8 +435,6 @@ def create_app(conn, settings):
             body.ids).fetchall()
         queued = []
         taken = set()
-        skipped_videos = [r["photo_id"] for r in rows if fileinfo.is_video(r["path"])]   # ticket 195
-        rows = [r for r in rows if not fileinfo.is_video(r["path"])]
         for r in rows:
           candidate = export.dest_path(body.target, rel_dir, r["path"])
           dest = export.resolve_dest_path(app.state.db, settings.pictures_dir, candidate,
@@ -446,8 +444,8 @@ def create_app(conn, settings):
                                           options={"include_gps": True} if body.include_gps
                                           else None)
           queued.append({"photo_id": r["photo_id"], "job_id": job_id})
-      missing = sorted(set(body.ids) - {r["photo_id"] for r in rows} - set(skipped_videos))
-      return {"queued": queued, "missing": missing, "skipped_videos": len(skipped_videos)}
+      missing = sorted(set(body.ids) - {r["photo_id"] for r in rows})
+      return {"queued": queued, "missing": missing}
     return run_db(attempt)
 
   @app.post("/api/ai/rate")

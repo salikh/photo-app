@@ -188,7 +188,7 @@ def test_video_tag_is_offered_in_the_tag_dropdown_with_a_matching_count(settings
 
 # ---- ticket 195: exclusions, and the features that must keep working ----------------------------
 
-def test_ai_rate_and_export_skip_videos(settings, monkeypatch, tmp_path):
+def test_ai_rate_skips_videos_and_export_includes_them(settings, monkeypatch, tmp_path):
   monkeypatch.setenv("GEMINI_API_KEY", "K")
   c, conn, ids = served_app(settings)
   pids = {r["path"]: r["id"] for r in conn.execute(
@@ -198,13 +198,23 @@ def test_ai_rate_and_export_skip_videos(settings, monkeypatch, tmp_path):
   assert r == {"queued": 1, "skipped_videos": 1, "missing": 0}
   assert conn.execute("SELECT COUNT(*) FROM jobs WHERE kind='ai_rate'").fetchone()[0] == 1
   r = c.post("/api/export", json={"ids": both, "dir": "v", "target": str(tmp_path / "out")}).json()
-  assert len(r["queued"]) == 1 and r["skipped_videos"] == 1 and r["missing"] == []
+  assert len(r["queued"]) == 2 and r["missing"] == []       # ticket 209: videos are exported
   # and the job handlers refuse a video enqueued by anything else
   from photoapp import ai_rating, export
   with pytest.raises(ai_rating.AiRatingError, match="videos"):
     ai_rating.rate_file(conn, settings, ids["v/a.mp4"])
-  with pytest.raises(export.ExportError, match="videos"):
-    export.export_file(conn, settings, ids["v/a.mp4"], "v/a.mp4", str(tmp_path / "x.jpg"))
+  # ticket 209: exporting a video hard-links the original, keeping its name
+  dest = export.dest_path(str(tmp_path / "o"), "v", "v/a.mp4")
+  assert os.path.basename(dest) == "a.mp4"
+  export.export_file(conn, settings, ids["v/a.mp4"], "v/a.mp4", dest)
+  src = os.path.join(settings.pictures_dir, "v", "a.mp4")
+  assert os.path.samefile(src, dest)
+  export.export_file(conn, settings, ids["v/a.mp4"], "v/a.mp4", dest)    # re-export is fine
+  # no hard links across filesystems: falls back to a copy
+  monkeypatch.setattr(os, "link", lambda *a: (_ for _ in ()).throw(OSError("EXDEV")))
+  copy = str(tmp_path / "o2" / "a.mp4")
+  export.export_file(conn, settings, ids["v/a.mp4"], "v/a.mp4", copy)
+  assert open(copy, "rb").read() == open(src, "rb").read() and not os.path.samefile(src, copy)
 
 
 def test_rating_sidecar_trash_and_move_work_for_a_video(settings):
