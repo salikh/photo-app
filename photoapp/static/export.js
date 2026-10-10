@@ -23,15 +23,24 @@ export async function open(ids) {
       // "the whole view": make sure every page is loaded, not just what has scrolled into view
       await grid.loadRest(route);
     }
-    ids = selected.length ? selected : state.photos.map((p) => p.id);
+    // epic 205: an uploaded album follows the grid's order, not the order of clicking
+    ids = selected.length ? state.photos.filter((p) => state.selected.has(p.id)).map((p) => p.id)
+                          : state.photos.map((p) => p.id);
+    if (selected.length && !ids.length) ids = selected;   // selected photos not in the loaded grid
   }
   if (!ids.length) { toast('nothing to export'); return; }
 
-  let target = '';
+  let target = '', defaultAlbum = '';
   try {
-    target = (await get('/api/export/default_path?dir=' + encodeURIComponent(route.dir))).path;
+    const d = await get('/api/export/default_path?dir=' + encodeURIComponent(route.dir));
+    target = d.path;
+    defaultAlbum = d.album || '';
   } catch (e) { /* leave blank -- the user can still type one */ }
+  let gstatus = {configured: false, hint: null};
+  try { gstatus = await get('/api/gphotos/status'); } catch (e) { /* offer nothing */ }
   if (modal) return;   // a second Export click while the fetch above was pending
+
+  const up = googlePhotosSection(gstatus, defaultAlbum);
 
   const input = el('input', {type: 'text', value: target, class: 'export-target',
                              'aria-label': 'target folder'});
@@ -42,8 +51,8 @@ export async function open(ids) {
       confirmBtn.disabled = true;
       try {
         const r = await post('/api/export', {ids, dir: route.dir, target: input.value,
-                                          include_gps: gps.checked});
-        toast(`queued ${r.queued.length} for export` +
+                                          include_gps: gps.checked, gphotos: up.request()});
+        toast(`queued ${r.queued.length} for export` + (r.upload_job ? ' and upload to Google Photos' : '') +
               (r.missing.length ? `, ${r.missing.length} could not be found` : '') +
               ' — see the Jobs page for progress');
         close();
@@ -63,10 +72,74 @@ export async function open(ids) {
       el('label', {class: 'export-label'}, 'Target folder', input),
       el('label', {class: 'export-label'}, gps, ' Include GPS location in the exported files ',
         el('span', {class: 'meta', text: '(off unless ticked, every time)'})),
+      up.node,
       el('div', {class: 'row'},
         el('button', {text: 'Cancel', onclick: close}),
         confirmBtn)));
   document.body.append(modal);
   input.focus();
   input.select();
+}
+
+
+// The "Also upload to Google Photos" part of the dialog (epic 205, tickets 213/214). request()
+// returns the `gphotos` field of POST /api/export, or null when the box is unticked.
+function googlePhotosSection(status, defaultName) {
+  const box = el('input', {type: 'checkbox', class: 'export-gphotos', 'aria-label': 'upload to Google Photos'});
+  const name = el('input', {type: 'text', value: defaultName, class: 'export-album-name',
+                            'aria-label': 'album name'});
+  const mode = {value: 'new'};
+  const newRadio = el('input', {type: 'radio', name: 'album-mode', checked: true,
+                                'aria-label': 'new album', onchange: () => { mode.value = 'new'; draw(); }});
+  const oldRadio = el('input', {type: 'radio', name: 'album-mode',
+                                'aria-label': 'add to an existing album',
+                                onchange: () => { mode.value = 'existing'; draw(); }});
+  const pick = el('select', {class: 'export-album-pick', 'aria-label': 'existing album'});
+  const warn = el('div', {class: 'export-album-warn'});
+  const body = el('div', {class: 'export-gphotos-body', hidden: true});
+  let albums = null, timer = null;
+
+  async function refresh() {
+    try {
+      albums = (await get('/api/gphotos/albums?name=' + encodeURIComponent(name.value))).albums;
+    } catch (e) { albums = []; toast(e.message, true); }
+    pick.replaceChildren(...albums.map((a) => el('option', {value: a.id,
+      text: `${a.title} (${a.count})` + (a.exact ? ' — same name' : '')})));
+    draw();
+  }
+  function draw() {
+    pick.hidden = mode.value !== 'existing';
+    name.hidden = mode.value !== 'new';
+    const same = albums && albums.find((a) => a.exact);
+    warn.replaceChildren();
+    if (mode.value === 'new' && same) {
+      warn.append(el('span', {text: `An album named “${same.title}” already exists (made by this app). `}),
+        el('button', {text: 'Add to it instead', onclick: () => {
+          pick.value = same.id; oldRadio.checked = true; mode.value = 'existing'; draw();
+        }}),
+        el('span', {class: 'meta', text: ' or keep going to create another with the same name.'}));
+    }
+  }
+  name.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(refresh, 300); });
+  box.addEventListener('change', () => {
+    body.hidden = !box.checked;
+    if (box.checked && albums === null) refresh();
+  });
+  box.disabled = !status.configured;
+  body.append(
+    el('label', {class: 'export-label'}, newRadio, ' New album ', name),
+    el('label', {class: 'export-label'}, oldRadio, ' Add to an existing album ', pick),
+    warn,
+    el('p', {class: 'meta', text: 'Only albums created by this app are listed. Uploads count ' +
+                                  'against your Google storage.'}));
+  draw();
+  const node = el('div', {class: 'export-gphotos-section'},
+    el('label', {class: 'export-label'}, box, ' Also upload to Google Photos ',
+      status.configured ? null
+        : el('span', {class: 'meta', text: `(not set up: ${status.hint || 'unavailable'})`})),
+    body);
+  return {node, request: () => {
+    if (!box.checked) return null;
+    return mode.value === 'existing' ? {album_id: pick.value} : {album_title: name.value};
+  }};
 }
