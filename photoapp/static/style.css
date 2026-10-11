@@ -351,14 +351,22 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 
 /* ticket 085: per-file RAW conversion settings */
 .raw-settings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.edit-settings { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
 .raw-settings .row { align-items: center; }
+.edit-settings .row { align-items: center; }
 .raw-settings label { flex: 0 0 130px; font-size: 13px; color: var(--text-dim); }
+.edit-settings label { flex: 0 0 130px; font-size: 13px; color: var(--text-dim); }
 .raw-settings input[type="range"] { flex: 1 1 auto; min-width: 80px; }
+.edit-settings input[type="range"] { flex: 1 1 auto; min-width: 80px; }
 .raw-settings .wb-multiplier { width: 4.5em; }
+.edit-settings .wb-multiplier { width: 4.5em; }
 /* ticket 112: advanced sliders/selects behind a zipper */
 .raw-settings details.advanced { margin-top: 6px; }
+.edit-settings details.advanced { margin-top: 6px; }
 .raw-settings details.advanced summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }
+.edit-settings details.advanced summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }
 .raw-settings select { flex: 1 1 auto; min-width: 80px; }
+.edit-settings select { flex: 1 1 auto; min-width: 80px; }
 
 /* ticket 092: filter switcher opened from the loupe HUD's filter tag */
 .filter-picker {

@@ -1043,7 +1043,7 @@ function editControls(f) {
     editPending = {fileId: f.id, values: editValues(f.edits), timer: null};
   }
   const container = el('div', {
-    class: 'raw-settings edit-settings',
+    class: 'edit-settings',
     onmouseenter: () => { sliderHover = true; syncTuningVisible(); },
     onmouseleave: () => { sliderHover = false; syncTuningVisible(); },
   });
