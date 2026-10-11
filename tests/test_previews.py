@@ -8,7 +8,7 @@ from photoapp import fileinfo
 from photoapp import previews
 from photoapp import thumbs
 from tests.conftest import make_jpeg
-from tests.conftest import write_synthetic_pef
+from tests.conftest import write_synthetic_pef, write_synthetic_raf
 from tests.test_grouping import touch
 
 
@@ -116,11 +116,67 @@ def test_pef_exif_fallback_reads_the_tiff_directly(tmp_path):
   assert fileinfo.read_exif_from_tiff(str(tmp_path / "nope.PEF")) == (None,) * 9
 
 
+def test_raf_exif_is_read_from_the_embedded_jpeg(tmp_path):
+  # ticket 218: a RAF is not a TIFF and Pillow cannot open it; its EXIF is the embedded JPEG's.
+  raf = str(tmp_path / "a.RAF")
+  write_synthetic_raf(raf)
+  with pytest.raises(Exception):
+    Image.open(raf)
+  assert fileinfo.read_exif_from_raf(raf) == (
+      "2026-10-11 17:23:10", 2.8, 1 / 28, 51200, 50.0, "FUJIFILM", "X-H1", None, 75)
+  assert fileinfo.read_exif_fallback(raf) == fileinfo.read_exif_from_raf(raf)
+  _, _, _, date, aperture, _, iso, focal, make, model, _, mm35 = fileinfo.read_image_metadata(raf)
+  assert (date, aperture, iso, focal, make, model, mm35) == (
+      "2026-10-11 17:23:10", 2.8, 51200, 50.0, "FUJIFILM", "X-H1", 75)
+  assert fileinfo.read_focal_length_35mm(raf) == 75
+
+
+def test_raf_reader_gives_nothing_for_a_non_raf(tmp_path):
+  assert fileinfo.read_exif_from_raf(str(tmp_path / "nope.RAF")) == (None,) * 9
+  other = tmp_path / "b.RAF"
+  other.write_bytes(b"not a fuji file" * 20)
+  assert fileinfo.read_exif_from_raf(str(other)) == (None,) * 9
+  assert fileinfo.read_raf_jpeg_range(str(other)) is None
+
+
+def test_undefined_fnumber_is_none_not_nan(tmp_path):
+  # ticket 218: a manual lens records FNumber as the EXIF 'undefined' 0/0, which Pillow reads as
+  # NaN; NaN must never reach the DB or the JSON cache.
+  raf = str(tmp_path / "a.RAF")
+  write_synthetic_raf(raf, undefined_aperture=True)
+  assert fileinfo.read_exif_from_raf(raf)[1] is None
+  jpg = str(tmp_path / "a.jpg")
+  Image.new("RGB", (4, 4)).save(jpg, exif=_exif_with_undefined_fnumber())
+  assert fileinfo.read_image_metadata(jpg)[4] is None
+
+
+def _exif_with_undefined_fnumber():
+  exif = Image.Exif()
+  exif.get_ifd(0x8769)[0x829D] = (0, 0)
+  return exif
+
+
 def test_read_pentax_lens_is_none_for_a_non_pentax_file(tmp_path):
   # ticket 166: a plain JPEG has no Pentax MakerNote; the reader returns None, never raises.
   jpg = str(tmp_path / "a.jpg")
   make_jpeg(jpg)
   assert fileinfo.read_pentax_lens(jpg) is None
+
+
+REAL_RAF = os.environ.get("REAL_RAF")
+
+
+@pytest.mark.skipif(not REAL_RAF or not os.path.exists(REAL_RAF or ""),
+                    reason="REAL_RAF not set")
+def test_real_raf_exif():
+  # ticket 218: a real Fujifilm RAF yields its EXIF and the LibRaw crop size.
+  mime, w, h, date, aperture, shutter_speed, iso, focal, make, model, lens, mm35 = \
+      fileinfo.read_image_metadata(REAL_RAF)
+  assert mime == "image/x-raw" and w and h
+  assert date is not None and make == "FUJIFILM" and model
+  assert aperture is None or aperture == aperture   # never NaN
+  assert isinstance(shutter_speed, float) and isinstance(iso, int)
+  assert isinstance(mm35, int)
 
 
 REAL_PEF = os.environ.get("REAL_PEF")

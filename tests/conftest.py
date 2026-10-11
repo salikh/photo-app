@@ -48,6 +48,30 @@ def write_synthetic_pef(path):
             + b"".join(blobs.values()))
 
 
+def write_synthetic_raf(path, undefined_aperture=False):
+  """A minimal Fujifilm RAF: the 16-byte magic, a big-endian offset/length pair at byte 84 for an
+  embedded EXIF JPEG (as in a real RAF), and filler instead of raw data. Pillow cannot open it,
+  exactly like a real RAF (ticket 218). undefined_aperture writes the EXIF 'undefined' FNumber a
+  manual lens produces (0/0, which Pillow reads as NaN)."""
+  import io
+  exif = Image.Exif()
+  exif[0x010F], exif[0x0110] = "FUJIFILM", "X-H1"
+  sub = exif.get_ifd(0x8769)
+  sub[0x9003] = "2026:10:11 17:23:10"
+  sub[0x829A] = (1, 28)
+  sub[0x829D] = (0, 0) if undefined_aperture else (28, 10)
+  sub[0x8827] = 51200
+  sub[0x920A] = (50, 1)
+  sub[0xA405] = 75
+  buf = io.BytesIO()
+  Image.new("RGB", (30, 20), "blue").save(buf, "JPEG", exif=exif)
+  jpeg = buf.getvalue()
+  header = b"FUJIFILMCCD-RAW " + b"0201FF129502" + b"X-H1".ljust(32, b"\0") + b"0100".ljust(4, b"\0")
+  header = header.ljust(84, b"\0") + struct.pack(">II", 160, len(jpeg))
+  with open(path, "wb") as f:
+    f.write(header.ljust(160, b"\0") + jpeg + b"\0" * 64)
+
+
 @pytest.fixture
 def settings(tmp_path):
   pics = tmp_path / "pics"

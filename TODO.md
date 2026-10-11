@@ -32,7 +32,8 @@ tickets 139-143, 149-155 and tickets 108-115, 117-124, 127, 128 and 130 are done
   `REAL_DNG=/zoo/.Trash-1000/files/K___2502.DNG .venv/bin/python -m pytest tests/e2e/test_ui.py -q`
   (~12-20 min; run it in the background). `REAL_DNG` is a real Pentax K-5 DNG usable read-only;
   never write to `/zoo/Pictures`, `/zoo/Thumbs` or real sidecars when testing. `REAL_PEF` is a real
-  Pentax PEF (e.g. `/zoo/Pictures/2008/2008-02 Asuka/PEF/IMGP5482.PEF`), also usable read-only.
+  Pentax PEF (e.g. `/zoo/Pictures/2008/2008-02 Asuka/PEF/IMGP5482.PEF`), also usable read-only. `REAL_RAF` is a real Fujifilm RAF
+  (`/zoo/Pictures/2026/2026-10-11-fuji/DSCF1001.RAF`, an X-H1: X-Trans 6x6 CFA), also usable read-only.
 - The machine is often under memory pressure (a `./start.sh` instance of the app runs alongside).
   Known-flaky e2e tests, not regressions: `test_delete_this_file_button_shows_modal_and_moves_to_trash`
   and `test_delete_this_file_modal_cancel_leaves_file_untouched` (30 s click-stability timeout), and

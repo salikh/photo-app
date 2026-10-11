@@ -194,14 +194,15 @@ is I/O-latency bound and slow, see "Scanning the library" above), run:
 Read-only on the library: opens each file just far enough to read its EXIF, no hashing, no grouping,
 no thumbnail work. It writes the whole EXIF set (`exif_date`, `aperture`, `shutter_speed`, `iso`,
 `focal_length`, `camera_make`, `camera_model`, `lens_model`), so it also fills a Pentax PEF, whose
-EXIF Pillow cannot read and ticket 161 reads from the TIFF IFDs instead. Only touches files with no
+EXIF Pillow cannot read and ticket 161 reads from the TIFF IFDs instead, and a Fujifilm RAF, whose
+EXIF ticket 218 reads from the JPEG embedded in it. Only touches files with no
 camera metadata already, so it's safe and cheap to rerun (`--backfill_limit=N` restricts a run to N
 files for a quick check).
 
 A scan fills these fields itself too: with the default `--write_metadata_json`, adding a new field
 to `photoapp/metacache.py`'s `REQUIRED_KEYS` makes the next scan reprocess every directory whose
 `index.json` predates it and re-read just those files; ticket 162's stale-record rule does the same
-for a PEF record written before ticket 161's fallback existed. So a scan alone is enough if you
+for a PEF or RAF record written before the fallback existed. So a scan alone is enough if you
 don't mind waiting for it.
 
 ## Comparing against another copy of the library

@@ -8,7 +8,7 @@ from photoapp import fileinfo
 from photoapp import metacache
 from photoapp import scan
 from tests.conftest import make_jpeg
-from tests.conftest import write_synthetic_pef
+from tests.conftest import write_synthetic_pef, write_synthetic_raf
 
 
 def files(conn):
@@ -312,3 +312,26 @@ def test_missing_focal_length_35mm_key_is_patched_cheaply(conn, settings, monkey
   assert probes == [os.path.join(d, "a.jpg")]      # only the cheap EXIF probe ran
   assert files(conn)["a.jpg"]["focal_length_35mm"] == 52
   assert read_index(d)["files"]["a.jpg"]["focal_length_35mm"] == 52
+
+
+def test_stale_raf_record_is_reextracted(conn, settings):
+  # ticket 218: a RAF cached before the embedded-JPEG reader (all None, generic raw mime) is stale
+  # by ticket 162's record-based rule, so a scan re-reads it and fills in the EXIF.
+  d = settings.pictures_dir
+  write_synthetic_raf(os.path.join(d, "a.RAF"))
+  scan.scan(conn, d, metadata_cache=True)
+  index = read_index(d)
+  rec = index["files"]["a.RAF"]
+  assert rec["camera_make"] == "FUJIFILM"
+  rec["mime_type"] = "image/x-raw"     # how a real, LibRaw-readable RAF is cached
+  for k in ("exif_date", "aperture", "shutter_speed", "iso", "focal_length",
+            "camera_make", "camera_model", "lens_model"):
+    rec[k] = None
+  assert metacache.record_is_stale(rec)
+  with open(os.path.join(d, "index.json"), "w") as f:
+    json.dump(index, f)
+  os.utime(d, (12345, 12345))
+  conn.execute("UPDATE dir_mtimes SET mtime = 12345 WHERE dirpath = '.'")
+  conn.commit()
+  scan.scan(conn, d, metadata_cache=True)
+  assert files(conn)["a.RAF"]["camera_make"] == "FUJIFILM"

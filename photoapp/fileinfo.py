@@ -10,6 +10,8 @@ tools/archive/README.md).
 
 import datetime
 import hashlib
+import io
+import math
 import mimetypes
 import os
 import re
@@ -38,6 +40,8 @@ IMAGE_EXTENSIONS = {
 RAW_EXTENSIONS = {
     '.dng', '.cr2', '.cr3', '.nef', '.arw', '.raf', '.rw2', '.orf', '.pef',
 }
+
+RAF_MAGIC = b"FUJIFILMCCD-RAW "
 
 _HASH_CHUNK_SIZE = 1024 * 1024
 
@@ -185,7 +189,9 @@ def _exif_rational_to_float(value):
   if isinstance(value, tuple) and len(value) == 2:
     num, den = value
     return float(num) / float(den) if den else None
-  return float(value)
+  result = float(value)
+  # Ticket 218: an "undefined" FNumber (a manual lens) reads as NaN; never cache or store that.
+  return result if math.isfinite(result) else None
 
 
 def read_camera_metadata(img):
@@ -334,7 +340,7 @@ def read_focal_length_35mm(filepath):
   except Exception as e:
     logging.vlog(3, "Could not read 35mm focal length from %s: %s", filepath, e)
   if is_raw(filepath):
-    return read_exif_from_tiff(filepath)[8]   # focal_length_35mm is the last of the nine
+    return read_exif_fallback(filepath)[8]   # focal_length_35mm is the last of the nine
   return None
 
 
@@ -394,6 +400,58 @@ def read_exif_from_tiff(filepath):
       _exif_str(ifd0.get(_EXIF_MAKE)), _exif_str(ifd0.get(_EXIF_MODEL)),
       _exif_str(pick(_EXIF_LENS_MODEL)),
       int(focal_length_35mm) if focal_length_35mm is not None else None)
+
+
+def read_raf_jpeg_range(filepath):
+  """(offset, length) of the embedded JPEG of a Fujifilm RAF, or None if filepath is not a RAF.
+
+  RAF layout (ticket 218): the 16-byte magic "FUJIFILMCCD-RAW ", then big-endian 32-bit
+  offset/length pairs at byte 84 (the full-colour EXIF JPEG, which carries all the EXIF), 92 (the
+  CFA header) and 100 (the raw data).
+  """
+  try:
+    with open(filepath, "rb") as f:
+      header = f.read(92)
+  except OSError:
+    return None
+  if len(header) < 92 or not header.startswith(RAF_MAGIC):
+    return None
+  offset, length = struct.unpack(">II", header[84:92])
+  return (offset, length) if offset and length else None
+
+
+def read_exif_from_raf(filepath):
+  """EXIF of a Fujifilm RAF (ticket 218), in read_exif_from_tiff's nine-tuple shape.
+
+  A RAF is not a TIFF, so Pillow cannot open it and read_exif_from_tiff does not apply; but it
+  embeds a complete EXIF JPEG, which Pillow reads from memory (headers only, no decode) with the
+  same readers a JPEG goes through. All None if filepath is not a readable RAF.
+  """
+  none = (None,) * 9
+  jpeg_range = read_raf_jpeg_range(filepath)
+  if jpeg_range is None:
+    return none
+  try:
+    with open(filepath, "rb") as f:
+      f.seek(jpeg_range[0])
+      data = f.read(jpeg_range[1])
+    with Image.open(io.BytesIO(data)) as img:
+      exif_date = read_exif_date(img)
+      aperture, shutter_speed, iso = read_camera_metadata(img)
+      focal_length, camera_make, camera_model, lens_model, focal_length_35mm = \
+          read_lens_metadata(img)
+  except Exception as e:
+    logging.vlog(3, "Could not read RAF EXIF from %s: %s", filepath, e)
+    return none
+  return (exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,
+          lens_model, focal_length_35mm)
+
+
+def read_exif_fallback(filepath):
+  """EXIF nine-tuple for a RAW file Pillow cannot open: a RAF's embedded JPEG, else TIFF IFDs."""
+  if read_raf_jpeg_range(filepath) is not None:
+    return read_exif_from_raf(filepath)
+  return read_exif_from_tiff(filepath)
 
 
 def read_exif_date_from_path(filepath):
@@ -459,11 +517,14 @@ def read_image_metadata(filepath):
       focal_length, camera_make, camera_model, lens_model, focal_length_35mm = \
           read_lens_metadata(img)
   except Exception as e:
-    logging.warning("Could not decode image %s: %s", filepath, e)
+    # A RAW Pillow cannot open (PEF, RAF) is expected, not worth a warning: the fallback below
+    # reads its EXIF another way.
+    (logging.vlog if is_raw(filepath) else logging.warning)(
+        *((3,) if is_raw(filepath) else ()), "Could not decode image %s: %s", filepath, e)
     mime_type, _ = mimetypes.guess_type(filepath)
     if is_raw(filepath):
       (exif_date, aperture, shutter_speed, iso, focal_length, camera_make, camera_model,
-       lens_model, focal_length_35mm) = read_exif_from_tiff(filepath)
+       lens_model, focal_length_35mm) = read_exif_fallback(filepath)
   if is_raw(filepath):
     raw_size = read_raw_size(filepath)
     if raw_size is not None:

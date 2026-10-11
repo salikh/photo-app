@@ -8,7 +8,7 @@ from photoapp import backfill_exif
 from photoapp import db
 from photoapp import scan
 from tests.conftest import make_jpeg
-from tests.conftest import write_synthetic_pef
+from tests.conftest import write_synthetic_pef, write_synthetic_raf
 
 
 def make_exif_jpeg(path, aperture=2.8, shutter=(1, 250), iso=400, size=(30, 20)):
@@ -93,6 +93,23 @@ def test_backfill_fills_pef_exif_via_the_tiff_fallback(conn, settings):
   assert (row["focal_length"], row["camera_make"], row["camera_model"]) == (
       43.0, "PENTAX Corporation", "PENTAX *ist DL")
   assert row["lens_model"] == "smc PENTAX-DA 18-55mm"
+
+
+def test_backfill_fills_raf_exif_from_its_embedded_jpeg(conn, settings):
+  # ticket 218: a Fujifilm RAF is backfilled from its embedded JPEG's EXIF.
+  d = settings.pictures_dir
+  write_synthetic_raf(os.path.join(d, "a.RAF"))
+  scan.scan(conn, d)
+  row = conn.execute("SELECT * FROM files WHERE path = 'a.RAF'").fetchone()
+  assert (row["camera_make"], row["camera_model"], row["iso"]) == ("FUJIFILM", "X-H1", 51200)
+  conn.execute("UPDATE files SET exif_date = NULL, aperture = NULL, shutter_speed = NULL,"
+               " iso = NULL, focal_length = NULL, camera_make = NULL, camera_model = NULL")
+  conn.commit()
+  assert backfill_exif.backfill(conn, d) == (1, 0, 0)
+  row = conn.execute("SELECT * FROM files WHERE path = 'a.RAF'").fetchone()
+  assert row["exif_date"] == "2026-10-11 17:23:10"
+  assert (row["aperture"], row["iso"], row["focal_length"]) == (2.8, 51200, 50.0)
+  assert (row["camera_make"], row["camera_model"]) == ("FUJIFILM", "X-H1")
 
 
 def test_backfill_respects_limit(conn, settings):
