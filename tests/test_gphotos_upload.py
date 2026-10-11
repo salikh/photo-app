@@ -203,3 +203,26 @@ def test_default_album_name_follows_the_folder():
   assert export.default_album_name("2024/trip/day1") == "day1"
   assert export.default_album_name("misc") == "misc"
   assert export.default_album_name("2024") == "2024"
+
+
+def test_google_is_contacted_only_when_the_export_dialog_opens_and_only_once(settings, fake, tmp_path):
+  app, c, conn, ids = setup_app(settings, fake, tmp_path)
+  calls = []
+  real = gphotos.Client.list_albums
+  gphotos.Client.list_albums = lambda self: calls.append(1) or real(self)
+  try:
+    c.get("/api/photos", params={"dir": "."})            # ordinary browsing
+    time.sleep(0.3)
+    assert calls == []
+    c.get("/api/gphotos/status")                         # the Export dialog opens: one listing
+    for _ in range(100):
+      if calls:
+        break
+      time.sleep(0.05)
+    wait_albums(c)
+    c.get("/api/gphotos/status")                         # opened again: served from the cache
+    time.sleep(0.3)
+    wait_albums(c)
+    assert calls == [1]                                  # no timer, no re-fetch
+  finally:
+    gphotos.Client.list_albums = real

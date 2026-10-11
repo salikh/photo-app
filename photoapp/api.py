@@ -427,19 +427,20 @@ def create_app(conn, settings):
   app.state.gphotos_credentials = gphotos_auth.Credentials(
       settings.gphotos_client_path, settings.gphotos_token_path)
 
-  # Ticket 231: listing albums takes ~12 requests (~15 s: Google returns about 10 per page), so the
-  # list is cached and refreshed in the background (stale-while-revalidate). The export dialog's
-  # status call warms it, and /api/gphotos/albums answers at once with whatever is cached, plus
-  # `loading` while a fetch is running so the dialog can show progress and poll.
-  album_cache = {"albums": None, "fetched_at": 0.0, "running": False, "error": None}
+  # Ticket 231: listing albums takes ~12 requests (~15 s: Google returns about 10 per page), so one
+  # listing runs in a background thread and its result is cached. Google is only ever contacted
+  # while the user is exporting: opening the Export dialog (its /api/gphotos/status call, made
+  # nowhere else) starts one listing, and the dialog then asks for it; nothing polls or refreshes
+  # by itself, so ordinary use of the app never talks to Google Photos. The cache lives until the server restarts, an
+  # export that will create an album, or an explicit ?refresh=true.
+  album_cache = {"albums": None, "running": False, "error": None}
   album_lock = threading.Lock()
-  ALBUM_TTL = 600.0
 
   def refresh_albums(force=False):
-    """Start a background fetch if the cache is cold or older than ALBUM_TTL (or force)."""
+    """Start a background fetch if nothing is cached yet (or force) and none is running."""
     creds = app.state.gphotos_credentials
     with album_lock:
-      stale = album_cache["albums"] is None or time.time() - album_cache["fetched_at"] > ALBUM_TTL
+      stale = album_cache["albums"] is None
       if album_cache["running"] or not (stale or force) or not creds.configured():
         return
       album_cache["running"] = True
@@ -453,7 +454,7 @@ def create_app(conn, settings):
         albums, error = None, str(e)
       with album_lock:
         if albums is not None:
-          album_cache.update(albums=albums, fetched_at=time.time())
+          album_cache.update(albums=albums)
         album_cache.update(error=error, running=False)
     threading.Thread(target=work, name="gphotos-albums", daemon=True).start()
   app.state.refresh_albums = refresh_albums
@@ -463,7 +464,7 @@ def create_app(conn, settings):
     """Ticket 210: whether the Google Photos upload can be offered (client file + token present).
     Says nothing about whether Google still accepts the token; that shows up when a job runs."""
     ok = app.state.gphotos_credentials.configured()
-    refresh_albums()      # ticket 231: warm the album list while the export dialog is opening
+    refresh_albums()      # ticket 231: the Export dialog just opened -- list albums in the background
     return {"configured": ok,
             "hint": None if ok else "run `python -m photoapp.google_auth` (see docs/google-photos.md)"}
 
@@ -471,8 +472,8 @@ def create_app(conn, settings):
   def gphotos_albums(name: str = "", refresh: bool = False):
     """Ticket 213: the albums this app created in Google Photos (the API shows no others), ranked by
     how well they match `name`; `exact` marks a same-title album (case-insensitive) so the export
-    dialog can warn before creating a second one. Ticket 231: answered from a cache that a
-    background fetch fills (~15 s cold); `loading` is true while that fetch runs, `error` carries
+    dialog can warn before creating a second one. Ticket 231: answered from a cache that one
+    background fetch, started by this request, fills (~15 s cold); `loading` is true while that fetch runs, `error` carries
     the last failure, and `refresh=true` forces a new fetch."""
     creds = app.state.gphotos_credentials
     if not creds.configured():
@@ -513,7 +514,7 @@ def create_app(conn, settings):
         raise HTTPException(400, "Google Photos is not set up: run `python -m photoapp.google_auth`")
       if not gp.album_id and not gp.album_title.strip():
         raise HTTPException(400, "give an album name for Google Photos")
-      album_cache["fetched_at"] = 0.0    # a new album is coming: re-list next time
+      album_cache["albums"] = None       # a new album is coming: list again when next asked
 
     def attempt():
       with app.state.db_lock:
