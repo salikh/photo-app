@@ -7,7 +7,9 @@ bytes of each chunk of 50 in parallel, then makes the one serial batchCreate for
 land in the album in order. Identical bytes are one media item on Google's side, so re-running (or
 retrying the failures) never duplicates anything. A file that fails is recorded in options["failed"]
 and the job still finishes; only a fatal problem (not authorized, album cannot be created) fails it.
-Nothing about the album is stored in the photo database: Google Photos is authoritative.
+Ticket 232: the album's id and title, and how many items went into it, are remembered in the
+`gphotos_albums` table (the export dialog's "existing album" list); Google Photos stays
+authoritative, and an explicit refresh reconciles the table with it.
 """
 
 import concurrent.futures
@@ -20,6 +22,7 @@ from absl import logging
 
 from photoapp import export
 from photoapp import gphotos
+from photoapp import gphotos_albums
 
 UPLOAD_THREADS = 4
 POLL_SECONDS = 1.0
@@ -90,12 +93,16 @@ def run(conn, settings, job, client, sleep=time.sleep, threads=UPLOAD_THREADS):
         if album_id is None:
           album_id = client.create_album(options["album_title"])["id"]
           options["album_id"] = album_id        # saved at once: a restart must not make a 2nd album
+          gphotos_albums.record_upload(conn, album_id, options["album_title"], 0)
           _save(conn, job["id"], {**options, "failed": failed}, note())
         results = client.batch_create([(t, None) for _, t in tokens], album_id)
+        batch_ok = 0
         for (it, _), r in zip(tokens, results):
           if r["ok"]:
             sent += 1
+            batch_ok += 1
           else:
             failed.append({**it, "message": r["message"] or "rejected by Google Photos"})
+        gphotos_albums.record_upload(conn, album_id, options.get("album_title", ""), batch_ok)
       _save(conn, job["id"], {**options, "failed": failed}, note())
   logging.vlog(3, "gphotos_upload %d: %s", job["id"], note())

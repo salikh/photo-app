@@ -339,6 +339,18 @@ MIGRATIONS = [
     -- (photoapp/edits.py); NULL = unedited. DB-only, not written to sidecars.
     ALTER TABLE files ADD COLUMN edits TEXT;
     """,
+    """
+    -- Ticket 232: the Google Photos albums this app uploaded to (photoapp/gphotos_albums.py), so the
+    -- export dialog does not list them from Google (~15 s, and the app should not talk to Google
+    -- outside an export). Filled by every upload job and by an explicit "Refresh from Google".
+    CREATE TABLE gphotos_albums (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      item_count INTEGER NOT NULL DEFAULT 0,
+      last_used REAL,        -- epoch seconds of the last upload into it by this app; 0 = unknown
+      synced_at REAL         -- epoch seconds of the last sync with Google; NULL = never
+    );
+    """,
 ]
 
 

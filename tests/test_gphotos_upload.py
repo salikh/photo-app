@@ -68,6 +68,12 @@ def test_export_uploads_into_a_new_album_in_the_given_order(settings, fake, tmp_
   (up,) = job(c, "gphotos_upload")
   assert up["state"] == "done" and up["note"] == "uploaded 3 of 3" and not up["retryable"]
   assert os.path.isfile(str(tmp_path / "out" / "a.jpg"))     # the local export stays
+  # ticket 232: the album is remembered locally, with what went in, and listed without Google
+  from photoapp import gphotos_albums
+  (mine,) = gphotos_albums.list_all(app.state.db)
+  assert mine["title"] == "Trip 2020" and mine["count"] == 3 and mine["id"] in fake.albums
+  got = c.get("/api/gphotos/albums", params={"name": "Trip 2020"}).json()["albums"]
+  assert got[0]["exact"] and got[0]["id"] == mine["id"]
 
 
 def test_adding_to_an_existing_album_appends(settings, fake, tmp_path):
@@ -134,66 +140,74 @@ def test_not_authorized_or_nameless_requests_are_refused(settings, fake, tmp_pat
   assert c.post("/api/export", json=body).status_code == 200    # plain export still works
 
 
-def wait_albums(c, **params):
-  """The albums endpoint fills a cache in the background (ticket 231): poll until it has finished."""
+def refresh_albums(c, **params):
+  """The user's "Refresh from Google": start the background sync and wait for it (ticket 232)."""
+  body = c.post("/api/gphotos/albums/refresh", params=params).json()
   for _ in range(200):
-    body = c.get("/api/gphotos/albums", params=params).json()
     if not body["loading"]:
       return body
     time.sleep(0.05)
-  raise AssertionError("album listing never finished")
+    body = c.get("/api/gphotos/albums", params=params).json()
+  raise AssertionError("album sync never finished")
 
 
 def test_albums_endpoint_ranks_by_name_and_year_and_flags_an_exact_match(settings, fake, tmp_path):
   app, c, conn, ids = setup_app(settings, fake, tmp_path)
   for title in ("Berlin 2019", "2024 trip", "Birthday 2024", "trip 2024", "Zoo"):
     fake.albums[title] = {"title": title, "items": []}
-  got = wait_albums(c, name="2024 trip")["albums"]
+  got = refresh_albums(c, name="2024 trip")["albums"]
   assert [a["title"] for a in got][:2] == ["2024 trip", "trip 2024"]
   assert got[0]["exact"] and got[1]["exact"] is False
   assert [a["title"] for a in got][-1] in ("Zoo", "Berlin 2019")
   assert c.get("/api/gphotos/albums").json()["albums"][0]["score"] == 0.0
 
 
-def test_albums_are_cached_and_a_cold_request_answers_at_once_with_loading(settings, fake, tmp_path):
+def test_albums_come_from_the_database_and_only_a_refresh_asks_google(settings, fake, tmp_path):
   app, c, conn, ids = setup_app(settings, fake, tmp_path)
   fake.albums["a"] = {"title": "A", "items": []}
-  first = c.get("/api/gphotos/albums").json()
-  assert "loading" in first and "error" in first            # never blocks on Google
-  wait_albums(c)
   calls = []
   real = gphotos.Client.list_albums
   gphotos.Client.list_albums = lambda self: calls.append(1) or real(self)
   try:
-    fake.albums["b"] = {"title": "B", "items": []}
-    assert [a["title"] for a in c.get("/api/gphotos/albums").json()["albums"]] == ["A"]  # cached
+    assert c.get("/api/gphotos/albums").json()["albums"] == []     # nothing remembered, no Google call
+    c.get("/api/gphotos/status")
+    time.sleep(0.2)
     assert calls == []
-    c.get("/api/gphotos/albums", params={"refresh": "true"})
-    got = wait_albums(c)["albums"]
-    assert sorted(a["title"] for a in got) == ["A", "B"] and calls == [1]
+    got = refresh_albums(c)
+    assert [a["title"] for a in got["albums"]] == ["A"] and got["synced_at"] and calls == [1]
+    fake.albums["b"] = {"title": "B", "items": []}
+    assert [a["title"] for a in c.get("/api/gphotos/albums").json()["albums"]] == ["A"]
+    assert calls == [1]                                           # reading never re-asks Google
+    del fake.albums["a"]
+    assert [a["title"] for a in refresh_albums(c)["albums"]] == ["B"]   # deleted there -> forgotten
   finally:
     gphotos.Client.list_albums = real
 
 
-def test_a_failed_listing_reports_the_error_and_keeps_the_last_good_list(settings, fake, tmp_path):
+def test_a_failed_refresh_reports_the_error_and_keeps_the_table(settings, fake, tmp_path):
   app, c, conn, ids = setup_app(settings, fake, tmp_path)
   fake.albums["a"] = {"title": "A", "items": []}
-  wait_albums(c)
+  refresh_albums(c)
   real = gphotos.Client.list_albums
   def boom(self):
     raise gphotos.GPhotosError("quota")
   gphotos.Client.list_albums = boom
   try:
-    c.get("/api/gphotos/albums", params={"refresh": "true"})
-    body = wait_albums(c)
+    body = refresh_albums(c)
   finally:
     gphotos.Client.list_albums = real
   assert body["error"] == "quota" and [a["title"] for a in body["albums"]] == ["A"]
 
 
-def test_albums_endpoint_needs_google_setup(settings, fake, tmp_path):
-  app, c, conn, ids = setup_app(settings, fake, tmp_path, authorized=False)
-  assert c.get("/api/gphotos/albums").status_code == 400
+def test_backfill_remembers_albums_earlier_upload_jobs_used(conn):
+  from photoapp import gphotos_albums
+  conn.execute("INSERT INTO jobs (kind, state, options) VALUES ('gphotos_upload', 'done', ?)",
+               (json.dumps({"album_id": "X", "album_title": "Old trip",
+                            "items": [{}, {}, {}], "failed": [{}]}),))
+  conn.commit()
+  assert gphotos_albums.backfill_from_jobs(conn) == 1
+  assert gphotos_albums.list_all(conn) == [{"id": "X", "title": "Old trip", "count": 2}]
+  assert gphotos_albums.backfill_from_jobs(conn) == 0             # idempotent
 
 
 def test_default_album_name_follows_the_folder():
@@ -203,26 +217,3 @@ def test_default_album_name_follows_the_folder():
   assert export.default_album_name("2024/trip/day1") == "day1"
   assert export.default_album_name("misc") == "misc"
   assert export.default_album_name("2024") == "2024"
-
-
-def test_google_is_contacted_only_when_the_export_dialog_opens_and_only_once(settings, fake, tmp_path):
-  app, c, conn, ids = setup_app(settings, fake, tmp_path)
-  calls = []
-  real = gphotos.Client.list_albums
-  gphotos.Client.list_albums = lambda self: calls.append(1) or real(self)
-  try:
-    c.get("/api/photos", params={"dir": "."})            # ordinary browsing
-    time.sleep(0.3)
-    assert calls == []
-    c.get("/api/gphotos/status")                         # the Export dialog opens: one listing
-    for _ in range(100):
-      if calls:
-        break
-      time.sleep(0.05)
-    wait_albums(c)
-    c.get("/api/gphotos/status")                         # opened again: served from the cache
-    time.sleep(0.3)
-    wait_albums(c)
-    assert calls == [1]                                  # no timer, no re-fetch
-  finally:
-    gphotos.Client.list_albums = real

@@ -30,6 +30,7 @@ from photoapp import export
 from photoapp import export_backfill
 from photoapp import fileinfo
 from photoapp import gphotos
+from photoapp import gphotos_albums
 from photoapp import gphotos_auth
 from photoapp import gphotos_rank
 from photoapp import gphotos_upload
@@ -427,62 +428,72 @@ def create_app(conn, settings):
   app.state.gphotos_credentials = gphotos_auth.Credentials(
       settings.gphotos_client_path, settings.gphotos_token_path)
 
-  # Ticket 231: listing albums takes ~12 requests (~15 s: Google returns about 10 per page), so one
-  # listing runs in a background thread and its result is cached. Google is only ever contacted
-  # while the user is exporting: opening the Export dialog (its /api/gphotos/status call, made
-  # nowhere else) starts one listing, and the dialog then asks for it; nothing polls or refreshes
-  # by itself, so ordinary use of the app never talks to Google Photos. The cache lives until the server restarts, an
-  # export that will create an album, or an explicit ?refresh=true.
-  album_cache = {"albums": None, "running": False, "error": None}
+  # Ticket 232: the albums this app uploaded to are remembered in the `gphotos_albums` table (filled
+  # by every upload job), so the export dialog lists them locally and instantly. Google is asked for
+  # its own album list only when the user presses "Refresh from Google" in the dialog: ~12 requests,
+  # ~15 s (Google returns about 10 albums per page), run on one background thread whose result is
+  # synced into the table. Nothing refreshes by itself; ordinary use never contacts Google.
+  album_sync = {"running": False, "error": None}
   album_lock = threading.Lock()
+  with app.state.db_lock:
+    gphotos_albums.backfill_from_jobs(app.state.db)   # albums earlier uploads used, no Google call
 
-  def refresh_albums(force=False):
-    """Start a background fetch if nothing is cached yet (or force) and none is running."""
+  def start_album_sync():
     creds = app.state.gphotos_credentials
     with album_lock:
-      stale = album_cache["albums"] is None
-      if album_cache["running"] or not (stale or force) or not creds.configured():
+      if album_sync["running"] or not creds.configured():
         return
-      album_cache["running"] = True
+      album_sync["running"] = True
 
     def work():
       client = gphotos.Client(settings.gphotos_api_base_url, creds.access_token)
+      error = None
       try:
         albums = client.list_albums()
-        error = None
+        with app.state.db_lock:
+          gphotos_albums.sync(app.state.db, albums)
       except (gphotos.GPhotosError, gphotos_auth.AuthError) as e:
-        albums, error = None, str(e)
+        error = str(e)
       with album_lock:
-        if albums is not None:
-          album_cache.update(albums=albums)
-        album_cache.update(error=error, running=False)
+        album_sync.update(error=error, running=False)
     threading.Thread(target=work, name="gphotos-albums", daemon=True).start()
-  app.state.refresh_albums = refresh_albums
 
   @app.get("/api/gphotos/status")
   def gphotos_status():
     """Ticket 210: whether the Google Photos upload can be offered (client file + token present).
     Says nothing about whether Google still accepts the token; that shows up when a job runs."""
     ok = app.state.gphotos_credentials.configured()
-    refresh_albums()      # ticket 231: the Export dialog just opened -- list albums in the background
     return {"configured": ok,
             "hint": None if ok else "run `python -m photoapp.google_auth` (see docs/google-photos.md)"}
 
-  @app.get("/api/gphotos/albums")
-  def gphotos_albums(name: str = "", refresh: bool = False):
-    """Ticket 213: the albums this app created in Google Photos (the API shows no others), ranked by
-    how well they match `name`; `exact` marks a same-title album (case-insensitive) so the export
-    dialog can warn before creating a second one. Ticket 231: answered from a cache that one
-    background fetch, started by this request, fills (~15 s cold); `loading` is true while that fetch runs, `error` carries
-    the last failure, and `refresh=true` forces a new fetch."""
-    creds = app.state.gphotos_credentials
-    if not creds.configured():
-      raise HTTPException(400, "Google Photos is not set up: run `python -m photoapp.google_auth`")
-    refresh_albums(force=refresh)
+  def albums_answer(name):
+    with app.state.db_lock:
+      albums = gphotos_albums.list_all(app.state.db)
+      synced = gphotos_albums.synced_at(app.state.db)
     with album_lock:
-      albums = list(album_cache["albums"] or [])
-      loading, error = album_cache["running"], album_cache["error"]
-    return {"albums": gphotos_rank.rank(albums, name), "loading": loading, "error": error}
+      loading, error = album_sync["running"], album_sync["error"]
+    return {"albums": gphotos_rank.rank(albums, name), "loading": loading, "error": error,
+            "synced_at": synced}
+
+  @app.get("/api/gphotos/albums")
+  def gphotos_albums_list(name: str = ""):
+    """Ticket 213: the albums this app uploaded to, ranked by how well they match `name`; `exact`
+    marks a same-title album (case-insensitive) so the export dialog can warn before creating a
+    second one. Ticket 232: read from the local `gphotos_albums` table -- never contacts Google --
+    plus `loading` while a user-requested sync runs, its last `error`, and `synced_at`."""
+    if not app.state.gphotos_credentials.configured():
+      raise HTTPException(400, "Google Photos is not set up: run `python -m photoapp.google_auth`")
+    return albums_answer(name)
+
+  @app.post("/api/gphotos/albums/refresh")
+  def gphotos_albums_refresh(name: str = ""):
+    """Ticket 232: ask Google for its list of this app's albums (slow, ~15 s) and sync the local
+    table with it, on a background thread; the dialog polls GET /api/gphotos/albums meanwhile. The
+    only place the album list is ever fetched from Google."""
+    if not app.state.gphotos_credentials.configured():
+      raise HTTPException(400, "Google Photos is not set up: run `python -m photoapp.google_auth`")
+    start_album_sync()
+    return albums_answer(name)
 
   @app.get("/api/export/default_path")
   def export_default_path(dir: str = "."):
@@ -514,7 +525,6 @@ def create_app(conn, settings):
         raise HTTPException(400, "Google Photos is not set up: run `python -m photoapp.google_auth`")
       if not gp.album_id and not gp.album_title.strip():
         raise HTTPException(400, "give an album name for Google Photos")
-      album_cache["albums"] = None       # a new album is coming: list again when next asked
 
     def attempt():
       with app.state.db_lock:

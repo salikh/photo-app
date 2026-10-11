@@ -89,6 +89,7 @@ def test_same_name_warning_offers_to_add_to_the_existing_album(gpage, gserver, f
   fake.albums["old"] = {"title": "2024 trip", "items": []}
   open_export(gpage, gserver)
   gpage.locator(".export-gphotos").check()
+  gpage.get_by_role("button", name="Refresh from Google").click()       # ticket 232: asks Google
   warn = gpage.locator(".export-album-warn")
   expect(warn).to_contain_text("already exists")
   warn.get_by_role("button", name="Add to it instead").click()
@@ -102,6 +103,7 @@ def test_creating_another_album_with_the_same_name_is_still_possible(gpage, gser
   fake.albums["old"] = {"title": "2024 trip", "items": []}
   open_export(gpage, gserver)
   gpage.locator(".export-gphotos").check()
+  gpage.get_by_role("button", name="Refresh from Google").click()
   expect(gpage.locator(".export-album-warn")).to_contain_text("already exists")
   submit(gpage, gserver)
   assert len(fake.albums) == 2 and fake.albums["old"]["items"] == []
@@ -127,7 +129,26 @@ def test_choosing_an_existing_album_with_the_radio_lists_every_album(gpage, gser
   gpage.get_by_label("add to an existing album").check()
   pick = gpage.locator(".export-album-pick")
   expect(pick).to_be_visible()
+  expect(pick.locator("option")).to_have_count(1)                      # nothing remembered yet
+  expect(pick).to_contain_text("Refresh from Google")
+  gpage.get_by_role("button", name="Refresh from Google").click()
   expect(pick.locator("option")).to_have_count(2)
   pick.select_option(label="2009 Kazan (1)")
   submit(gpage, gserver)
   assert len(fake.albums) == 2 and len(fake.albums["a"]["items"]) == 7
+
+
+def test_an_album_we_uploaded_to_is_listed_next_time_without_asking_google(gpage, gserver, fake):
+  # Ticket 232: the first export creates the album; the next dialog lists it from the database.
+  open_export(gpage, gserver)
+  gpage.locator(".export-gphotos").check()
+  submit(gpage, gserver)
+  (album,) = fake.albums.values()
+  listing_requests = []
+  gpage.on("request", lambda r: listing_requests.append(r.url) if "/refresh" in r.url else None)
+  open_export(gpage, gserver)
+  gpage.locator(".export-gphotos").check()
+  gpage.get_by_label("add to an existing album").check()
+  expect(gpage.locator(".export-album-pick option")).to_have_count(1)
+  expect(gpage.locator(".export-album-pick")).to_contain_text(f"{album['title']} (6)")
+  assert listing_requests == []

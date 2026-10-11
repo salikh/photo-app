@@ -45,7 +45,7 @@ stops accepting the token ("expired or was revoked" on the Jobs page), run `goog
   API but this app has no caption field yet.
 - 10,000 API requests per project per day (about 9,000 photos); 429 answers are waited out (≥30 s).
 - Anything you change in Google Photos (moving items between albums, deleting) is invisible to this
-  app; it keeps no record of albums. A later epic may import from Google Photos.
+  app; it only remembers the albums it uploaded to (a local table; **Refresh from Google** in the dialog re-lists them from Google, about 15 s, and is the only time the album list is fetched). A later epic may import from Google Photos.
 
 ## What leaves the machine
 

@@ -513,3 +513,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       - [x] [229](docs/tickets/229.md) exports / Google Photos use the edited render
 - [x] [230](docs/tickets/230.md) Hotkeys S (store the shown file's adjustments) and A (apply them to the shown file): edit document for non-RAW stills, RAW settings for RAW
 - [x] [231](docs/tickets/231.md) Bug: the Google Photos album list looked empty for ~15 s (Google pages ~10 albums per request); listed once when the Export dialog opens (no timers) and cached, loading state in the dialog
+- [x] [232](docs/tickets/232.md) The export dialog's album list comes from a `gphotos_albums` table filled by every upload (and an explicit "Refresh from Google"), not from a Google listing

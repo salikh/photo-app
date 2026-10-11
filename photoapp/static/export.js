@@ -96,25 +96,32 @@ function googlePhotosSection(status, defaultName) {
   const pick = el('select', {class: 'export-album-pick', 'aria-label': 'existing album'});
   const warn = el('div', {class: 'export-album-warn'});
   const body = el('div', {class: 'export-gphotos-body', hidden: true});
-  let albums = null, timer = null, loading = false, failure = null, seq = 0;
+  let albums = null, timer = null, loading = false, failure = null, seq = 0, syncedAt = null;
+  const refreshBtn = el('button', {class: 'export-album-refresh', text: 'Refresh from Google',
+    title: 'Ask Google Photos for its list of this app\'s albums (takes about 15 s)',
+    onclick: (e) => { e.preventDefault(); refresh(true); }});
 
-  // Ticket 231: the server lists albums in the background (about 15 s cold: Google returns ~10
-  // per page), so poll while it says `loading`, and say so instead of showing an empty list.
-  async function refresh() {
+  // Ticket 232: the list comes from the app's own table of albums it uploaded to (instant, no
+  // Google call). Only the button asks Google, in the background (~15 s); poll the *local* server
+  // while that runs.
+  async function refresh(fromGoogle = false) {
     const mine = ++seq;
     try {
-      const res = await get('/api/gphotos/albums?name=' + encodeURIComponent(name.value));
+      const url = '/api/gphotos/albums' + (fromGoogle ? '/refresh' : '') +
+                  '?name=' + encodeURIComponent(name.value);
+      const res = fromGoogle ? await post(url, {}) : await get(url);
       if (mine !== seq) return;           // a newer request (typing) superseded this one
-      albums = res.albums; loading = res.loading; failure = res.error;
+      albums = res.albums; loading = res.loading; failure = res.error; syncedAt = res.synced_at;
     } catch (e) { albums = []; loading = false; failure = e.message; toast(e.message, true); }
     pick.replaceChildren(...(albums.length ? albums.map((a) => el('option', {value: a.id,
       text: `${a.title} (${a.count})` + (a.exact ? ' — same name' : '')}))
       : [el('option', {value: '', disabled: true, selected: true,
-          text: loading ? 'Loading albums… (can take ~15 s)'
+          text: loading ? 'Asking Google Photos… (about 15 s)'
               : failure ? `Could not list albums: ${failure}`
-              : 'No albums made by this app yet'})]));
+              : 'No albums yet — albums you upload to are remembered; "Refresh from Google" finds older ones'})]));
+    refreshBtn.disabled = loading;
     draw();
-    if (loading) { clearTimeout(timer); timer = setTimeout(refresh, 1500); }
+    if (loading) { clearTimeout(timer); timer = setTimeout(() => refresh(false), 1500); }
   }
   function draw() {
     pick.hidden = mode.value !== 'existing';
@@ -138,8 +145,10 @@ function googlePhotosSection(status, defaultName) {
   body.append(
     el('label', {class: 'export-label'}, newRadio, ' New album ', name),
     el('label', {class: 'export-label'}, oldRadio, ' Add to an existing album ', pick),
+    refreshBtn,
     warn,
-    el('p', {class: 'meta', text: 'Only albums created by this app are listed. Uploads count ' +
+    el('p', {class: 'meta', text: 'Lists the albums this app uploaded to (Google only shows an app ' +
+                                  'its own albums). Uploads count ' +
                                   'against your Google storage.'}));
   draw();
   const node = el('div', {class: 'export-gphotos-section'},

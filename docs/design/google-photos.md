@@ -5,10 +5,14 @@ Why it is shaped the way it is. How to set it up and use it: [../google-photos.m
 - **An optional step of Export, after rendering into `Exported/`.** The files stay there (mirroring the
   library tree), so a future "import from Google Photos" can dedupe against them by hash. The upload job
   reads those files; nothing is rendered twice.
-- **No album bookkeeping in the photo database.** Google Photos is the authority on its albums (they are
-  edited elsewhere), and since March 2025 the API only shows this app its own albums anyway. The one
-  trace is the `gphotos_upload` job row (`jobs.options`: album id, items, failures; `jobs.note`: progress),
-  which the nightly prune removes like any other job.
+- **The app remembers the albums it uploaded to (ticket 232).** Since March 2025 the API only shows
+  this app its own albums, ~10 per request (a listing is ~12 requests, ~15 s), and the app should not
+  talk to Google outside an export. So every upload job records its album (id, title, item count) in
+  the `gphotos_albums` table and the export dialog lists from there; Google is asked for its list only
+  by the dialog's explicit "Refresh from Google", which syncs the table (finds older albums, forgets
+  deleted ones). Google stays authoritative; the table can drift until a refresh. The `gphotos_upload`
+  job row still holds album id, items, failures (`jobs.options`) and progress (`jobs.note`), and the
+  nightly prune removes it like any other job; the table is what outlives it.
 - **Idempotence comes from Google**: identical bytes are one media item, so retrying failures or
   re-running an export into the same album cannot duplicate. That replaces a local "uploaded" table.
 - **Ordering**: items are added in the order the request lists them (the grid's order), one serial
