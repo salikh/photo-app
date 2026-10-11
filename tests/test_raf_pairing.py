@@ -116,3 +116,45 @@ def test_real_raf_thumbnails_from_the_embedded_preview_and_demosaiced_when_tuned
   thumbs.clear(settings.thumbs_dir, conn, fid, "t/A.RAF")
   path = thumbs.ensure(conn, d, settings.thumbs_dir, fid, "t/A.RAF", "Small")
   assert max(Image.open(path).size) == 1000
+
+
+def _fake_raw(monkeypatch, preview_edge, raw_edge):
+  from PIL import Image
+  from photoapp import fileinfo, previews
+  monkeypatch.setattr(previews, "embedded_preview",
+                      lambda p: Image.new("RGB", (preview_edge, preview_edge // 2)))
+  monkeypatch.setattr(fileinfo, "read_raw_size", lambda p: (raw_edge, raw_edge // 2, "image/x-raw"))
+  calls = []
+  monkeypatch.setattr(previews, "render", lambda p, s, half_size=False:
+                      calls.append(p) or Image.new("RGB", (raw_edge, raw_edge // 2)))
+  return calls
+
+
+def test_huge_of_an_untouched_raw_demosaics_when_the_embedded_preview_is_small(
+    tmp_path, monkeypatch):
+  # Ticket 221 (the user's answer): Huge demosaics; the other sizes keep the embedded preview.
+  from PIL import Image
+  from photoapp import thumbs
+  calls = _fake_raw(monkeypatch, preview_edge=1920, raw_edge=6000)
+  huge, small = str(tmp_path / "huge.jpg"), str(tmp_path / "small.jpg")
+  thumbs.render("a.RAF", huge, thumbs.LONG_EDGE["Huge"])
+  assert calls == ["a.RAF"] and Image.open(huge).size == (6000, 3000)
+  thumbs.render("a.RAF", small, thumbs.LONG_EDGE["Small"])
+  assert calls == ["a.RAF"]                          # Small did not demosaic
+
+
+def test_huge_keeps_a_full_size_embedded_preview(tmp_path, monkeypatch):
+  # A DNG's embedded preview is full size: no demosaic needed for Huge.
+  from photoapp import thumbs
+  calls = _fake_raw(monkeypatch, preview_edge=5900, raw_edge=6000)
+  thumbs.render("a.DNG", str(tmp_path / "huge.jpg"), thumbs.LONG_EDGE["Huge"])
+  assert calls == []
+
+
+@pytest.mark.skipif(not REAL_RAF or not os.path.exists(REAL_RAF or ""), reason="REAL_RAF not set")
+def test_real_raf_huge_is_demosaiced_full_size(tmp_path):
+  from PIL import Image
+  from photoapp import thumbs
+  dest = str(tmp_path / "huge.jpg")
+  thumbs.render(REAL_RAF, dest, None)
+  assert max(Image.open(dest).size) > 5000

@@ -56,6 +56,8 @@ not just `Thumb`:
   all just different downscales of the same free, ~20ms extraction. This is why, for the common
   case of an untouched RAW photo, browsing a RAW-heavy folder is not noticeably slower than a
   JPEG-heavy one even before the background populator has caught up.
+  Exception (ticket 221): `Huge` demosaics when the embedded preview's long edge is under 75% of
+  the RAW's (a Fujifilm RAF embeds 1920 px of 6000), once per file, then cached.
 - The moment a file's settings are tuned away from default, every size (that isn't already cached —
   the "never overwrite" rule above still applies) demosaics instead, applying those settings. A
   settings change clears every cached size first (`thumbs.clear`, ticket 079's mechanism, reused by

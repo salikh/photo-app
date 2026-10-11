@@ -103,14 +103,27 @@ def _finish(img, crop, rotation):
   return rotation_lib.apply(_apply_crop(img, crop), rotation)
 
 
-def _open(source, settings=None, crop=None, rotation=None):
+# Ticket 221: an untouched RAW's full-size (Huge) render demosaics when its embedded preview is
+# smaller than this fraction of the RAW's own long edge (a Fujifilm RAF embeds only 1920 px).
+SMALL_PREVIEW_FRACTION = 0.75
+
+
+def _preview_too_small_for_full(source, preview):
+  size = fileinfo.read_raw_size(source)
+  return size is not None and max(preview.size) < SMALL_PREVIEW_FRACTION * max(size[0], size[1])
+
+
+def _open(source, settings=None, crop=None, rotation=None, full=False):
   """Decode source to an RGB PIL image, cropped to crop (ticket 115) and rotated (ticket 129).
 
   RAW files normally use their embedded preview -- fast, no demosaic (Pillow would "succeed" on
   a DNG but only return its tiny IFD0 thumbnail, which is why this doesn't just use Pillow
   directly). But that shortcut only applies while settings is at default (ticket 085): once
   settings has been tuned away from default for this file, every size demosaics instead, so the
-  tuning is actually visible (docs/design/thumbnails.md). Raises Unsupported if nothing decodes.
+  tuning is actually visible (docs/design/thumbnails.md). full (the Huge size, ticket 221) also
+  demosaics an untouched RAW whose embedded preview is much smaller than the RAW itself, keeping
+  the embedded preview when it is the only thing that decodes. Raises Unsupported if nothing
+  decodes.
   """
   if fileinfo.is_raw(source):
     if settings and not raw_settings.is_default(settings):
@@ -121,6 +134,10 @@ def _open(source, settings=None, crop=None, rotation=None):
     preview = previews.embedded_preview(source)
     if preview is None:
       raise Unsupported(f"{source}: no usable embedded preview")
+    if full and _preview_too_small_for_full(source, preview):
+      img = previews.render(source, settings)
+      if img is not None:
+        return _finish(img.convert("RGB"), crop, rotation)
     return _finish(preview.convert("RGB"), crop, rotation)
   try:
     with Image.open(source) as img:
@@ -157,7 +174,7 @@ def render(source, dest, long_edge, settings=None, crop=None, rotation=None):
   be decoded (a RAW file without a usable embedded preview, at default settings, needs
   render_raw_sizes()).
   """
-  return save(_open(source, settings, crop, rotation), dest, long_edge)
+  return save(_open(source, settings, crop, rotation, full=long_edge is None), dest, long_edge)
 
 
 def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=None,
