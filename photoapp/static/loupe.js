@@ -1099,7 +1099,7 @@ function renderEditBody(f, container) {
     slider('White point', 'white', 1, 255, 1),
     toggle('Monochrome', 'mono'),
     slider('Sharpen', 'sharpen_amount', 0, 300, 5),
-    slider('Sharpen radius', 'sharpen_radius', 0.2, 6, 0.1, (v) => v.toFixed(1)),
+    slider('Sharpen radius', 'sharpen_radius', 0.2, 40, 0.1, (v) => v.toFixed(1)),
     el('details', {class: 'advanced'},
       el('summary', {text: 'Advanced'}),
       slider('Saturation', 'saturation', 0, 2, 0.05, two),

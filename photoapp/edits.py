@@ -13,7 +13,7 @@ Document keys, all optional (a key at its identity value is dropped by normalize
   brightness   -100..100         additive, percent of full scale
   saturation   0-2               1.0 = identity
   mono         {weights:[r,g,b]} monochrome, weights each -0.5..1.5; `true` = Rec.601 luma
-  sharpen      {amount, radius}  unsharp mask: amount 0-300 (%), radius 0.2-6 px *at 6000 px long
+  sharpen      {amount, radius}  unsharp mask: amount 0-300 (%), radius 0.2-40 px *at 6000 px long
                                  edge* (scaled to the output size, so every cached size looks alike)
 
 Everything pointwise (levels, contrast, brightness, per-channel) is composed into one 256-entry
@@ -94,7 +94,7 @@ def normalize(doc):
     if not isinstance(sharpen, dict) or frozenset(sharpen) - {"amount", "radius"}:
       raise EditsError("sharpen must be an object with amount and radius")
     amount = _number(sharpen, "amount", 0, 300, "sharpen.amount") if "amount" in sharpen else 0.0
-    radius = _number(sharpen, "radius", 0.2, 6, "sharpen.radius") if "radius" in sharpen else 2.0
+    radius = _number(sharpen, "radius", 0.2, 40, "sharpen.radius") if "radius" in sharpen else 2.0
     if amount > 0:
       out["sharpen"] = {"amount": amount, "radius": radius}
   return out or None

@@ -58,6 +58,12 @@ def test_normalize_rejects_bad_documents(bad):
     edits.normalize(bad)
 
 
+def test_sharpen_radius_goes_up_to_40():
+  assert edits.normalize({"sharpen": {"amount": 50, "radius": 40}})["sharpen"]["radius"] == 40.0
+  with pytest.raises(edits.EditsError):
+    edits.normalize({"sharpen": {"amount": 50, "radius": 40.5}})
+
+
 def test_identity_lut_is_identity_and_levels_compose():
   assert list(edits.compile_lut(None)[0]) == list(range(256))
   r, g, b = edits.compile_lut(edits.normalize({"levels": {"black": 50, "white": 200}}))
