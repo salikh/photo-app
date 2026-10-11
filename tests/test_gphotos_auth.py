@@ -109,6 +109,15 @@ def test_the_manual_flow_stores_a_refresh_token(tmp_path, reply):
   assert saved["refresh_token"] == "RT" and stat.S_IMODE(os.stat(t).st_mode) == 0o600
 
 
+def test_a_web_client_uses_its_registered_https_redirect(tmp_path):
+  c = str(tmp_path / "c.json")
+  json.dump({"web": {"client_id": "i", "client_secret": "s",
+                     "redirect_uris": ["https://example.org/callback"]}}, open(c, "w"))
+  assert gphotos_auth.redirect_uri(c) == "https://example.org/callback"
+  write_client(c)
+  assert gphotos_auth.redirect_uri(c).startswith("http://127.0.0.1")
+
+
 def test_a_pasted_url_with_the_wrong_state_is_rejected(tmp_path):
   with pytest.raises(gphotos_auth.AuthError, match="did not match"):
     run_flow(tmp_path, lambda st: "http://127.0.0.1:1/?code=X&state=forged", FakeToken())

@@ -3,7 +3,7 @@
   python -m photoapp.google_auth
 
 Prints a URL; open it in any browser and approve. The browser then tries to load
-http://127.0.0.1:1/?code=... and shows a connection error: copy the code (or the whole address) from
+the OAuth client's redirect URI (https://.../callback?code=...) and may show an error page: copy the code (or the whole address) from
 the address bar and paste it at the prompt. Works over ssh. Stores a refresh token in
 --gphotos_token_file. See docs/google-photos.md.
 """
@@ -21,7 +21,8 @@ def main(argv):
 
   def show(url):
     print("Open this URL in a browser and approve access:\n\n  " + url + "\n\n"
-          "The browser will then fail to load a http://127.0.0.1:1/?code=... page; that is expected.",
+          "The browser then lands on the client's redirect URI, probably an error page; that is fine, "
+          "the code is in its address.",
           flush=True)
 
   def read_code():

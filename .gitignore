@@ -10,3 +10,4 @@ __pycache__/
 *.jsonl
 ENV
 *.json
+.*.json

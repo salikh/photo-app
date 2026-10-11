@@ -120,8 +120,18 @@ def _pkce():
   return verifier, challenge.decode()
 
 
-REDIRECT = "http://127.0.0.1:1"   # nothing listens: the browser shows an error page whose address
-                                  # bar holds the code, which the user pastes back
+FALLBACK_REDIRECT = "http://127.0.0.1:1"   # Desktop clients only; nothing listens there
+
+
+def redirect_uri(path):
+  """The redirect the user's browser lands on after approving; its address bar holds the code,
+  which the user pastes back. A 'Web application' client registers its own https redirect (the page
+  there need not exist); a 'Desktop app' client has none, so it falls back to a dead loopback address."""
+  with open(path) as f:
+    data = json.load(f)
+  uris = (data.get("installed") or data.get("web") or {}).get("redirect_uris") or []
+  return next((u for u in uris if u.startswith("https://")), None) or (uris[0] if uris else
+                                                                       FALLBACK_REDIRECT)
 
 
 def parse_code(text, state):
@@ -147,7 +157,7 @@ def authorize(client_path, token_path, show_url, read_code, post=urllib_post_for
   client_id, secret, auth_uri, token_uri = load_client(client_path)
   verifier, challenge = _pkce()
   state = secrets.token_urlsafe(16)
-  redirect = REDIRECT
+  redirect = redirect_uri(client_path)
   show_url(auth_uri + "?" + urllib.parse.urlencode({
       "client_id": client_id, "redirect_uri": redirect, "response_type": "code",
       "scope": " ".join(SCOPES), "access_type": "offline", "prompt": "consent", "state": state,
