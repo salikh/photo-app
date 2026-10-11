@@ -8,6 +8,8 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
+Epic 217 (Fujifilm RAF support: 218 EXIF, 219 X-Trans tuning preview DNG, 220 JPG+RAF audit, 221 question on RAF Huge size) is in progress.
+
 Epic 205 (export to Google Photos, 206-215) is done; ticket 216 (later Google Photos work: captions, video tunings, sync) is a parked idea, not started. No other open tickets. Tickets 196 (loupe "⋯" actions menu), 197 (video + Files panel), 198 (popovers next to their control), 199 (filter picker click-outside) 200 (rating AND tag filters) 201 (AnimSmall covers the whole video) 202 (video filter hang) 203 (AnimSmall uncut up to 75 s) and 204 (stale CSS on iPad) are done. Epic 184 (video support, 185-195), epic 173 (AI photo ranking, 174-182) and epic 169 (35mm-equivalent focal length, 170-172) are done — see
 `STATUS.md`. Ticket 168 (Files-pane camera-make dedup), epic 164 (Pentax lens type, 165-167), epic
 160 (PEF support, 161-163), epic 156 (lens metadata, 157-159), the ten build-order epics, v1
