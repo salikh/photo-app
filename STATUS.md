@@ -402,6 +402,17 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       and writes the full EXIF set, so existing PEF rows fill immediately; `docs/operations.md`
       updated
 
+
+## Fujifilm RAF support (user request 2026-10-11, done except question 221)
+
+- [x] [217](docs/tickets/217.md) Epic (user request 2026-10-11): Fujifilm RAF support, from the
+      sample `/zoo/Pictures/2026/2026-10-11-fuji` (X-H1, X-Trans). [218](docs/tickets/218.md) EXIF
+      from the RAF's embedded JPEG (`fileinfo.read_exif_from_raf`; a NaN FNumber is now `None`);
+      [219](docs/tickets/219.md) the tuning preview DNG handles a 6x6 X-Trans CFA, verified against
+      rawpy and the vendored LibRaw-Wasm; [220](docs/tickets/220.md) JPG+RAF pairing already
+      matched JPG+DNG, now covered by `tests/test_raf_pairing.py`. Open: question
+      [221](docs/tickets/221.md) (Huge size of a lone untouched RAF).
+
 ## Pentax lens type (user bug report 2026-09-30, done)
 
 - [x] [164](docs/tickets/164.md) Epic: Pentax files store the lens only as a two-byte MakerNote

@@ -68,6 +68,7 @@ def write_synthetic_raf(path, undefined_aperture=False):
   jpeg = buf.getvalue()
   header = b"FUJIFILMCCD-RAW " + b"0201FF129502" + b"X-H1".ljust(32, b"\0") + b"0100".ljust(4, b"\0")
   header = header.ljust(84, b"\0") + struct.pack(">II", 160, len(jpeg))
+  os.makedirs(os.path.dirname(path), exist_ok=True)
   with open(path, "wb") as f:
     f.write(header.ljust(160, b"\0") + jpeg + b"\0" * 64)
 
