@@ -19,6 +19,8 @@ const VIEWER = [
   ['G', 'cycle representative file'],
   ['R', 'rotate left 90°'],
   ['U', 'undo'], ['I', 'files panel'],
+  ['S', 'store this file\'s adjustments (edits / RAW settings)'],
+  ['A', 'apply the stored adjustments to this file'],
   ['Hold C', 'compare: show the committed rendering while tuning RAW settings'],
   ['Esc', 'close panel, or close viewer'],
 ];

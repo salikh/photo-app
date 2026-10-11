@@ -511,3 +511,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       - [x] [227](docs/tickets/227.md) pipeline: edited files render each size from the original
       - [x] [228](docs/tickets/228.md) Edit panel + `GET /api/files/{id}/edit_preview`
       - [x] [229](docs/tickets/229.md) exports / Google Photos use the edited render
+- [x] [230](docs/tickets/230.md) Hotkeys S (store the shown file's adjustments) and A (apply them to the shown file): edit document for non-RAW stills, RAW settings for RAW

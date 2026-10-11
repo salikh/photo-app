@@ -67,3 +67,31 @@ def test_edit_panel_previews_saves_and_never_touches_the_original(page, server):
   expect(page.locator(".edit-settings button", has_text="Save")).to_be_disabled(timeout=15000)
   assert api(server, f"/api/photos/{ids[0]}")["files"][0]["edits"] is None
   assert abs(mean_red(server, fid["id"]) - before) < 3
+
+
+def test_s_stores_and_a_applies_adjustments_between_files(page, server):
+  # Ticket 230: S copies the shown file's edits (pending ones included), A saves them to another.
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  page.keyboard.press("i")
+  set_slider(page, "brightness", -50)                  # pending, not saved
+  page.locator("body").click(position={"x": 5, "y": 5})   # take focus off the slider
+  page.keyboard.press("s")
+  expect(page.locator("#toast")).to_contain_text("stored adjustments from IMG_0001")
+  page.keyboard.press("ArrowRight")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0002")
+  page.keyboard.press("a")
+  expect(page.locator("#toast")).to_contain_text("applied adjustments from IMG_0001")
+  second = api(server, f"/api/photos/{ids[1]}")["files"][0]
+  assert second["edits"] == {"brightness": -50.0}
+  assert api(server, f"/api/photos/{ids[0]}")["files"][0]["edits"] is None   # the source wasn't saved
+  page.keyboard.press("ArrowRight")                    # a third file: store "nothing", apply resets
+  page.keyboard.press("ArrowLeft")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0002")
+  page.keyboard.press("s")                             # IMG_0002's saved edits
+  page.keyboard.press("ArrowLeft")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  page.keyboard.press("a")
+  expect(page.locator("#toast")).to_contain_text("applied adjustments")
+  assert api(server, f"/api/photos/{ids[0]}")["files"][0]["edits"] == {"brightness": -50.0}

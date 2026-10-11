@@ -1113,6 +1113,71 @@ function renderEditBody(f, container) {
       }}) : null));
 }
 
+// ------------------------------------------- store / apply adjustments (ticket 230)
+//
+// S stores the shown file's adjustments -- what is on screen: pending slider values for this file
+// if its panel has them, else the saved ones -- and A applies them to the shown file and saves,
+// exactly like the panel's Save. "Adjustments" are the edit document of a non-RAW still (epic 222)
+// or the RAW settings of a RAW file; the two kinds are not interchangeable. Crop/rotation are not
+// copied. Kept in sessionStorage as well so a reload keeps it.
+
+let adjustmentClipboard = null;   // {kind: 'edits'|'raw', value, from}
+try { adjustmentClipboard = JSON.parse(sessionStorage.getItem('adjustmentClipboard')); } catch (e) { /* none */ }
+
+async function shownFileDetail() {
+  const photo = current();
+  const detail = await get('/api/photos/' + photo.id);
+  return detail.files.find((f) => f.id === photo.file_id) || null;
+}
+
+async function storeAdjustments() {
+  let f;
+  try { f = await shownFileDetail(); } catch (e) { toast(e.message, true); return; }
+  if (!f || f.is_video || !(f.is_raw || f.is_editable)) { toast('nothing to store for this file'); return; }
+  const name = f.path.split('/').pop();
+  if (f.is_raw) {
+    const values = pending && pending.fileId === f.id ? pending.values : committedValues(f);
+    adjustmentClipboard = {kind: 'raw', value: {...values}, from: name};
+  } else {
+    const doc = editPending && editPending.fileId === f.id ? editDocument(editPending.values) : (f.edits || {});
+    adjustmentClipboard = {kind: 'edits', value: doc, from: name};
+  }
+  try { sessionStorage.setItem('adjustmentClipboard', JSON.stringify(adjustmentClipboard)); } catch (e) { /* ok */ }
+  const empty = adjustmentClipboard.kind === 'raw'
+    ? Object.values(adjustmentClipboard.value).every((v) => v == null)
+    : Object.keys(adjustmentClipboard.value).length === 0;
+  toast(empty ? `stored: no adjustments (from ${name})` : `stored adjustments from ${name}`);
+}
+
+async function applyAdjustments() {
+  if (!adjustmentClipboard) { toast('nothing stored yet (S stores the shown file\'s adjustments)'); return; }
+  let f;
+  try { f = await shownFileDetail(); } catch (e) { toast(e.message, true); return; }
+  if (!f || f.is_video || !(f.is_raw || f.is_editable)) { toast('adjustments do not apply to this file'); return; }
+  if ((adjustmentClipboard.kind === 'raw') !== !!f.is_raw) {
+    toast(`stored adjustments are for ${adjustmentClipboard.kind === 'raw' ? 'RAW' : 'non-RAW'} files`, true);
+    return;
+  }
+  let res;
+  try {
+    res = adjustmentClipboard.kind === 'raw'
+      ? await post(`/api/files/${f.id}/raw_settings`, adjustmentClipboard.value)
+      : await post(`/api/files/${f.id}/edits`,
+                   {edits: Object.keys(adjustmentClipboard.value).length ? adjustmentClipboard.value : null});
+  } catch (e) { return; }   // post() already toasted the server's complaint
+  toast(`applied adjustments from ${adjustmentClipboard.from}; thumbnails will regenerate`);
+  setRevision(f.id, res.rev);
+  discardPending();
+  if (current().file_id === f.id) {
+    current().rev = res.rev;
+    ui.img.src = imgUrl('Medium', f.id);
+    retryOnce(ui.img, current());
+    refreshCellThumb(current().id, f.id);
+    ui.strip.refreshThumb(current().id, f.id);
+  }
+  if (filesOpen) openFiles();
+}
+
 // ------------------------------------------- non-destructive crop (ticket 115)
 //
 // A crop is stored per file as normalized x/y/w/h fractions. Thumb/Small are rendered cropped
@@ -1628,6 +1693,8 @@ function onKey(e) {
   else if (key === 'g' || key === 'G') cycleRepresentative();
   else if (key === 'r' || key === 'R') rotateLeft();
   else if (key === 'u' || key === 'U') undo();
+  else if (key === 's' || key === 'S') storeAdjustments();   // ticket 230
+  else if (key === 'a' || key === 'A') applyAdjustments();
   else if (key === 'i' || key === 'I') filesOpen ? closeFiles() : openFiles();
   else if (key === 'Escape') {
     if (filterPanelOpen) closeFilterPicker();
