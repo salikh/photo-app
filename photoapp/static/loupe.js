@@ -726,7 +726,7 @@ function isDirty(values, committed) {
 // Ticket 107: the tuned overlay shows only while the user is asking to compare (hovering the
 // sliders, or holding the Shift fallback) -- never merely because a provisional render loaded.
 function syncTuningVisible() {
-  ui.tuning.hidden = !(pending && ui.tuning.src && (sliderHover || shiftHeld));
+  ui.tuning.hidden = !((pending || editPending) && ui.tuning.src && (sliderHover || shiftHeld));
 }
 
 function showRowPreview(f) {
@@ -742,6 +742,7 @@ function hideRowPreview() {
 }
 
 function discardPending() {
+  discardEditPending();
   if (pending) { clearTimeout(pending.timer); if (pending.session) pending.session.dispose(); }
   pending = null;
   sliderHover = false;
@@ -933,6 +934,183 @@ function renderRawSettingsBody(f, container) {
           renderRawSettingsBody(f, container);
         },
       })));
+}
+
+// ------------------------------------------- non-destructive edits for non-RAW stills (epic 222)
+//
+// The same shape as the RAW sliders above (tickets 094/107/108): dragging only updates `editPending`
+// and asks the server for a provisional render (GET /api/files/{id}/edit_preview, never stored)
+// shown in the shared `ui.tuning` overlay while hovering the sliders or holding Shift; Save POSTs the
+// document (the server bakes it into every cached size), Discard/closing the panel drops it. The
+// original file is never touched. photoapp/edits.py is the single definition of the maths.
+
+let editPending = null;   // {fileId, values, timer, seq} for the file whose edit controls are open
+let editPreviewSeq = 0;
+let editBlobUrl = null;
+
+const EDIT_DEFAULTS = {
+  brightness: 0, contrast: 1, black: 0, gamma: 1, white: 255, saturation: 1, mono: false,
+  auto_levels: false, sharpen_amount: 0, sharpen_radius: 2,
+  r_black: 0, r_gamma: 1, r_white: 255, g_black: 0, g_gamma: 1, g_white: 255,
+  b_black: 0, b_gamma: 1, b_white: 255,
+};
+
+function editValues(doc) {
+  const v = {...EDIT_DEFAULTS};
+  doc = doc || {};
+  for (const k of ['brightness', 'contrast', 'saturation']) if (doc[k] != null) v[k] = doc[k];
+  if (doc.auto_levels) v.auto_levels = true;
+  if (doc.mono) v.mono = true;
+  if (doc.levels) Object.assign(v, doc.levels);
+  for (const c of ['r', 'g', 'b']) {
+    const l = doc[`levels_${c}`];
+    if (l) for (const k of ['black', 'gamma', 'white']) v[`${c}_${k}`] = l[k];
+  }
+  if (doc.sharpen) { v.sharpen_amount = doc.sharpen.amount; v.sharpen_radius = doc.sharpen.radius; }
+  return v;
+}
+
+function editDocument(v) {
+  const doc = {};
+  for (const k of ['brightness', 'contrast', 'saturation']) if (v[k] !== EDIT_DEFAULTS[k]) doc[k] = v[k];
+  if (v.auto_levels) doc.auto_levels = true;
+  if (v.mono) doc.mono = true;
+  if (v.black !== 0 || v.gamma !== 1 || v.white !== 255) {
+    doc.levels = {black: v.black, gamma: v.gamma, white: v.white};
+  }
+  for (const c of ['r', 'g', 'b']) {
+    if (v[`${c}_black`] !== 0 || v[`${c}_gamma`] !== 1 || v[`${c}_white`] !== 255) {
+      doc[`levels_${c}`] = {black: v[`${c}_black`], gamma: v[`${c}_gamma`], white: v[`${c}_white`]};
+    }
+  }
+  if (v.sharpen_amount > 0) doc.sharpen = {amount: v.sharpen_amount, radius: v.sharpen_radius};
+  return doc;
+}
+
+function discardEditPending() {
+  if (editPending) clearTimeout(editPending.timer);
+  editPending = null;
+  editPreviewSeq++;
+  if (ui.tuning && !pending) { ui.tuning.hidden = true; ui.tuning.src = ''; }
+  if (ui.tuningBusy && !pending) ui.tuningBusy.hidden = true;
+  if (editBlobUrl) { URL.revokeObjectURL(editBlobUrl); editBlobUrl = null; }
+}
+
+function scheduleEditPreview(f) {
+  clearTimeout(editPending.timer);
+  editPending.timer = setTimeout(() => requestEditPreview(f), PREVIEW_DEBOUNCE_MS);
+}
+
+async function requestEditPreview(f) {
+  if (!editPending || editPending.fileId !== f.id) return;
+  const mySeq = ++editPreviewSeq;
+  ui.tuningBusy.hidden = false;
+  const qs = new URLSearchParams({size: 'Medium', edits: JSON.stringify(editDocument(editPending.values))});
+  let url = null;
+  try {
+    const res = await fetch(`/api/files/${f.id}/edit_preview?${qs}`);
+    if (res.ok) url = URL.createObjectURL(await res.blob());
+  } catch (e) { /* the overlay just keeps its last image */ }
+  if (mySeq !== editPreviewSeq) { if (url) URL.revokeObjectURL(url); return; }   // superseded
+  ui.tuningBusy.hidden = true;
+  if (!url) return;
+  if (editBlobUrl) URL.revokeObjectURL(editBlobUrl);
+  editBlobUrl = url;
+  ui.tuning.src = url;
+}
+
+async function saveEdits(f) {
+  const doc = editDocument(editPending.values);
+  let res;
+  try {
+    res = await post(`/api/files/${f.id}/edits`, {edits: Object.keys(doc).length ? doc : null});
+    toast('saved; thumbnails will regenerate on next view');
+  } catch (e) { return; }
+  setRevision(f.id, res.rev);
+  if (current().file_id === f.id) current().rev = res.rev;
+  discardEditPending();
+  if (current().file_id === f.id) {
+    ui.img.src = imgUrl('Medium', f.id);
+    retryOnce(ui.img, current());
+    refreshCellThumb(current().id, f.id);
+    ui.strip.refreshThumb(current().id, f.id);
+  }
+  if (filesOpen) openFiles();
+}
+
+function editControls(f) {
+  if (!editPending || editPending.fileId !== f.id) {
+    editPending = {fileId: f.id, values: editValues(f.edits), timer: null};
+  }
+  const container = el('div', {
+    class: 'raw-settings edit-settings',
+    onmouseenter: () => { sliderHover = true; syncTuningVisible(); },
+    onmouseleave: () => { sliderHover = false; syncTuningVisible(); },
+  });
+  renderEditBody(f, container);
+  return container;
+}
+
+function renderEditBody(f, container) {
+  const values = editPending.values;
+  const committed = editValues(f.edits);
+  const saveBtn = el('button', {class: 'primary', text: 'Save', onclick: () => saveEdits(f)});
+  const discardBtn = el('button', {text: 'Discard changes', onclick: () => {
+    editPending.values = editValues(f.edits);
+    renderEditBody(f, container);
+    scheduleEditPreview(f);
+  }});
+  const syncButtons = () => {
+    const dirty = JSON.stringify(values) !== JSON.stringify(committed);
+    saveBtn.disabled = !dirty;
+    discardBtn.hidden = !dirty;
+  };
+  syncButtons();
+  const slider = (label, key, min, max, step, fmt = (v) => String(v)) => {
+    const out = el('span', {class: 'meta', text: fmt(values[key])});
+    return el('div', {class: 'row'},
+      el('label', {text: label}),
+      el('input', {type: 'range', min, max, step, value: values[key], 'aria-label': label.toLowerCase(),
+                 oninput: (e) => {
+                   values[key] = Number(e.target.value);
+                   out.textContent = fmt(values[key]);
+                   syncButtons();
+                   scheduleEditPreview(f);
+                 }}),
+      out);
+  };
+  const two = (v) => v.toFixed(2);
+  const toggle = (label, key) => el('div', {class: 'row'},
+    el('label', {text: label}),
+    el('input', {type: 'checkbox', checked: values[key], 'aria-label': label.toLowerCase(),
+               onchange: (e) => { values[key] = e.target.checked; syncButtons(); scheduleEditPreview(f); }}));
+  const channelLevels = (c, name) => [
+    slider(`${name} black`, `${c}_black`, 0, 254, 1),
+    slider(`${name} gamma`, `${c}_gamma`, 0.2, 5, 0.05, two),
+    slider(`${name} white`, `${c}_white`, 1, 255, 1)];
+  const dirtyFromDefault = JSON.stringify(values) !== JSON.stringify(EDIT_DEFAULTS);
+  return setChildren(container,
+    el('div', {class: 'row'}, el('label', {text: 'Edit (JPG)'}),
+       el('span', {class: 'meta', text: 'the original file is never changed'})),
+    slider('Brightness', 'brightness', -100, 100, 1),
+    slider('Contrast', 'contrast', 0.5, 2, 0.05, two),
+    slider('Black point', 'black', 0, 254, 1),
+    slider('Midtones', 'gamma', 0.2, 5, 0.05, two),
+    slider('White point', 'white', 1, 255, 1),
+    toggle('Monochrome', 'mono'),
+    slider('Sharpen', 'sharpen_amount', 0, 300, 5),
+    slider('Sharpen radius', 'sharpen_radius', 0.2, 6, 0.1, (v) => v.toFixed(1)),
+    el('details', {class: 'advanced'},
+      el('summary', {text: 'Advanced'}),
+      slider('Saturation', 'saturation', 0, 2, 0.05, two),
+      toggle('Auto levels', 'auto_levels'),
+      channelLevels('r', 'Red'), channelLevels('g', 'Green'), channelLevels('b', 'Blue')),
+    el('div', {class: 'row'}, saveBtn, discardBtn,
+      dirtyFromDefault ? el('button', {text: 'Reset to default', onclick: () => {
+        editPending.values = {...EDIT_DEFAULTS};
+        renderEditBody(f, container);
+        scheduleEditPreview(f);
+      }}) : null));
 }
 
 // ------------------------------------------- non-destructive crop (ticket 115)
@@ -1202,6 +1380,7 @@ async function openFiles() {
       f.ai_score != null ? el('div', {class: 'meta ai-rating', text: 'AI rating ' + f.ai_score.toFixed(1),
                                       title: aiAnswersText(f.ai_answers)}) : null,
       f.is_raw && !f.missing ? rawSettingsControls(f) : null,
+      f.is_editable && !f.missing ? editControls(f) : null,   // epic 222
       el('div', {class: 'row'},
         f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :
           el('button', {text: 'Show this', onclick: () => setRepresentative(detail, f.id)}),

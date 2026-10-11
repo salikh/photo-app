@@ -23,6 +23,7 @@ from PIL import Image
 
 from photoapp import curation
 from photoapp import crop as crop_lib
+from photoapp import edits as edits_lib
 from photoapp import db as db_lib
 from photoapp import ai_rating
 from photoapp import export
@@ -147,6 +148,10 @@ class CropBody(pydantic.BaseModel):
 
 class RotationBody(pydantic.BaseModel):
   rotation: int | None = None
+
+
+class EditsBody(pydantic.BaseModel):
+  edits: dict | None = None   # ticket 226: photoapp/edits.py's document; null/{} clears it
 
 
 def create_app(conn, settings):
@@ -739,6 +744,65 @@ def create_app(conn, settings):
           "SELECT thumb_rev FROM files WHERE id = ?", (file_id,)).fetchone()[0]
     return {"file_id": file_id, "cleared": cleared, "rotation": current, "rev": rev}
 
+  def editable_row(file_id):
+    """file_row, 400 unless it is a still the edits apply to (not RAW, not video)."""
+    row = file_row(file_id)
+    name = row["path"]
+    if fileinfo.is_raw(name) or fileinfo.is_video(name) or not fileinfo.is_image(name):
+      raise HTTPException(400, "edits are only for non-RAW still images")
+    return row
+
+  @app.post("/api/files/{file_id}/edits")
+  @db_route
+  def set_edits(file_id: int, body: EditsBody):
+    """Ticket 226: replace this file's non-destructive edits wholesale (null or an all-default
+    document clears them) and clear every cached thumbnail so the next request regenerates with
+    the edits baked in (ticket 227). The original file is never touched."""
+    row = editable_row(file_id)
+    with app.state.db_lock:
+      try:
+        current = edits_lib.set(app.state.db, file_id, body.edits)
+      except edits_lib.EditsError as e:
+        raise HTTPException(400, str(e))
+      cleared = thumbs.clear(settings.thumbs_dir, app.state.db, file_id, row["path"])
+      rev = app.state.db.execute(
+          "SELECT thumb_rev FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+    return {"file_id": file_id, "cleared": cleared, "edits": current, "rev": rev}
+
+  @app.get("/api/files/{file_id}/edit_preview")
+  async def edit_preview(file_id: int, edits: str = "", size: str = "Medium"):
+    """Ticket 228: a provisional render of file_id with these *pending* edits (a JSON document in
+    the query string), straight from the original, in memory -- never written to the database or
+    the thumbs cache, like raw_preview (ticket 094). The crop is not applied (the loupe shows the
+    whole frame) but the rotation is."""
+    if size not in thumbs.SIZES or thumbs.LONG_EDGE[size] is None:
+      raise HTTPException(404, "unknown size")
+    row = await run_in_threadpool(run_db, lambda: editable_row(file_id))
+    try:
+      doc = edits_lib.normalize(json.loads(edits) if edits else None)
+    except (ValueError, edits_lib.EditsError) as e:
+      raise HTTPException(400, f"bad edits: {e}")
+    def get_rotation():
+      with app.state.db_lock:
+        return rotation_lib.get(app.state.db, file_id)
+    rotation = await run_in_threadpool(run_db, get_rotation)
+    full_path = os.path.join(settings.pictures_dir, row["path"])
+    long_edge = thumbs.LONG_EDGE[size]
+
+    def render():
+      with render_slots:
+        img = thumbs._open(full_path, rotation=rotation, draft_edge=long_edge)
+        buf = io.BytesIO()
+        thumbs.resize_and_edit(img, long_edge, doc).save(
+            buf, "JPEG", quality=thumbs.JPEG_QUALITY)
+        return buf.getvalue()
+    try:
+      content = await run_in_threadpool(render)
+    except thumbs.Unsupported:
+      raise HTTPException(404, "could not render a preview")
+    return Response(content=content, media_type="image/jpeg",
+                    headers={"Cache-Control": "no-store"})
+
   @app.get("/api/thumbs/usage")
   @db_route
   def thumbs_usage(lacking: bool = False):
@@ -938,8 +1002,9 @@ def create_app(conn, settings):
       with app.state.db_lock:
         return (raw_settings.get(app.state.db, file_id),
                 crop_lib.get(app.state.db, file_id),
-                rotation_lib.get(app.state.db, file_id))
-    file_settings, file_crop, file_rotation = await run_in_threadpool(
+                rotation_lib.get(app.state.db, file_id),
+                edits_lib.get(app.state.db, file_id))
+    file_settings, file_crop, file_rotation, file_edits = await run_in_threadpool(
         run_db, get_file_settings)
     if fileinfo.is_video(row["path"]) and not thumbs.lookup(settings.thumbs_dir, size, row["path"]):
       # Ticket 202: never extract a frame inside the request. A larger cached size can still be
@@ -958,7 +1023,7 @@ def create_app(conn, settings):
         app.state.jobs.enqueue("video_thumb", file_id)
         raise HTTPException(404, "being rendered; retry shortly", headers={"Retry-After": "2"})
     if (size == "Huge" and not fileinfo.is_raw(row["path"])
-        and rotation_lib.is_default(file_rotation)):
+        and rotation_lib.is_default(file_rotation) and edits_lib.is_default(file_edits)):
       # Huge is the full size: an existing one, else the original if the
       # browser can show it. Never re-encode a full-size copy on request.
       # Ticket 129: a rotated file cannot be served straight from the original
@@ -970,7 +1035,8 @@ def create_app(conn, settings):
     else:
       made = await run_in_threadpool(
           render_limited, settings.pictures_dir, settings.thumbs_dir,
-          row["path"], size, settings=file_settings, crop=file_crop, rotation=file_rotation)
+          row["path"], size, settings=file_settings, crop=file_crop, rotation=file_rotation,
+          edits=file_edits)
       path = None
       if made:
         path, source = made

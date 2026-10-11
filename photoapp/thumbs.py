@@ -13,6 +13,7 @@ from PIL import Image
 from PIL import ImageOps
 
 from photoapp import crop as crop_lib
+from photoapp import edits as edits_lib
 from photoapp import fileinfo
 from photoapp import paths
 from photoapp import previews
@@ -113,7 +114,7 @@ def _preview_too_small_for_full(source, preview):
   return size is not None and max(preview.size) < SMALL_PREVIEW_FRACTION * max(size[0], size[1])
 
 
-def _open(source, settings=None, crop=None, rotation=None, full=False):
+def _open(source, settings=None, crop=None, rotation=None, full=False, draft_edge=None):
   """Decode source to an RGB PIL image, cropped to crop (ticket 115) and rotated (ticket 129).
 
   RAW files normally use their embedded preview -- fast, no demosaic (Pillow would "succeed" on
@@ -141,16 +142,28 @@ def _open(source, settings=None, crop=None, rotation=None, full=False):
     return _finish(preview.convert("RGB"), crop, rotation)
   try:
     with Image.open(source) as img:
+      if draft_edge:
+        # JPEG only: let the decoder skip DCT scales that would still leave >= draft_edge pixels
+        # (ticket 228's live preview; ~40% faster than a full decode).
+        img.draft("RGB", (draft_edge, draft_edge))
       return _finish(ImageOps.exif_transpose(img).convert("RGB"), crop, rotation)
   except Exception as e:  # Pillow raises many kinds of errors
     raise Unsupported(f"{source}: {e}")
 
 
-def save(img, dest, long_edge):
-  """Write img as a JPEG at most long_edge on its long side (None: full)."""
+def resize_and_edit(img, long_edge, edits=None):
+  """img downscaled to at most long_edge on its long side (None: full size), then with the
+  non-destructive edits (ticket 227) applied at that output size. Never modifies img."""
   if long_edge:
     img = img.copy()
     img.thumbnail((long_edge, long_edge), Image.LANCZOS)
+  return edits_lib.apply(img, edits)
+
+
+def save(img, dest, long_edge, edits=None):
+  """Write img as a JPEG at most long_edge on its long side (None: full), with edits applied after
+  the downscale (ticket 227)."""
+  img = resize_and_edit(img, long_edge, edits)
   os.makedirs(os.path.dirname(dest), exist_ok=True)
   fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest), suffix=".tmp")
   try:
@@ -164,17 +177,19 @@ def save(img, dest, long_edge):
   return dest
 
 
-def render(source, dest, long_edge, settings=None, crop=None, rotation=None):
+def render(source, dest, long_edge, settings=None, crop=None, rotation=None, edits=None):
   """Write a JPEG of source, at most long_edge on its long side, to dest.
 
   settings: the source file's raw_settings.get()-shaped dict (ticket 085), or None -- ignored
   for a non-RAW source. crop: the source file's crop.get()-shaped dict (ticket 115), or None.
-  rotation: the source file's rotation.get() value (ticket 129), or None. Never upscales.
+  rotation: the source file's rotation.get() value (ticket 129), or None. edits: the file's
+  edits.get() document (ticket 227), applied after the downscale. Never upscales.
   long_edge None keeps the full size. The write is atomic. Raises Unsupported if source cannot
   be decoded (a RAW file without a usable embedded preview, at default settings, needs
   render_raw_sizes()).
   """
-  return save(_open(source, settings, crop, rotation, full=long_edge is None), dest, long_edge)
+  return save(_open(source, settings, crop, rotation, full=long_edge is None), dest, long_edge,
+              edits)
 
 
 def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=None,
@@ -257,7 +272,8 @@ def _record(conn, file_id, size, path, source):
       (file_id, size, path, os.path.getsize(path), source))
 
 
-def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, rotation=None):
+def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, rotation=None,
+         edits=None):
   """Return (path, source) of a thumbnail of exactly this size, making it if
   needed, or None if that is not possible without a RAW converter.
 
@@ -279,6 +295,11 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, ro
   Ticket 129: rotation is file_path's rotation.get() value. Like crop it is applied when
   rendering from the original; a larger cached size already has it baked in, so the
   downscale-from-larger step must NOT apply it again (hence `source_rotation` below).
+
+  Ticket 227: edits is file_path's edits.get() document (a non-RAW still). An edited file is
+  always rendered straight from the original, one decode per size -- never derived from a larger
+  cached size, which already has the edits baked in and (for sharpening) would get them twice --
+  and the edits are applied after each size's own downscale. An unedited file is untouched by this.
 
   Ticket 093: a settings-tuned RAW demosaics through previews.render() (slow, ~1s) rather than
   the fast embedded-preview path, and would otherwise pay that cost again for every distinct size
@@ -303,7 +324,8 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, ro
     original = os.path.join(pictures_dir, file_path)
     dest = thumb_path(thumbs_dir, size, file_path)
     try:
-      render(original, dest, LONG_EDGE[size], settings=settings, crop=crop, rotation=rotation)
+      render(original, dest, LONG_EDGE[size], settings=settings, crop=crop, rotation=rotation,
+             edits=edits)
     except Unsupported as e:
       logging.vlog(3, "cannot render cropped %s from %s: %s", size, original, e)
       return None
@@ -312,7 +334,7 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, ro
   dest = thumb_path(thumbs_dir, size, file_path)
   sources = [lookup(thumbs_dir, s, file_path)
              for s in SIZES[SIZES.index(size) + 1:]]
-  sources = [s for s in sources if s]
+  sources = [s for s in sources if s and not edits]
   original = os.path.join(pictures_dir, file_path)
   if (not sources and size != "Huge" and fileinfo.is_raw(original)
       and settings and not raw_settings.is_default(settings)):
@@ -329,7 +351,8 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, ro
     # A larger cached size is already rotated; only a render from the original needs it.
     source_rotation = rotation if source == original else None
     try:
-      render(source, dest, LONG_EDGE[size], settings=settings, rotation=source_rotation)
+      render(source, dest, LONG_EDGE[size], settings=settings, rotation=source_rotation,
+             edits=edits if source == original else None)
     except Unsupported as e:
       logging.vlog(3, "cannot render %s from %s: %s", size, source, e)
       continue
@@ -352,7 +375,7 @@ def ensure(conn, pictures_dir, thumbs_dir, file_id, file_path, size):
   file_crop = crop_lib.get(conn, file_id)
   file_rotation = rotation_lib.get(conn, file_id)
   made = make(pictures_dir, thumbs_dir, file_path, size, settings=settings,
-              crop=file_crop, rotation=file_rotation)
+              crop=file_crop, rotation=file_rotation, edits=edits_lib.get(conn, file_id))
   if made is None:
     return None
   path, source = made

@@ -496,3 +496,18 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [203](docs/tickets/203.md) bug: `AnimSmall` is the uncut clip up to 75 s (was 60 s); recipe `anim-v3` invalidates older ones
 - [x] [204](docs/tickets/204.md) bug: iPad showed the loupe video misplaced -- a stale cached `style.css` (hand-bumped `?v=121`); the app's own files are now always revalidated
 - [x] [205](docs/tickets/205.md) epic: export to Google Photos as an album (206 research, 207 EXIF in exports, 208 per-export GPS opt-in, 209 videos in export, 210 OAuth CLI, 211 API client + fake server, 212 upload job, 213 album list/ranking, 214 export dialog, 215 docs); setup in `docs/google-photos.md`
+
+## Non-destructive edits for JPG / non-RAW stills (user request 2026-10-11, done)
+
+- [x] [222](docs/tickets/222.md) Epic: per-file edit document (brightness, contrast, levels,
+      per-channel levels, saturation, auto levels, monochrome, unsharp mask) in `files.edits`,
+      applied after the downscale and baked into every cached size; the original is never written
+      - [x] [223](docs/tickets/223.md) research: costs measured (pointwise edits = one LUT per channel,
+        free; unsharp only costly at full size)
+      - [x] [224](docs/tickets/224.md) research: client canvas is slower than the server here; bake on
+        the server, live preview via a provisional server render
+      - [x] [225](docs/tickets/225.md) decisions (all recommended defaults)
+      - [x] [226](docs/tickets/226.md) `photoapp/edits.py`, migration, `POST /api/files/{id}/edits`
+      - [x] [227](docs/tickets/227.md) pipeline: edited files render each size from the original
+      - [x] [228](docs/tickets/228.md) Edit panel + `GET /api/files/{id}/edit_preview`
+      - [x] [229](docs/tickets/229.md) exports / Google Photos use the edited render

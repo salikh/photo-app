@@ -9,6 +9,7 @@ import os
 import shutil
 
 from photoapp import crop as crop_lib
+from photoapp import edits as edits_lib
 from photoapp import exif_write
 from photoapp import fileinfo
 from photoapp import grouping
@@ -172,6 +173,7 @@ def file_to_upload(conn, settings, source_file_id, exported_path):
 def _render(conn, settings, file_id, file_path, dest):
   file_crop = crop_lib.get(conn, file_id)
   file_rotation = rotation_lib.get(conn, file_id)
+  file_edits = edits_lib.get(conn, file_id)       # ticket 229: baked into Huge / the direct render
   if crop_lib.is_default(file_crop) and rotation_lib.is_default(file_rotation):
     path = thumbs.ensure(conn, settings.pictures_dir, settings.thumbs_dir, file_id, file_path,
                          "Huge")
@@ -185,7 +187,7 @@ def _render(conn, settings, file_id, file_path, dest):
   try:
     thumbs.render(original, dest, thumbs.LONG_EDGE["Huge"],
                   settings=raw_settings.get(conn, file_id), crop=file_crop,
-                  rotation=file_rotation)
+                  rotation=file_rotation, edits=file_edits)
   except thumbs.Unsupported:
     raise ExportError(f"no preview available for {file_path}")
   return dest

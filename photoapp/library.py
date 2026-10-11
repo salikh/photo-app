@@ -321,7 +321,7 @@ def photo_detail(conn, photo_id, ai_model=None):
       "SELECT id, path, role, derived_from, link_source, mime_type, width,"
       " height, bytesize, exif_date, aperture, shutter_speed, iso, focal_length,"
       " camera_make, camera_model, lens_model, focal_length_35mm, duration, fps, video_codec, ai_score, crop_x, crop_y, crop_w, crop_h,"
-      " rotation, thumb_rev, missing,"
+      " rotation, edits, thumb_rev, missing,"
       f" hash, exported_from_file_id, {', '.join(raw_settings.COLUMNS)} FROM files"
       " WHERE photo_id = ? ORDER BY (id = ?) DESC, path",
       (photo_id, p["original_file_id"]))]
@@ -329,6 +329,9 @@ def photo_detail(conn, photo_id, ai_model=None):
     f["ai_answers"] = _ai_answers(conn, f["id"], ai_model) if f["ai_score"] is not None else None
     f["is_raw"] = fileinfo.is_raw(f["path"])   # ticket 085: only a RAW file gets settings sliders
     f["is_video"] = fileinfo.is_video(f["path"])   # ticket 185
+    f["edits"] = json.loads(f["edits"]) if f["edits"] else None   # ticket 226 (epic 222)
+    f["is_editable"] = (not f["is_raw"] and not f["is_video"]      # only a non-RAW still
+                        and fileinfo.is_image(f["path"]))
     f["has_anim"] = bool(conn.execute(              # ticket 191
         "SELECT 1 FROM thumbs WHERE file_id = ? AND size = 'AnimThumb'", (f["id"],)).fetchone())
     # Ticket 099: "exported from" jump-to-original -- dir + photo_id of the source Photo, so the

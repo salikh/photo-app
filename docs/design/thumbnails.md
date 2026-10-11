@@ -219,3 +219,29 @@ the plan for actually building it.
   0.6-9.9 s (30 KB-1.1 MB) -- that was the old 8 x 1 s `AnimSmall`. With ticket 201's `AnimSmall` (whole
   clip up to 75 s, else 5 x 15 s): 45 s clip 1.2 MB / 18 s, 199 s clip 2.6 MB / 48 s. So a video now takes
   about 25-60 s in all, and the ~770-video backlog roughly 4-5 hours on one worker.
+
+## Non-destructive edits for non-RAW stills (epic 222)
+
+A JPG (or any non-RAW still) can carry an edit document — brightness, contrast, levels (black /
+midtone gamma / white), per-channel levels, saturation, auto levels, monochrome, unsharp mask —
+stored as JSON in `files.edits` (`photoapp/edits.py`; NULL = unedited). The original file is never
+written. Costs were measured before choosing the set (ticket 223): every pointwise edit is composed
+into **one 256-entry lookup table per channel** (`compile_lut`), ~5 ms at 2000 px and ~50 ms at 24 MP;
+unsharp is the only expensive step (~1 s at 24 MP, ~100 ms at 2000 px).
+
+- **Where it runs**: after the downscale, inside `thumbs.save` (`resize_and_edit`), so the sharpen
+  radius (stored as pixels *at a 6000 px long edge*) is scaled to each output size and every cached
+  size looks alike. Order: auto levels → LUT → saturation → monochrome → sharpen.
+- **No derivation from a larger cached size for an edited file** (`make`): each size is rendered from
+  the original, one decode each (~0.25 s). A larger cached size already has the edits baked in, and
+  sharpening would be applied twice. An unedited file takes exactly the old path.
+- **Huge** of an edited file is rendered and cached (the "serve the original" shortcut in
+  `/img/Huge` is skipped, as for a rotated file); exports and Google Photos uploads use that baked
+  render (`export._render`), with the original's EXIF.
+- **Invalidation**: `POST /api/files/{id}/edits` bumps `thumb_rev` and clears the file's thumbnails
+  (same as RAW settings). Edits survive a rescan and a move (they live on the `files` row), and are
+  never written to XMP.
+- **Live preview**: `GET /api/files/{id}/edit_preview?edits=<json>&size=Medium` renders the pending
+  edits from the original (JPEG draft-decode) into memory only — the same provisional shape as
+  `raw_preview` (094); the loupe shows it while hovering the sliders or holding Shift (107).
+  Client-side canvas rendering was measured (ticket 224) and is a possible later optimisation only.

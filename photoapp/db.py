@@ -334,6 +334,11 @@ MIGRATIONS = [
     -- Ticket 212: a short human-readable progress/result line for a job (e.g. "uploaded 120 of 300").
     ALTER TABLE jobs ADD COLUMN note TEXT;
     """,
+    """
+    -- Epic 222 (ticket 226): non-destructive edits for non-RAW stills, one JSON document
+    -- (photoapp/edits.py); NULL = unedited. DB-only, not written to sidecars.
+    ALTER TABLE files ADD COLUMN edits TEXT;
+    """,
 ]
 
 
