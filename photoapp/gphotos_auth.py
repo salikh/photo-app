@@ -1,4 +1,4 @@
-"""OAuth for the Google Photos export (ticket 210): the installed-app loopback flow with PKCE, a
+"""OAuth for the Google Photos export (ticket 210): the installed-app flow with PKCE (the user pastes the code back), a
 token file, and access-token refresh. stdlib only; the HTTP transport is injectable so tests never
 touch the network. Nothing here is imported by the web app's request paths except `Credentials`.
 
@@ -9,7 +9,6 @@ only the refresh token and the last access token with its expiry. Neither file i
 
 import base64
 import hashlib
-import http.server
 import json
 import os
 import secrets
@@ -121,46 +120,41 @@ def _pkce():
   return verifier, challenge.decode()
 
 
-class _Catcher(http.server.BaseHTTPRequestHandler):
-  def do_GET(self):
-    q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-    self.server.result = {k: v[0] for k, v in q.items()}
-    self.send_response(200)
-    self.send_header("Content-Type", "text/plain; charset=utf-8")
-    self.end_headers()
-    self.wfile.write(b"Authorization received. You can close this tab and return to the terminal.")
-
-  def log_message(self, *a):
-    pass
+REDIRECT = "http://127.0.0.1:1"   # nothing listens: the browser shows an error page whose address
+                                  # bar holds the code, which the user pastes back
 
 
-def authorize(client_path, token_path, show_url, post=urllib_post_form, clock=time.time,
-              timeout=300):
-  """Run the loopback flow: show_url(url) is told where to send the user's browser; the redirect
-  lands on 127.0.0.1:<random port>. Stores the refresh token. Returns the token dict."""
+def parse_code(text, state):
+  """The code from what the user pasted: the whole redirect URL, its query string, or the bare
+  code. A pasted URL must carry our state."""
+  text = text.strip()
+  if "code=" in text or "error=" in text:
+    q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlparse(text).query or text).items()}
+    if q.get("error"):
+      raise AuthError(f"Google refused the authorization: {q['error']}")
+    if q.get("state") != state or "code" not in q:
+      raise AuthError("the pasted URL did not match this request; try again")
+    return q["code"]
+  if not text:
+    raise AuthError("no code entered")
+  return text
+
+
+def authorize(client_path, token_path, show_url, read_code, post=urllib_post_form,
+              clock=time.time):
+  """Run the manual flow: show_url(url) tells the user where to go; read_code() returns what they
+  paste back (the redirect URL or the code). Stores the refresh token. Returns the token dict."""
   client_id, secret, auth_uri, token_uri = load_client(client_path)
   verifier, challenge = _pkce()
   state = secrets.token_urlsafe(16)
-  server = http.server.HTTPServer(("127.0.0.1", 0), _Catcher)
-  server.result, server.timeout = None, timeout
-  redirect = f"http://127.0.0.1:{server.server_port}"
+  redirect = REDIRECT
   show_url(auth_uri + "?" + urllib.parse.urlencode({
       "client_id": client_id, "redirect_uri": redirect, "response_type": "code",
       "scope": " ".join(SCOPES), "access_type": "offline", "prompt": "consent", "state": state,
       "code_challenge": challenge, "code_challenge_method": "S256"}))
-  deadline = clock() + timeout
-  while server.result is None and clock() < deadline:
-    server.handle_request()
-  server.server_close()
-  res = server.result
-  if not res:
-    raise AuthError("timed out waiting for the browser authorization")
-  if res.get("error"):
-    raise AuthError(f"Google refused the authorization: {res['error']}")
-  if res.get("state") != state or "code" not in res:
-    raise AuthError("the browser callback did not match this request; try again")
+  code = parse_code(read_code(), state)
   status, body = post(token_uri, {
-      "client_id": client_id, "client_secret": secret, "code": res["code"],
+      "client_id": client_id, "client_secret": secret, "code": code,
       "code_verifier": verifier, "redirect_uri": redirect, "grant_type": "authorization_code"})
   if status != 200 or "refresh_token" not in body:
     raise AuthError(f"exchanging the code failed ({status}): "

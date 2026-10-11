@@ -80,19 +80,28 @@ def test_no_token_file_means_not_authorized(tmp_path):
     cred.access_token()
 
 
-def test_the_loopback_flow_stores_a_refresh_token(tmp_path):
+def run_flow(tmp_path, reply, post):
   c, t = str(tmp_path / "c.json"), str(tmp_path / "t.json")
   write_client(c)
-  post = FakeToken(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": 3600})
+  seen = {}
 
-  def browser(url):
+  def show(url):
     q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
     assert q["code_challenge_method"] == ["S256"] and q["access_type"] == ["offline"]
     assert "photoslibrary.appendonly" in q["scope"][0]
-    cb = q["redirect_uri"][0] + "/?" + urllib.parse.urlencode({"code": "CODE", "state": q["state"][0]})
-    threading.Thread(target=lambda: urllib.request.urlopen(cb).read(), daemon=True).start()
+    seen["state"] = q["state"][0]
 
-  gphotos_auth.authorize(c, t, browser, post=post, timeout=10)
+  gphotos_auth.authorize(c, t, show, lambda: reply(seen["state"]), post=post)
+  return t
+
+
+@pytest.mark.parametrize("reply", [
+    lambda st: "CODE",
+    lambda st: f"http://127.0.0.1:1/?state={st}&code=CODE&scope=x",
+    lambda st: f"state={st}&code=CODE"])
+def test_the_manual_flow_stores_a_refresh_token(tmp_path, reply):
+  post = FakeToken(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": 3600})
+  t = run_flow(tmp_path, reply, post)
   fields = post.calls[0][1]
   assert fields["code"] == "CODE" and fields["grant_type"] == "authorization_code"
   assert fields["code_verifier"] and fields["redirect_uri"].startswith("http://127.0.0.1:")
@@ -100,18 +109,10 @@ def test_the_loopback_flow_stores_a_refresh_token(tmp_path):
   assert saved["refresh_token"] == "RT" and stat.S_IMODE(os.stat(t).st_mode) == 0o600
 
 
-def test_a_callback_with_the_wrong_state_is_rejected(tmp_path):
-  c, t = str(tmp_path / "c.json"), str(tmp_path / "t.json")
-  write_client(c)
-
-  def browser(url):
-    q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-    cb = q["redirect_uri"][0] + "/?code=X&state=forged"
-    threading.Thread(target=lambda: urllib.request.urlopen(cb).read(), daemon=True).start()
-
+def test_a_pasted_url_with_the_wrong_state_is_rejected(tmp_path):
   with pytest.raises(gphotos_auth.AuthError, match="did not match"):
-    gphotos_auth.authorize(c, t, browser, post=FakeToken(), timeout=10)
-  assert not os.path.exists(t)
+    run_flow(tmp_path, lambda st: "http://127.0.0.1:1/?code=X&state=forged", FakeToken())
+  assert not os.path.exists(str(tmp_path / "t.json"))
 
 
 def test_status_endpoint_reflects_the_files(settings):

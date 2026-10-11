@@ -16,9 +16,9 @@ to `Exported/` always happens first and its files stay there; the upload is an o
    documented; if authorization stops working, see below.)
 3. *Credentials → Create credentials → OAuth client ID*, type **Desktop app**. Download the JSON and
    save it as `<state_dir>/gphotos_client.json` (or point `--gphotos_client_file` at it). `chmod 600`.
-4. On a machine with a browser (it must be able to reach `127.0.0.1` of the machine running the
-   command), run `python -m photoapp.google_auth`, open the printed URL and approve. The refresh token
-   is stored in `<state_dir>/gphotos_token.json` (mode 600).
+4. Run `python -m photoapp.google_auth`, open the printed URL in any browser and approve. The
+   browser then fails to load a `http://127.0.0.1:1/?code=...` page (expected); paste the code, or the
+   whole address, at the prompt. This works over ssh. The refresh token is stored in `<state_dir>/gphotos_token.json` (mode 600).
 
 When the Export dialog's *Also upload to Google Photos* box is enabled, setup is complete. If Google
 stops accepting the token ("expired or was revoked" on the Jobs page), run `google_auth` again.
