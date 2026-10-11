@@ -512,3 +512,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
       - [x] [228](docs/tickets/228.md) Edit panel + `GET /api/files/{id}/edit_preview`
       - [x] [229](docs/tickets/229.md) exports / Google Photos use the edited render
 - [x] [230](docs/tickets/230.md) Hotkeys S (store the shown file's adjustments) and A (apply them to the shown file): edit document for non-RAW stills, RAW settings for RAW
+- [x] [231](docs/tickets/231.md) Bug: the Google Photos album list looked empty for ~15 s (Google pages ~10 albums per request); cached, warmed on dialog open, loading state in the dialog

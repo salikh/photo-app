@@ -96,15 +96,25 @@ function googlePhotosSection(status, defaultName) {
   const pick = el('select', {class: 'export-album-pick', 'aria-label': 'existing album'});
   const warn = el('div', {class: 'export-album-warn'});
   const body = el('div', {class: 'export-gphotos-body', hidden: true});
-  let albums = null, timer = null;
+  let albums = null, timer = null, loading = false, failure = null, seq = 0;
 
+  // Ticket 231: the server lists albums in the background (about 15 s cold: Google returns ~10
+  // per page), so poll while it says `loading`, and say so instead of showing an empty list.
   async function refresh() {
+    const mine = ++seq;
     try {
-      albums = (await get('/api/gphotos/albums?name=' + encodeURIComponent(name.value))).albums;
-    } catch (e) { albums = []; toast(e.message, true); }
-    pick.replaceChildren(...albums.map((a) => el('option', {value: a.id,
-      text: `${a.title} (${a.count})` + (a.exact ? ' — same name' : '')})));
+      const res = await get('/api/gphotos/albums?name=' + encodeURIComponent(name.value));
+      if (mine !== seq) return;           // a newer request (typing) superseded this one
+      albums = res.albums; loading = res.loading; failure = res.error;
+    } catch (e) { albums = []; loading = false; failure = e.message; toast(e.message, true); }
+    pick.replaceChildren(...(albums.length ? albums.map((a) => el('option', {value: a.id,
+      text: `${a.title} (${a.count})` + (a.exact ? ' — same name' : '')}))
+      : [el('option', {value: '', disabled: true, selected: true,
+          text: loading ? 'Loading albums… (can take ~15 s)'
+              : failure ? `Could not list albums: ${failure}`
+              : 'No albums made by this app yet'})]));
     draw();
+    if (loading) { clearTimeout(timer); timer = setTimeout(refresh, 1500); }
   }
   function draw() {
     pick.hidden = mode.value !== 'existing';

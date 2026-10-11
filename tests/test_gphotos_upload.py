@@ -9,6 +9,7 @@ from PIL import Image
 
 from photoapp import api
 from photoapp import db
+from photoapp import gphotos
 from photoapp import scan
 from tests.fake_gphotos import FakeGPhotos, TOKEN
 
@@ -133,15 +134,61 @@ def test_not_authorized_or_nameless_requests_are_refused(settings, fake, tmp_pat
   assert c.post("/api/export", json=body).status_code == 200    # plain export still works
 
 
+def wait_albums(c, **params):
+  """The albums endpoint fills a cache in the background (ticket 231): poll until it has finished."""
+  for _ in range(200):
+    body = c.get("/api/gphotos/albums", params=params).json()
+    if not body["loading"]:
+      return body
+    time.sleep(0.05)
+  raise AssertionError("album listing never finished")
+
+
 def test_albums_endpoint_ranks_by_name_and_year_and_flags_an_exact_match(settings, fake, tmp_path):
   app, c, conn, ids = setup_app(settings, fake, tmp_path)
   for title in ("Berlin 2019", "2024 trip", "Birthday 2024", "trip 2024", "Zoo"):
     fake.albums[title] = {"title": title, "items": []}
-  got = c.get("/api/gphotos/albums", params={"name": "2024 trip"}).json()["albums"]
+  got = wait_albums(c, name="2024 trip")["albums"]
   assert [a["title"] for a in got][:2] == ["2024 trip", "trip 2024"]
   assert got[0]["exact"] and got[1]["exact"] is False
   assert [a["title"] for a in got][-1] in ("Zoo", "Berlin 2019")
   assert c.get("/api/gphotos/albums").json()["albums"][0]["score"] == 0.0
+
+
+def test_albums_are_cached_and_a_cold_request_answers_at_once_with_loading(settings, fake, tmp_path):
+  app, c, conn, ids = setup_app(settings, fake, tmp_path)
+  fake.albums["a"] = {"title": "A", "items": []}
+  first = c.get("/api/gphotos/albums").json()
+  assert "loading" in first and "error" in first            # never blocks on Google
+  wait_albums(c)
+  calls = []
+  real = gphotos.Client.list_albums
+  gphotos.Client.list_albums = lambda self: calls.append(1) or real(self)
+  try:
+    fake.albums["b"] = {"title": "B", "items": []}
+    assert [a["title"] for a in c.get("/api/gphotos/albums").json()["albums"]] == ["A"]  # cached
+    assert calls == []
+    c.get("/api/gphotos/albums", params={"refresh": "true"})
+    got = wait_albums(c)["albums"]
+    assert sorted(a["title"] for a in got) == ["A", "B"] and calls == [1]
+  finally:
+    gphotos.Client.list_albums = real
+
+
+def test_a_failed_listing_reports_the_error_and_keeps_the_last_good_list(settings, fake, tmp_path):
+  app, c, conn, ids = setup_app(settings, fake, tmp_path)
+  fake.albums["a"] = {"title": "A", "items": []}
+  wait_albums(c)
+  real = gphotos.Client.list_albums
+  def boom(self):
+    raise gphotos.GPhotosError("quota")
+  gphotos.Client.list_albums = boom
+  try:
+    c.get("/api/gphotos/albums", params={"refresh": "true"})
+    body = wait_albums(c)
+  finally:
+    gphotos.Client.list_albums = real
+  assert body["error"] == "quota" and [a["title"] for a in body["albums"]] == ["A"]
 
 
 def test_albums_endpoint_needs_google_setup(settings, fake, tmp_path):

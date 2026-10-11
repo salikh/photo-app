@@ -117,3 +117,17 @@ def test_a_selection_is_uploaded_in_grid_order(gpage, gserver, fake):
   submit(gpage, gserver)
   (album,) = fake.albums.values()
   assert [fake.items[m]["filename"] for m in album["items"]] == ["IMG_0002.jpg", "IMG_0004.jpg"]
+
+
+def test_choosing_an_existing_album_with_the_radio_lists_every_album(gpage, gserver, fake):
+  fake.albums["a"] = {"title": "2009 Kazan", "items": ["x"]}
+  fake.albums["b"] = {"title": "2002 Another", "items": []}
+  open_export(gpage, gserver)
+  gpage.locator(".export-gphotos").check()
+  gpage.get_by_label("add to an existing album").check()
+  pick = gpage.locator(".export-album-pick")
+  expect(pick).to_be_visible()
+  expect(pick.locator("option")).to_have_count(2)
+  pick.select_option(label="2009 Kazan (1)")
+  submit(gpage, gserver)
+  assert len(fake.albums) == 2 and len(fake.albums["a"]["items"]) == 7
