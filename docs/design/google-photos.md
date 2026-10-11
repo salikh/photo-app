@@ -27,7 +27,7 @@ Why it is shaped the way it is. How to set it up and use it: [../google-photos.m
   and stripping it for the upload would need a second copy of every file, and exported files get shared.
 - **`export.file_to_upload()` is the one place that decides which file goes up for a Photo** — today the
   exported file itself; a future video-tuning epic replaces it with "the selected tuning".
-- **Auth lives outside the web app**: a one-time `python -m photoapp.google_auth` loopback (PKCE) flow;
+- **Auth lives outside the web app**: a one-time `python -m photoapp.google_auth` PKCE flow (prints a URL, the user pastes the code back);
   the app only reads the token file and refreshes the access token. `invalid_grant` surfaces as "run
   google_auth again".
 - **Tests never touch Google**: `tests/fake_gphotos.py` is a real-HTTP fake (byte dedupe, 207-style
