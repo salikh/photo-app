@@ -121,3 +121,50 @@ def test_real_dng_preview_preserves_orientation(tmp_path):
   assert preview_flip == original_flip
   assert (preview_shape[0] > preview_shape[1]) == (original_shape[0] > original_shape[1])
 
+
+
+def test_bin_mosaic_keeps_each_cfa_phase_separate_for_a_6x6_pattern():
+  # Ticket 219: an X-Trans mosaic bins per 6x6 phase, so every output pixel only averages input
+  # pixels of the same CFA position (phase p holds the constant value 100*p here).
+  import numpy as np
+  h = w = 24
+  img = np.empty((h, w), dtype=np.uint16)
+  for r in range(h):
+    for c in range(w):
+      img[r, c] = 100 * ((r % 6) * 6 + (c % 6))
+  out = raw_preview_dng._bin_mosaic(img, 2, 6)
+  assert out.shape == (12, 12)
+  for r in range(12):
+    for c in range(12):
+      assert out[r, c] == 100 * ((r % 6) * 6 + (c % 6))
+
+
+REAL_RAF = os.environ.get("REAL_RAF")
+_skip_raf = pytest.mark.skipif(not REAL_RAF or not os.path.exists(REAL_RAF or ""),
+                               reason="REAL_RAF not set")
+
+
+@_skip_raf
+def test_real_raf_preview_is_a_downsampled_x_trans_raw_with_matching_color(tmp_path):
+  # Ticket 219: a Fujifilm RAF (6x6 X-Trans) gets a preview DNG that LibRaw still reads as a 6x6
+  # mosaic with the camera's black/white levels and white balance, and that renders close to the
+  # original (compared without auto-brightness, which depends on the image histogram and so
+  # differs between a full-size and a binned image).
+  pictures = tmp_path / "pics"
+  os.makedirs(pictures)
+  shutil.copy(REAL_RAF, pictures / "a.RAF")
+  thumbs_dir = str(tmp_path / "thumbs")
+  dest = raw_preview_dng.ensure(thumbs_dir, str(pictures), "a.RAF")
+
+  with rawpy.imread(REAL_RAF) as original:
+    original_pattern = original.raw_pattern.tolist()
+    original_black = original.black_level_per_channel
+    original_rgb = original.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=8)
+  with rawpy.imread(dest) as preview:
+    assert max(preview.sizes.width, preview.sizes.height) <= raw_preview_dng.MAX_DIM
+    assert preview.raw_pattern.tolist() == original_pattern    # same 6x6 layout, margin-aligned
+    assert preview.black_level_per_channel == original_black
+    preview_rgb = preview.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=8)
+  for c in range(3):
+    p, o = preview_rgb[..., c].mean(), original_rgb[..., c].mean()
+    assert abs(p - o) / max(o, 1) < 0.15, f"channel {c}: preview {p} vs original {o}"

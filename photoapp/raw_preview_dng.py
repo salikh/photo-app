@@ -3,9 +3,9 @@
 Not one of thumbs.py's tracked sizes -- a transport artifact for 105's LibRaw-Wasm client, cached
 in its own directory alongside the thumbs tree so thumbs.clear()/raw_settings.set() never touch
 it (ticket 103's answer: this cache depends only on the original file, never on raw_settings, and
-must survive a Save). Still real, undemosaiced Bayer data -- downsampled by binning same-color
-pixels together (halving both dimensions per pass, preserving the CFA's 2x2 periodicity) rather
-than by demosaicing, so white balance/highlight-recovery/etc. stay genuinely tunable client-side;
+must survive a Save). Still real, undemosaiced CFA data -- downsampled by binning same-color
+pixels together (halving both dimensions per pass, preserving the CFA's 2x2 -- or, for a Fujifilm
+X-Trans sensor (ticket 219), 6x6 -- periodicity) rather than by demosaicing, so white balance/highlight-recovery/etc. stay genuinely tunable client-side;
 see ticket 103's Answer for why a demosaiced ("linear") DNG would defeat that.
 
 rawpy has no DNG-writing API (previews.py stays read-only), so this is the project's first use of
@@ -31,8 +31,12 @@ MAX_DIM = 1600                # long edge cap -- generous for an on-screen tunin
 DNG_COLOR_CODE = {"R": 0, "G": 1, "B": 2}   # TIFF-EP/DNG CFAPattern color codes this project needs
 
 
+SUPPORTED_PERIODS = (2, 6)   # CFA repeat size: 2x2 Bayer, 6x6 Fujifilm X-Trans (ticket 219)
+
+
 class Unsupported(Exception):
-  """The source cannot be read as a 2x2-Bayer RAW (matches thumbs.Unsupported's role)."""
+  """The source cannot be read as a 2x2 Bayer or 6x6 X-Trans RAW (matches thumbs.Unsupported's
+  role)."""
 
 
 def path_for(thumbs_dir, file_path):
@@ -123,6 +127,10 @@ def _source_exif(source_path, raw):
         orient = o
   except Exception as e:
     logging.vlog(3, "%s: could not read EXIF: %s", source_path, e)
+  if not (make and model):
+    # A RAW Pillow cannot open (a RAF, ticket 219; a PEF): the same fallback readers the scan uses.
+    exif_tuple = fileinfo.read_exif_fallback(source_path)
+    make, model = exif_tuple[5], exif_tuple[6]
 
   if orient is None:
     orient = FLIP_TO_ORIENTATION.get(raw.sizes.flip, 1)
@@ -130,46 +138,53 @@ def _source_exif(source_path, raw):
   return make, model, orient
 
 
-def _bin_mosaic(img, factor):
-  """Downsample a Bayer mosaic by factor, averaging same-CFA-position pixels together so the
-  2x2 pattern stays intact and periodic (each of the 4 phases is binned independently)."""
+def _bin_mosaic(img, factor, period=2):
+  """Downsample a CFA mosaic by factor, averaging same-CFA-position pixels together so the
+  period x period pattern stays intact and periodic (each of the period**2 phases is binned
+  independently)."""
   if factor == 1:
     return img
   h, w = img.shape
   out = np.empty((h // factor, w // factor), dtype=np.uint16)
-  for pr in range(2):
-    for pc in range(2):
-      sub = img[pr::2, pc::2].astype(np.float32)
+  for pr in range(period):
+    for pc in range(period):
+      sub = img[pr::period, pc::period].astype(np.float32)
       sh, sw = (sub.shape[0] // factor) * factor, (sub.shape[1] // factor) * factor
       sub = sub[:sh, :sw].reshape(sh // factor, factor, sw // factor, factor).mean(axis=(1, 3))
-      out[pr::2, pc::2] = np.round(sub).astype(np.uint16)
+      out[pr::period, pc::period] = np.round(sub).astype(np.uint16)
   return out
 
 
 def _generate(source_path, dest_path, max_dim=MAX_DIM):
   with rawpy.imread(source_path) as raw:
     pattern = raw.raw_pattern
-    if pattern.shape != (2, 2):
-      raise Unsupported(f"{source_path}: unsupported CFA pattern shape {pattern.shape} "
-                        "(only 2x2 Bayer sensors are supported)")
+    if pattern is None or pattern.shape[0] != pattern.shape[1] \
+        or pattern.shape[0] not in SUPPORTED_PERIODS:
+      raise Unsupported(f"{source_path}: unsupported CFA pattern shape "
+                        f"{None if pattern is None else pattern.shape} "
+                        "(only 2x2 Bayer and 6x6 X-Trans sensors are supported)")
+    period = pattern.shape[0]
     cdesc = raw.color_desc.decode()
     tm, lm = raw.sizes.top_margin, raw.sizes.left_margin
     # raw_pattern is phrased relative to raw_image's own (0,0); raw_image_visible starts
     # (top_margin, left_margin) into that, so an odd margin shifts which phase is which color.
-    eff_pattern = [[pattern[(r + tm) % 2, (c + lm) % 2] for c in range(2)] for r in range(2)]
-    cfa_bytes = bytes(DNG_COLOR_CODE[cdesc[eff_pattern[r][c]]] for r in range(2) for c in range(2))
+    eff_pattern = [[pattern[(r + tm) % period, (c + lm) % period] for c in range(period)]
+                   for r in range(period)]
+    cfa_bytes = bytes(DNG_COLOR_CODE[cdesc[eff_pattern[r][c]]]
+                      for r in range(period) for c in range(period))
 
     img = raw.raw_image_visible
     h, w = img.shape
     factor = 1
     while max(h // factor, w // factor) > max_dim:
       factor *= 2
-    # crop to an even multiple of 2*factor first so binning stays phase-aligned
-    h2, w2 = (h // (2 * factor)) * (2 * factor), (w // (2 * factor)) * (2 * factor)
-    img = _bin_mosaic(img[:h2, :w2], factor)
+    # crop to a multiple of period*factor first so binning stays phase-aligned
+    step = period * factor
+    h2, w2 = (h // step) * step, (w // step) * step
+    img = _bin_mosaic(img[:h2, :w2], factor, period)
 
     black_per_pos = [int(raw.black_level_per_channel[eff_pattern[r][c]])
-                     for r in range(2) for c in range(2)]
+                     for r in range(period) for c in range(period)]
     # DNG's ColorMatrix1 is XYZ-to-camera; rawpy's rgb_xyz_matrix is the other direction
     # (camera-to-XYZ, with a possible unused 4th row for a second green channel).
     color_matrix1 = np.linalg.inv(np.array(raw.rgb_xyz_matrix[:3], dtype=np.float64))
@@ -195,16 +210,17 @@ def _generate(source_path, dest_path, max_dim=MAX_DIM):
     extratags = [
         (254, "I", 1, (0,), False),                                    # NewSubfileType: main image
         (274, "H", 1, (int(orient),), False),                           # Orientation (ticket 118)
-        (33421, "H", 2, (2, 2), False),                                # CFARepeatPatternDim
-        (33422, "B", 4, cfa_bytes, False),                             # CFAPattern
+        (33421, "H", 2, (period, period), False),                      # CFARepeatPatternDim
+        (33422, "B", period * period, cfa_bytes, False),               # CFAPattern
         (50706, "B", 4, (1, 4, 0, 0), False),                          # DNGVersion 1.4.0.0
         (50707, "B", 4, (1, 1, 0, 0), False),                          # DNGBackwardVersion 1.1.0.0
         # BlackLevel needs its RepeatDim tag declared alongside it, or LibRaw silently treats a
         # multi-value BlackLevel as unset (confirmed empirically: black_level_per_channel came
         # back all zeros without this, even though the BlackLevel tag itself was present and
         # correctly typed).
-        (50713, "H", 2, (2, 2), False),                                # BlackLevelRepeatDim
-        (50714, tifffile.DATATYPE.RATIONAL, 4, rational(black_per_pos), False),   # BlackLevel
+        (50713, "H", 2, (period, period), False),                      # BlackLevelRepeatDim
+        (50714, tifffile.DATATYPE.RATIONAL, period * period,
+         rational(black_per_pos), False),                              # BlackLevel
         (50717, "H", 1, (int(raw.white_level),), False),               # WhiteLevel
         (50728, tifffile.DATATYPE.RATIONAL, 3, rational(as_shot_neutral), False),  # AsShotNeutral
     ]
@@ -246,7 +262,7 @@ def ensure(thumbs_dir, pictures_dir, file_path):
 
   Never overwritten once made (this codebase's usual cache convention -- see thumbs.clear's
   comment): the artifact depends only on the original file, so there is nothing to invalidate.
-  Raises Unsupported if the source cannot be read as a 2x2-Bayer RAW.
+  Raises Unsupported if the source cannot be read as a 2x2 Bayer or 6x6 X-Trans RAW.
   """
   dest = path_for(thumbs_dir, file_path)
   if os.path.isfile(dest):

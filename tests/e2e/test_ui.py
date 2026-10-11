@@ -15,6 +15,9 @@ from playwright.sync_api import expect
 
 ON = re.compile(r"(^|\s)on(\s|$)")          # a filter button's class list may also hold 'zero'
 REAL_DNG = os.environ.get("REAL_DNG")
+REAL_RAF = os.environ.get("REAL_RAF")
+real_raf_only = pytest.mark.skipif(not REAL_RAF or not os.path.exists(REAL_RAF or ""),
+                                   reason="REAL_RAF not set")
 real_dng_only = pytest.mark.skipif(not REAL_DNG or not os.path.exists(REAL_DNG or ""),
                                    reason="REAL_DNG not set")
 
@@ -856,6 +859,56 @@ def test_libraw_wasm_exposure_matches_rawpy_on_a_real_raw(page, server):
     return [r / n, g / n, b / n];
   }""", tuning.get_attribute("src"))
 
+  with rawpy.imread(preview_dng) as raw:
+    rgb = raw.postprocess(**previews._postprocess_kwargs({"raw_exposure": 2.0}))
+  rawpy_mean = rgb.reshape(-1, 3).mean(axis=0)
+  diff = np.abs(np.array(wasm_mean) - rawpy_mean) / rawpy_mean
+  assert diff.max() < 0.05, (wasm_mean, rawpy_mean)
+
+
+@real_raf_only
+def test_libraw_wasm_renders_an_xtrans_raf_like_rawpy(page, server):
+  # Ticket 219: a Fujifilm RAF (X-Trans, 6x6 CFA) gets a preview DNG whose 6x6 pattern the vendored
+  # LibRaw-Wasm must read as X-Trans and demosaic: the local render engages (a blob: URL, no
+  # network raw_preview request) and its mean RGB matches rawpy on the same preview DNG.
+  import numpy as np
+  import rawpy
+  from photoapp import previews
+  from photoapp import raw_preview_dng
+
+  rel = "2024/trip/IMG_0001.RAF"
+  shutil.copy(REAL_RAF, os.path.join(server.pictures, rel))
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  preview_dng = raw_preview_dng.ensure(
+      server.settings.thumbs_dir, server.settings.pictures_dir, rel)
+
+  network_preview_requests = []
+  page.on("request", lambda r: network_preview_requests.append(r.url)
+          if "/raw_preview?" in r.url else None)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  raf_row = page.locator(".files-panel .file", has_text="IMG_0001.RAF")
+  exposure = raf_row.locator(".raw-settings input[aria-label=exposure]")
+  exposure.evaluate(
+      "el => { el.value = '2'; el.dispatchEvent(new Event('input', {bubbles: true})); }")
+  tuning = page.locator(".stage img.tuning:not(.row-preview)")
+  expect(tuning).to_have_attribute("src", re.compile(r"^blob:"), timeout=60000)
+  assert network_preview_requests == []
+  wasm_mean = page.evaluate("""async (url) => {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let r = 0, g = 0, b = 0; const n = d.length / 4;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    return [r / n, g / n, b / n];
+  }""", tuning.get_attribute("src"))
   with rawpy.imread(preview_dng) as raw:
     rgb = raw.postprocess(**previews._postprocess_kwargs({"raw_exposure": 2.0}))
   rawpy_mean = rgb.reshape(-1, 3).mean(axis=0)
