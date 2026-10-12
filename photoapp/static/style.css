@@ -225,9 +225,8 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .stage.panel-open .tuning-busy {
   right: calc(var(--files-panel-w) + 12px);
 }
-.stage.zoomed {
-  padding-right: 0 !important;
-}
+/* Ticket 237: a zoomed photo keeps the stage's padding-right (the files panel), so it never slides
+   under the panel and zoom.js's usable area is the same before and after the zoom starts. */
 /* Ticket 108: busy indicator while rawTuning.js's LibRaw-Wasm render is in flight. */
 .tuning-busy {
   position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%;

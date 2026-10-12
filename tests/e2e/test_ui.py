@@ -3004,3 +3004,35 @@ def test_rating_filter_and_tag_filter_are_independent_and_anded(page, server):
   tag_select.select_option("tag:vacation")
   page.locator(".cell").first.click()
   expect(page.locator(".hud .filter-tag")).to_have_text("filter: ✖ Rejected · tag: vacation")
+
+
+def image_rect(page):
+  return page.evaluate("""() => { const r = document.querySelector('.stage img.main').getBoundingClientRect();
+    return {x: r.left, y: r.top, w: r.width, h: r.height}; }""")
+
+
+def test_pinch_start_does_not_move_the_image_with_the_files_panel_open(page, server):
+  # ticket 237: the files panel shifts the fitted photo left (padding-right on the stage); zoom.js
+  # used to assume it was centered in the whole stage, so the first frame of a pinch jumped.
+  for panel in (False, True):
+    ids = photo_ids(server)
+    page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+    expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+    page.wait_for_function("document.querySelector('.stage img.main').naturalWidth > 0")
+    if panel:
+      page.keyboard.press("i")
+      expect(page.locator(".files-panel")).to_be_visible()
+    page.wait_for_timeout(500)
+    before = image_rect(page)
+    box = page.locator(".stage").bounding_box()
+    cx = before["x"] + before["w"] / 2
+    cy = before["y"] + before["h"] / 2
+    Touch(page).pinch(page, (cx, cy), 100, 104, steps=2)       # a hair above fit: scale ~1.04
+    after = image_rect(page)
+    assert page.locator(".stage.zoomed").count() == 1
+    grown = after["w"] / before["w"]
+    assert grown > 1.0, grown      # (test photos are small: the fitted size can exceed what is shown)
+    # the image grew around its own center: that center did not move
+    assert abs((after["x"] + after["w"] / 2) - cx) < 4 and abs((after["y"] + after["h"] / 2) - cy) < 4, (
+        panel, before, after)
+    page.keyboard.press("Escape") if not panel else page.keyboard.press("i")

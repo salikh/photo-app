@@ -60,9 +60,13 @@ export function createZoom(stage, img, hooks) {
   let lastTap = null;                  // {x, y, t} of the previous touch tap
   let moved = false;                   // the current press turned into a drag/pinch
 
+  // The area the photo may use: the stage minus the files panel's padding-right (ticket 237). The
+  // fitted photo is centered in exactly this area (flex centering inside the padding), so starting
+  // the zoom from "centered in the whole stage" made the first frame of a pinch jump sideways.
   const size = () => {
     const r = stage.getBoundingClientRect();
-    return {SW: r.width, SH: r.height, left: r.left, top: r.top};
+    const pad = parseFloat(getComputedStyle(stage).paddingRight) || 0;
+    return {SW: r.width - pad, SH: r.height, left: r.left, top: r.top};
   };
 
   function limits() {
@@ -264,6 +268,8 @@ export function createZoom(stage, img, hooks) {
     isActive: () => active,
     scale: () => s,
     enter, exit, reset, zoomBy,
+    // The usable area changed (the files panel opened or closed while zoomed): keep it in bounds.
+    relayout() { if (active) apply(); },
     zoomIn: () => zoomBy(KEY_STEP),
     zoomOut: () => zoomBy(1 / KEY_STEP),
     // Real size of the photo has become known (the full-size image loaded): keep what is shown.

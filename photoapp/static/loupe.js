@@ -1413,6 +1413,7 @@ async function openFiles() {
   filesOpen = true;
   if (ui.stage) {
     ui.stage.classList.add('panel-open');   // ticket 121: recenter image immediately
+    ui.zoom.relayout();
     updateCropShade();
   }
   const photo = current();
@@ -1475,6 +1476,7 @@ async function openFiles() {
       el('button', {text: 'Close', onclick: closeFiles})));
   ui.stage.append(ui.panel);
   ui.stage.classList.add('panel-open');   // ticket 121: recenter image to avoid panel
+  ui.zoom.relayout();
   updateCropShade();
   renderHud();
 }
@@ -1483,6 +1485,7 @@ function closePanelOnly() {
   if (ui.panel) { ui.panel.remove(); ui.panel = null; }
   if (ui.stage && !filesOpen) {
     ui.stage.classList.remove('panel-open');   // ticket 121
+    ui.zoom.relayout();
     updateCropShade();
   }
 }
@@ -1493,6 +1496,7 @@ function closeFiles() {
   hideRowPreview();   // ticket 107
   if (ui.stage) {
     ui.stage.classList.remove('panel-open');
+    ui.zoom.relayout();
     updateCropShade();
   }
   closePanelOnly();
