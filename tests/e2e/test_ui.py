@@ -713,12 +713,10 @@ def test_advanced_raw_settings_controls_preview_and_persist(page, server):
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
 
 
-def test_compare_hover_and_shift_reveal_the_provisional_overlay(page, server, monkeypatch):
-  # Ticket 107: the tuned overlay is hidden by default (the committed rendering is what's shown);
-  # it only appears while the user is actively asking to compare -- hovering the sliders block, or
-  # holding Shift as a keyboard/touch fallback that keeps working even with a slider focused (the
-  # exact case that was broken when the hotkey was the bare letter 'c', ticket 094's original
-  # shape, since a focused <input type="range"> made isTyping() swallow the key).
+def test_unsaved_changes_show_in_the_medium_view_and_shift_compares_with_saved(page, server, monkeypatch):
+  # Ticket 239 (reverses 107's hover model): as soon as a control differs from what is saved, the
+  # provisional render is what the Medium view shows, with no hovering; holding Shift (works with a
+  # slider focused) shows the saved rendering to compare; Discard drops it. Nothing is stored.
   from photoapp import previews
 
   monkeypatch.setattr(previews, "embedded_preview", lambda path: Image.new("RGB", (1600, 1200), "red"))
@@ -743,21 +741,17 @@ def test_compare_hover_and_shift_reveal_the_provisional_overlay(page, server, mo
   # DNG (GET .../raw_preview_dng) -- the fake one-byte DNG here legitimately has none (a real 404,
   # logged by the browser), so it falls back to 094's network .../raw_preview path, same as before
   # 105 landed. Both the fallback's own request and the 404 that triggered it are expected.
-  expect(tuning).to_have_attribute("src", re.compile(r"/api/files/\d+/raw_preview"))   # loaded...
-  expect(tuning).to_be_hidden()   # ...but stays hidden: neither hover nor Shift is active yet
+  expect(tuning).to_have_attribute("src", re.compile(r"/api/files/\d+/raw_preview"))
+  expect(tuning).to_be_visible()   # no hover, no key: the tentative render is shown right away
   page.errors.clear()
 
-  # Shift works even with the slider itself focused -- the bug ticket 107 fixes.
-  page.keyboard.down("Shift")
-  expect(tuning).to_be_visible()
+  page.keyboard.down("Shift")      # compare with the saved rendering
+  expect(tuning).to_be_hidden()
   page.keyboard.up("Shift")
-  expect(tuning).to_be_hidden()
-
-  # Hovering the sliders block shows it too, without any key held.
-  dng_row.locator(".raw-settings").hover()
   expect(tuning).to_be_visible()
-  page.locator(".hud").hover()   # move the mouse elsewhere in the viewer
-  expect(tuning).to_be_hidden()
+
+  dng_row.get_by_role("button", name="Discard changes").click()
+  expect(tuning).to_be_hidden()    # back to the saved parameters
 
 
 def test_hovering_a_sibling_file_row_previews_its_own_thumbnail(page, server, monkeypatch):

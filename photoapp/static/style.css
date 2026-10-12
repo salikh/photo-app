@@ -477,8 +477,12 @@ h2 { margin: 16px 0 8px; }
      (found while fixing these rows). */
   .files-panel { width: 100%; }
   .stage.panel-open { padding-right: 0; }
-  .raw-settings label, .edit-settings label { flex: 1 0 100%; }
-  .raw-settings input[type="range"], .edit-settings input[type="range"] { min-width: 0; flex: 1 1 0; }
-  .adj-step { width: 32px; min-width: 32px; height: 32px; align-self: center; }
-  .raw-settings .row .meta, .edit-settings .row .meta { flex: 0 0 3em; text-align: right; }
+  .adj-step { width: 32px; min-width: 32px; height: 32px; }
 }
+
+/* Slider rows at every width, an iPad's 420 px side panel included (the "+" wrapped to a second
+   line there): the label has its own line; "- slider + value" share the next one. */
+.raw-settings label, .edit-settings label { flex: 1 0 100%; }
+.raw-settings input[type="range"], .edit-settings input[type="range"] { min-width: 0; flex: 1 1 0; }
+.adj-step { align-self: center; }
+.raw-settings .row .meta, .edit-settings .row .meta { flex: 0 0 3em; text-align: right; }

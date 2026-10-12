@@ -340,7 +340,7 @@ function exitZoom() {
   ui.stage.classList.remove('zoomed');
   const photo = current();
   if (photo) ui.img.src = imgUrl('Medium', photo.file_id);
-  syncTuningVisible();   // ticket 094/107: restore the overlay if hover/Shift still calls for it
+  syncTuningVisible();   // ticket 094/239: restore the overlay if unsaved changes still call for it
   updateCropShade();
 }
 
@@ -725,8 +725,7 @@ const DEMOSAIC_MODES = [['1', 'VNG'], ['2', 'PPG'], ['3', 'AHD (default)'], ['4'
 const PREVIEW_DEBOUNCE_MS = 200;
 
 let pending = null;      // {fileId, values} for whichever file's controls are currently open
-let sliderHover = false; // mouse is over the raw-settings sliders block (ticket 107)
-let shiftHeld = false;   // Shift is held as the compare modifier (ticket 107)
+let shiftHeld = false;   // Shift is held: show the saved rendering to compare (tickets 107, 239)
 let hoverFile = null;    // a sibling file whose own thumbnail ui.rowPreview is showing (ticket 107)
 
 function committedValues(f) {
@@ -741,10 +740,14 @@ function isDirty(values, committed) {
   return Object.keys(values).some((k) => values[k] !== committed[k]);
 }
 
-// Ticket 107: the tuned overlay shows only while the user is asking to compare (hovering the
-// sliders, or holding the Shift fallback) -- never merely because a provisional render loaded.
+// Ticket 239 (reversing 107's hover model): while any control differs from what is saved, the tuned
+// overlay is what the Medium view shows -- the provisional render appears as soon as it has loaded,
+// with no hovering needed (an iPad has no hover). Holding Shift shows the saved rendering instead,
+// to compare. Nothing is stored: navigating away, Discard or closing the panel drops it (discardPending).
+const dirtyFiles = new Set();   // ids of files whose open controls differ from the saved values
+
 function syncTuningVisible() {
-  ui.tuning.hidden = !((pending || editStates.size) && ui.tuning.src && (sliderHover || shiftHeld));
+  ui.tuning.hidden = !(dirtyFiles.size && ui.tuning.src && !shiftHeld);
 }
 
 function showRowPreview(f) {
@@ -764,7 +767,7 @@ function discardPending() {
   discardEditPending();
   if (pending) { clearTimeout(pending.timer); if (pending.session) pending.session.dispose(); }
   pending = null;
-  sliderHover = false;
+  dirtyFiles.clear();
   previewSeq++;   // ticket 108: invalidate any requestPreview() still in flight
   if (ui.tuning) { ui.tuning.hidden = true; ui.tuning.src = ''; }
   if (ui.tuningBusy) ui.tuningBusy.hidden = true;
@@ -905,8 +908,6 @@ function adjustControls(f) {
   // repopulates in place via setChildren -- so the listener survives every slider tick's re-render.
   const container = el('div', {
     class: f.is_raw ? 'raw-settings' : 'edit-settings',
-    onmouseenter: () => { sliderHover = true; syncTuningVisible(); },
-    onmouseleave: () => { sliderHover = false; syncTuningVisible(); },
   });
   renderAdjustBody(f, container);
   return container;
@@ -929,8 +930,11 @@ function renderAdjustBody(f, container) {
   const isDirtyNow = () => (raw && isDirty(rawValues, rawCommitted)) ||
                            JSON.stringify(editVals) !== JSON.stringify(editCommitted);
   const syncButtons = () => {
-    saveBtn.disabled = !isDirtyNow();
-    discardBtn.hidden = !isDirtyNow();
+    const dirty = isDirtyNow();
+    saveBtn.disabled = !dirty;
+    discardBtn.hidden = !dirty;
+    if (dirty) dirtyFiles.add(f.id); else dirtyFiles.delete(f.id);
+    syncTuningVisible();
   };
   syncButtons();
   const two = (v) => v.toFixed(2);
@@ -1014,7 +1018,17 @@ function renderAdjustBody(f, container) {
             selected: Number(v) === (rawValues.demosaic ?? 3)}))))];
   const atDefault = JSON.stringify(editVals) === JSON.stringify(EDIT_DEFAULTS) &&
                     (!raw || Object.values(rawValues).every((v) => v == null));
+  // Ticket 238: Save / Discard / Reset at the top of the pane, where they stay reachable.
   return setChildren(container,
+    el('div', {class: 'row'}, saveBtn, discardBtn,
+      atDefault ? null : el('button', {
+        text: 'Reset to default', onclick: () => {
+          edit.values = {...EDIT_DEFAULTS};
+          if (raw) Object.assign(rawValues, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null, exposure: null, shadow: null, saturation: null, contrast: null, noise: null, demosaic: null});
+          renderAdjustBody(f, container);
+          scheduleAdjustPreview(f);
+        },
+      })),
     raw ? null : el('div', {class: 'row'}, el('label', {text: 'Edit (JPG)'}),
        el('span', {class: 'meta', text: 'the original file is never changed'})),
     brightness,
@@ -1032,23 +1046,14 @@ function renderAdjustBody(f, container) {
       saturation,
       toggle('Auto levels', 'auto_levels'),
       channelLevels('r', 'Red'), channelLevels('g', 'Green'), channelLevels('b', 'Blue'),
-      rawAdvanced),
-    el('div', {class: 'row'}, saveBtn, discardBtn,
-      atDefault ? null : el('button', {
-        text: 'Reset to default', onclick: () => {
-          edit.values = {...EDIT_DEFAULTS};
-          if (raw) Object.assign(rawValues, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null, exposure: null, shadow: null, saturation: null, contrast: null, noise: null, demosaic: null});
-          renderAdjustBody(f, container);
-          scheduleAdjustPreview(f);
-        },
-      })));
+      rawAdvanced));
 }
 
 // ------------------------------------------- non-destructive edits for non-RAW stills (epic 222)
 //
 // The same shape as the RAW sliders above (tickets 094/107/108): dragging only updates `editStates`
 // and asks the server for a provisional render (GET /api/files/{id}/edit_preview, never stored)
-// shown in the shared `ui.tuning` overlay while hovering the sliders or holding Shift; Save POSTs the
+// shown in the shared `ui.tuning` overlay while there are unsaved changes (ticket 239); Save POSTs the
 // document (the server bakes it into every cached size), Discard/closing the panel drops it. The
 // original file is never touched. photoapp/edits.py is the single definition of the maths.
 
@@ -1437,6 +1442,13 @@ async function openFiles() {
       onmouseleave: f.id === detail.representative_file_id ? null : hideRowPreview,
     },
       el('div', {text: f.path.split('/').pop() + '  ·  ' + f.role + (f.link_source === 'manual' ? ' (manual)' : '')}),
+      // Ticket 238: the file's actions (Show this / Unlink / Delete) at the top of its pane.
+      el('div', {class: 'row'},
+        f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :
+          el('button', {text: 'Show this', onclick: () => setRepresentative(detail, f.id)}),
+        f.id !== detail.original_file_id ? el('button', {text: 'Unlink', onclick: () => unlink(f)}) : null,
+        !f.missing ? el('button', {class: 'danger', text: 'Delete',
+                                   title: 'move this file to trash', onclick: () => confirmDeleteFile(f)}) : null),
       (() => {
         // Ticket 154: the directory portion of f.path becomes its own link (jump straight to
         // that folder, non-recursive, keeping the current filter/sort -- "browsing a filtered
@@ -1463,13 +1475,7 @@ async function openFiles() {
       cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
       f.ai_score != null ? el('div', {class: 'meta ai-rating', text: 'AI rating ' + f.ai_score.toFixed(1),
                                       title: aiAnswersText(f.ai_answers)}) : null,
-      f.is_editable && !f.missing ? adjustControls(f) : null,   // epic 222, ticket 235
-      el('div', {class: 'row'},
-        f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :
-          el('button', {text: 'Show this', onclick: () => setRepresentative(detail, f.id)}),
-        f.id !== detail.original_file_id ? el('button', {text: 'Unlink', onclick: () => unlink(f)}) : null,
-        !f.missing ? el('button', {class: 'danger', text: 'Delete',
-                                   title: 'move this file to trash', onclick: () => confirmDeleteFile(f)}) : null))),
+      f.is_editable && !f.missing ? adjustControls(f) : null)),   // epic 222, ticket 235
     el('div', {class: 'row'},
       el('button', {text: 'Use default', onclick: () => setRepresentative(detail, null)}),
       el('button', {text: 'Close', onclick: closeFiles})));

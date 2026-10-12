@@ -192,3 +192,40 @@ def test_slider_rows_fit_on_one_line_on_a_phone(phone, server):
   assert slider["width"] >= 80 and slider["x"] + slider["width"] <= panel["x"] + panel["width"]
   assert phone.evaluate("document.querySelector('.files-panel').scrollWidth <= "
                         "document.querySelector('.files-panel').clientWidth")
+
+
+def test_tentative_edit_shows_at_once_and_is_forgotten_on_next_photo(page, server):
+  # Ticket 239: a changed slider updates the Medium view right away (no hover), nothing is saved,
+  # and moving to another photo reverts to the saved parameters.
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  page.keyboard.press("i")
+  expect(page.locator(".edit-settings")).to_be_visible()
+  tuning = page.locator(".stage img.tuning:not(.row-preview)")
+  set_slider(page, "brightness", 50)
+  expect(tuning).to_be_visible(timeout=15000)
+  assert api(server, f"/api/photos/{ids[0]}")["files"][0]["edits"] is None
+  page.keyboard.press("ArrowRight")
+  expect(tuning).to_be_hidden()
+  page.keyboard.press("ArrowLeft")
+  expect(page.locator(".edit-settings")).to_be_visible()
+  expect(page.locator(".edit-settings input[aria-label=brightness]")).to_have_value("0")
+  expect(tuning).to_be_hidden()
+
+
+def test_slider_rows_fit_on_one_line_in_the_ipad_side_panel(page, server):
+  # ticket 236 follow-up 2: on an iPad-wide screen the 420 px panel wrapped the "+" to a new line.
+  page.set_viewport_size({"width": 820, "height": 1180})
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  page.keyboard.press("i")
+  row = page.locator(".edit-settings .row", has=page.locator("input[aria-label='brightness']"))
+  expect(row).to_be_visible()
+  boxes = [row.locator(sel).bounding_box() for sel in
+           ("button[aria-label='Brightness: one step down']", "input[type=range]",
+            "button[aria-label='Brightness: one step up']", ".meta")]
+  line = boxes[1]
+  assert all(b["y"] < line["y"] + line["height"] and b["y"] + b["height"] > line["y"]
+             for b in boxes), boxes
