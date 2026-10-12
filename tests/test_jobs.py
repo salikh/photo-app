@@ -289,7 +289,7 @@ def test_raw_without_preview_is_rendered_in_background(settings, monkeypatch):
   fid = conn.execute("SELECT id FROM files").fetchone()[0]
 
   def fake_render(pictures_dir, thumbs_dir, file_path, file_settings=None, crop=None,
-                  rotation=None):
+                  rotation=None, edits=None):
     out = {}
     for size in ("Thumb", "Small", "Medium"):
       dest = thumbs.thumb_path(thumbs_dir, size, file_path)

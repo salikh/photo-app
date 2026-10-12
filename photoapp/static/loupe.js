@@ -860,6 +860,39 @@ async function saveAdjustments(f) {
   if (filesOpen) openFiles();
 }
 
+// Ticket 236: a button that moves `input` (a range slider) one step per press -- repeating after a
+// short hold -- and fires the slider's own input event, so previews and dirty state follow as if it
+// had been dragged. Pointer Events (touch on an iPad included); a keyboard activation has detail 0.
+const STEP_REPEAT_DELAY_MS = 450;
+const STEP_REPEAT_MS = 90;
+
+function stepSlider(input, direction) {
+  const step = Number(input.step) || 1;
+  const decimals = (String(input.step).split('.')[1] || '').length;
+  const value = Number(input.value) + direction * step;
+  const clamped = Math.min(Number(input.max), Math.max(Number(input.min), value));
+  input.value = clamped.toFixed(decimals);
+  input.dispatchEvent(new Event('input', {bubbles: true}));
+}
+
+function stepButton(text, title, input, direction) {
+  let timer = null;
+  const stop = () => { clearTimeout(timer); clearInterval(timer); timer = null; };
+  return el('button', {
+    class: 'adj-step', type: 'button', text, title, 'aria-label': title,
+    onpointerdown: (e) => {
+      if (e.button > 0) return;
+      e.preventDefault();
+      stepSlider(input, direction);
+      stop();
+      timer = setTimeout(() => { timer = setInterval(() => stepSlider(input, direction), STEP_REPEAT_MS); },
+                         STEP_REPEAT_DELAY_MS);
+    },
+    onpointerup: stop, onpointerleave: stop, onpointercancel: stop,
+    onclick: (e) => { if (e.detail === 0) stepSlider(input, direction); },   // keyboard (Enter/Space)
+  });
+}
+
 function adjustControls(f) {
   if (f.is_raw && (!pending || pending.fileId !== f.id)) {
     if (pending && pending.session) pending.session.dispose();   // ticket 105: don't leak a worker
@@ -904,16 +937,21 @@ function renderAdjustBody(f, container) {
   // values: rawValues or editVals; `def` is what a null (RAW "default") value shows.
   const slider = (values, label, key, min, max, step, fmt = String, def = 0) => {
     const out = el('span', {class: 'meta', text: fmt(values[key] ?? def)});
-    return el('div', {class: 'row'},
-      el('label', {text: label}),
-      el('input', {type: 'range', min, max, step, value: values[key] ?? def,
+    const input = el('input', {type: 'range', min, max, step, value: values[key] ?? def,
                  'aria-label': label.toLowerCase(),
                  oninput: (e) => {
                    values[key] = Number(e.target.value);
                    out.textContent = fmt(values[key]);
                    syncButtons();
                    scheduleAdjustPreview(f);
-                 }}),
+                 }});
+    // Ticket 236: (-) and (+) tap areas for small adjustments (a finger can hardly drag a slider by
+    // one step): one step per tap, repeating while held; they go through the slider's own handler.
+    return el('div', {class: 'row'},
+      el('label', {text: label}),
+      stepButton('−', `${label}: one step down`, input, -1),
+      input,
+      stepButton('+', `${label}: one step up`, input, 1),
       out);
   };
   const toggle = (label, key) => el('div', {class: 'row'},

@@ -518,3 +518,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [234](docs/tickets/234.md) Loupe: red Delete button in the bottom bar, only for a rejected photo, trashes just that photo at once
 - [x] [237](docs/tickets/237.md) Bug: pinch zoom jumped sideways with the files panel open; zoom uses the stage area beside the panel
 - [x] [235](docs/tickets/235.md) One adjustment panel for JPG and RAW: a RAW gets levels, per-channel levels, auto levels, monochrome and sharpen (applied after the conversion), same basic/Advanced split
+- [x] [236](docs/tickets/236.md) (-) / (+) tap buttons beside every adjustment slider (one step per tap, repeat on hold) for touch screens

@@ -139,3 +139,34 @@ def test_raw_panel_has_the_same_adjustments_as_a_jpg_and_saves_them(page, server
   dng = [f for f in stored if f["id"] == fid][0]
   assert "mono" in dng["edits"] and dng["edits"]["levels"]["black"] == 30
   page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
+
+
+def test_plus_minus_buttons_step_a_slider_by_one_step_and_repeat_when_held(page, server):
+  # ticket 236: tap areas beside each slider, for fine adjustments on a touch screen.
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  page.keyboard.press("i")
+  slider = page.locator(".edit-settings input[aria-label='brightness']")
+  plus = page.locator(".edit-settings button[aria-label='Brightness: one step up']")
+  minus = page.locator(".edit-settings button[aria-label='Brightness: one step down']")
+  expect(slider).to_have_value("0")
+  plus.click()
+  expect(slider).to_have_value("1")
+  minus.click(); minus.click()
+  expect(slider).to_have_value("-1")
+  expect(page.locator(".edit-settings button", has_text="Save")).to_be_enabled()   # as if dragged
+  box = plus.bounding_box()
+  assert box["width"] >= 32 and box["height"] >= 32                                 # a finger-sized target
+  page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+  page.mouse.down()
+  page.wait_for_timeout(1200)                                                        # held: it repeats
+  page.mouse.up()
+  assert int(slider.input_value()) > 3
+  stop = int(slider.input_value())
+  page.wait_for_timeout(400)
+  assert int(slider.input_value()) == stop                                           # released: stops
+  # a fractional slider keeps its precision and the end of its range
+  contrast = page.locator(".edit-settings input[aria-label='contrast']")
+  page.locator(".edit-settings button[aria-label='Contrast: one step up']").click()
+  expect(contrast).to_have_value("1.05")

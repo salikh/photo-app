@@ -360,6 +360,11 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 .raw-settings .wb-multiplier { width: 4.5em; }
 .edit-settings .wb-multiplier { width: 4.5em; }
 /* ticket 112: advanced sliders/selects behind a zipper */
+/* Ticket 236: (-) / (+) tap areas either side of a slider, big enough for a finger */
+.adj-step {
+  flex: 0 0 auto; width: 36px; min-width: 36px; height: 36px; padding: 0; font-size: 20px; line-height: 1;
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
 .raw-settings details.advanced { margin-top: 6px; }
 .edit-settings details.advanced { margin-top: 6px; }
 .raw-settings details.advanced summary { cursor: pointer; font-size: 13px; color: var(--text-dim); }
