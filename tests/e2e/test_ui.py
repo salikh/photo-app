@@ -528,6 +528,26 @@ def test_crop_mode_saves_and_shades(page, server):
   expect(page.locator(".crop-shade:not([hidden])")).to_have_count(1)
 
 
+def test_crop_shade_is_aligned_right_after_a_swipe_to_the_next_photo(page, server):
+  # ticket 240: a swipe leaves an offset on the image that used to ease back over 0.18 s while the next
+  # photo loaded, so the shade was positioned from a half-eased box and stayed off the picture.
+  ids = open_loupe(page, server)
+  db = server.app.state.db
+  db.execute("UPDATE files SET crop_x = 0.1, crop_y = 0.1, crop_w = 0.5, crop_h = 0.5")
+  db.commit()
+  page.reload()
+  expect(page.locator(".crop-shade:not([hidden])")).to_have_count(1)
+  page.add_style_tag(content='.stage img.main { transition: transform 1s; }')   # a slow ease-back
+  swipe(page, -300, 0, start=(700, 300))
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0002")
+  page.wait_for_timeout(1300)
+  box = page.evaluate("""() => {
+    const r = (e) => { const b = document.querySelector(e).getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; };
+    return [r('.stage img.main'), r('.crop-shade')];
+  }""")
+  assert all(abs(a - b) < 1.5 for a, b in zip(*box)), box
+
+
 def test_rotate_button_stores_rotation_and_bumps_the_image_url_revision(page, server):
   # ticket 129: the loupe's rotate button turns the representative file 90 degrees left, saves it on
   # the file, clears the cached render, and the reloaded image URL carries the new revision.

@@ -520,3 +520,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [235](docs/tickets/235.md) One adjustment panel for JPG and RAW: a RAW gets levels, per-channel levels, auto levels, monochrome and sharpen (applied after the conversion), same basic/Advanced split
 - [x] [236](docs/tickets/236.md) (-) / (+) tap buttons beside every adjustment slider (one step per tap, repeat on hold) for touch screens
 - 238: Save / Show this buttons at the top of their panes; 239: tentative Medium rendering while editing (see docs/tickets/238.md, 239.md)
+- [x] [240](docs/tickets/240.md) Bug: crop shade misaligned right after a swipe to the next photo (swipe offset was still easing back)

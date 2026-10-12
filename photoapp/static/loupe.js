@@ -175,6 +175,12 @@ function show(i) {
   zoomed = false;
   ui.stage.classList.remove('zoomed');
   resetDrag();
+  // Ticket 240: the swipe's offset must be gone at once, not easing back over 0.18 s -- the crop shade
+  // is positioned from the image's box as soon as the next photo loads, and a half-eased box left it
+  // misaligned (until something re-laid it out, e.g. opening the files pane).
+  ui.img.style.transition = 'none';
+  void ui.img.offsetWidth;
+  requestAnimationFrame(() => { ui.img.style.transition = ''; });
   brokenFileId = null;
   discardPending();   // ticket 094: never let a provisional render leak past navigating away
   ui.img.src = imgUrl('Medium', photo.file_id);
