@@ -170,3 +170,25 @@ def test_plus_minus_buttons_step_a_slider_by_one_step_and_repeat_when_held(page,
   contrast = page.locator(".edit-settings input[aria-label='contrast']")
   page.locator(".edit-settings button[aria-label='Contrast: one step up']").click()
   expect(contrast).to_have_value("1.05")
+
+
+def test_slider_rows_fit_on_one_line_on_a_phone(phone, server):
+  # ticket 236 follow-up: "(-) slider (+) value" must not wrap on a narrow screen.
+  ids = photo_ids(server)
+  phone.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(phone.locator(".hud .name")).to_contain_text("IMG_0001")
+  phone.keyboard.press("i")
+  row = phone.locator(".edit-settings .row", has=phone.locator("input[aria-label='brightness']"))
+  expect(row).to_be_visible()
+  boxes = [row.locator(sel).bounding_box() for sel in
+           ("button[aria-label='Brightness: one step down']", "input[type=range]",
+            "button[aria-label='Brightness: one step up']", ".meta")]
+  line = boxes[1]                                    # the slider: every part overlaps its line
+  assert all(b["y"] < line["y"] + line["height"] and b["y"] + b["height"] > line["y"]
+             for b in boxes), boxes
+  assert phone.locator(".files-panel").bounding_box()["width"] <= 390      # the panel fits the phone
+  panel = phone.locator(".files-panel").bounding_box()
+  slider = row.locator("input[type=range]").bounding_box()
+  assert slider["width"] >= 80 and slider["x"] + slider["width"] <= panel["x"] + panel["width"]
+  assert phone.evaluate("document.querySelector('.files-panel').scrollWidth <= "
+                        "document.querySelector('.files-panel').clientWidth")

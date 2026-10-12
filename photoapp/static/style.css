@@ -327,6 +327,7 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
 @media (max-width: 699px) {
   .filmstrip { --thumb-w: 66px; --thumb-h: 44px; }   /* slim, still 44 px tall to tap */
   .files-panel { width: 100%; }
+  .stage.panel-open { padding-right: 0; }
   .stage.panel-open { padding-right: 0; }   /* ticket 121: panel is full-width on mobile, no shift */
   .stage.panel-open img.tuning { width: 100%; }
   .stage.panel-open video.main-video { width: 100%; }   /* ticket 197: the panel is full-width here */
@@ -466,4 +467,18 @@ h2 { margin: 16px 0 8px; }
   header.bar > select, header.bar > button { order: 2; }
   header.bar nav { order: 3; width: 100%; gap: 16px; }
   .hud .name { flex-basis: 100%; }
+}
+
+@media (max-width: 699px) {
+  /* Adjustment sliders (tickets 235/236): the label gets its own line so "(-) slider (+) value" fits
+     one line on a phone; the slider takes whatever is left (min-width 0 lets it shrink). */
+  /* The full-width panel rule in the earlier mobile block loses to the later base `.files-panel`
+     width and padding-right, which left the panel (and the stage) 420 px wide on a ~390 px phone
+     (found while fixing these rows). */
+  .files-panel { width: 100%; }
+  .stage.panel-open { padding-right: 0; }
+  .raw-settings label, .edit-settings label { flex: 1 0 100%; }
+  .raw-settings input[type="range"], .edit-settings input[type="range"] { min-width: 0; flex: 1 1 0; }
+  .adj-step { width: 32px; min-width: 32px; height: 32px; align-self: center; }
+  .raw-settings .row .meta, .edit-settings .row .meta { flex: 0 0 3em; text-align: right; }
 }
