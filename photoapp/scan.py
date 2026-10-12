@@ -44,8 +44,8 @@ class Progress:
   sidecars_processed: int = 0
   current_dir: str = None    # directory currently being scanned: the top-level step during a
                               # whole-library scan_all(), or the single requested directory for the
-                              # whole run otherwise (ticket 140; set/cleared by ScanManager only)
-  started_at: str = None     # ISO timestamp set by ScanManager.start() (ticket 140, for the
+                              # whole run otherwise (ticket 140; set/cleared by the rescan job only)
+  started_at: str = None     # ISO timestamp set by the rescan job (ticket 140, for the
                               # worker-status entry this run shows up as on the Jobs page)
   steps_done: int = 0
   steps_total: int = 0
@@ -636,66 +636,59 @@ def _mark_missing(conn, rel_scan, recursive, seen):
   return len(gone)
 
 
-class ScanManager:
-  """Runs at most one scan at a time in a background thread."""
+RESCAN_PRIORITY = 1      # ticket 233: elevated -- runs at once, whatever the machine load
 
-  def __init__(self, db_path, pictures_dir, hashes=None, thumbs_dir=None,
-               on_done=None, workers=8, metadata_cache=False):
-    self._db_path = db_path
+
+class RescanClient:
+  """The interactive Rescan (ticket 233): queues a 'rescan' job with elevated priority on `queue`
+  (jobs.JobQueue with an elevated worker) instead of running a scan thread of its own. The job's
+  handler (api.create_app's rescan_job) fills `progress`, which /api/scan/status and /api/jobs's
+  `scan` key report."""
+
+  def __init__(self, queue, pictures_dir):
+    self._queue = queue
     self._pictures_dir = pictures_dir
-    self._hashes = hashes
-    self._thumbs_dir = thumbs_dir
-    self._on_done = on_done
-    self._workers = workers
-    self._metadata_cache = metadata_cache
-    self._lock = threading.Lock()
-    self._thread = None
     self.progress = Progress()
 
   def start(self, rel_dir=None, recursive=True):
-    """Start a scan; returns False if one is already running.
+    """Queue a rescan of rel_dir (default: the whole library); False if one for it is already
+    queued or running.
 
     recursive (ticket 127): whether the requested directory's subtree is walked, or only the files
-    directly in it. Only the whole-library case (the root with recursive) uses scan_all; a
-    non-recursive root scan reads just the root's own files.
+    directly in it (plus any *new* directories directly in it, see new_subdirs). Only the
+    whole-library case (the root with recursive) runs scan_all.
     """
-    with self._lock:
-      if self._thread is not None and self._thread.is_alive():
-        return False
-      scan_dir = self._pictures_dir
-      if rel_dir and rel_dir != ".":
-        scan_dir = os.path.normpath(os.path.join(self._pictures_dir, rel_dir))
-        if not scan_dir.startswith(self._pictures_dir.rstrip("/") + "/"):
-          raise ValueError("directory outside pictures_dir")
-      self.progress = Progress(
-          running=True, current_dir=rel_dir or ".",
-          started_at=datetime.datetime.now().isoformat(timespec="seconds"))
-      self._thread = threading.Thread(
-          target=self._run, args=(scan_dir, recursive, self.progress), daemon=True)
-      self._thread.start()
-      return True
+    target = "."
+    if rel_dir and rel_dir != ".":
+      scan_dir = os.path.normpath(os.path.join(self._pictures_dir, rel_dir))
+      if not scan_dir.startswith(self._pictures_dir.rstrip("/") + "/"):
+        raise ValueError("directory outside pictures_dir")
+      target = _rel(self._pictures_dir, scan_dir)
+    if self._queue.find_open("rescan", target=target) is not None:
+      return False
+    self._queue.enqueue("rescan", target=target, options={"recursive": bool(recursive)},
+                        priority=RESCAN_PRIORITY)
+    return True
 
-  def _run(self, scan_dir, recursive, progress):
-    conn = db.connect(self._db_path, busy_timeout=60.0)
-    try:
-      if scan_dir == self._pictures_dir and recursive:
-        scan_all(conn, self._pictures_dir, None, self._hashes, progress,
-                 self._thumbs_dir, self._on_done, self._workers,
-                 self._metadata_cache)
-      else:
-        scan(conn, self._pictures_dir, scan_dir, self._hashes, progress,
-             self._thumbs_dir, self._on_done, self._workers,
-             recursive=recursive, metadata_cache=self._metadata_cache)
-    finally:
-      # scan_all() already clears this itself per top-level step; a plain scan() never touches
-      # current_dir at all, so this is the one place that clears it for both paths uniformly once
-      # the run is over (ticket 140).
-      progress.current_dir = None
-      conn.close()
+  def wait(self, timeout=60.0):
+    self._queue.wait_idle(timeout, kinds=("rescan",))
 
-  def wait(self):
-    if self._thread is not None:
-      self._thread.join()
+
+def new_subdirs(conn, pictures_dir, scan_dir):
+  """Directories directly inside scan_dir that the database has never scanned (no dir_mtimes
+  row), as absolute paths. A "this folder only" rescan (ticket 233) still scans these, whole,
+  so a folder that appeared next to the known ones shows up at once; known subdirectories are
+  left alone, which is the point of the non-recursive mode."""
+  known = {r[0] for r in conn.execute("SELECT dirpath FROM dir_mtimes")}
+  found = []
+  for entry in sorted(os.scandir(scan_dir), key=lambda e: e.name):
+    if not entry.is_dir(follow_symlinks=False):
+      continue
+    if scan_dir == pictures_dir and entry.name == trash.TRASH_DIRNAME:
+      continue
+    if _rel(pictures_dir, entry.path) not in known:
+      found.append(entry.path)
+  return found
 
 
 def seconds_until(hour, now):

@@ -36,6 +36,7 @@ def main(argv):
     # A new installation: read the library now instead of showing an empty page until Rescan.
     logging.info("empty database: scanning %s (progress: /api/scan/status)", settings.pictures_dir)
     application.state.scanner.start()
+  application.state.background_jobs.start_elevated_if_pending()   # ticket 233
   if settings.load_worker_enabled:
     def enqueue_more():
       n = application.state.populator.enqueue_missing(application.state.populate_conn)

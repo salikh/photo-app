@@ -351,6 +351,11 @@ MIGRATIONS = [
       synced_at REAL         -- epoch seconds of the last sync with Google; NULL = never
     );
     """,
+    """
+    -- Ticket 233: 0 = background work (waits for an idle machine), > 0 = elevated (a user's
+    -- Rescan): claimed first and run by the elevated worker whatever the machine load.
+    ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

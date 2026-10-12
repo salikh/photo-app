@@ -78,8 +78,13 @@ an interrupted run (Ctrl-C, a reboot, low memory) leaves every finished year usa
 running the same command again skips finished directories (by their mtime) and continues. It logs
 `done <dir> (n/total)` with the files read and the peak memory after every step.
 `--scan_dirs=2001,2026` scans only those directories; `--scan_workers` sets the read threads.
-The **Rescan** button works the same way (a folder-scoped rescan scans that folder), and runs
-immediately, at normal priority, regardless of the nightly scan or the load-adaptive worker below.
+The **Rescan** button works the same way (a folder-scoped rescan scans that folder). Since ticket 233
+it is a `rescan` job with *elevated priority* on the Jobs page: it is claimed ahead of everything else
+and run at once, at normal CPU/I/O priority, by its own worker thread -- regardless of the nightly scan,
+machine load or the load-adaptive worker below. "This folder only" mode reads the folder's own files and
+also scans whole any directory directly in it that was never scanned (known subdirectories are left
+alone). An elevated job that fails stays `failed` (it is never requeued), and one cut off by a restart
+is marked failed ("interrupted by restart") rather than rerun; just press Rescan again.
 
 As of ticket 076, the **nightly scan** (`--nightly_scan_hour`, local hour, -1 disables) no longer runs
 one big scan synchronously at that hour. Instead it queues one `scan_dir` job per top-level directory

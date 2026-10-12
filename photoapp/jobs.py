@@ -53,12 +53,19 @@ class JobQueue:
   unaffected.
   """
 
-  def __init__(self, db_path, handlers, workers=2, low_priority=False, newest_first=False):
+  def __init__(self, db_path, handlers, workers=2, low_priority=False, newest_first=False,
+               elevated_workers=0):
     """newest_first (ticket 080): claim the most recently enqueued job first (instead of the
     usual FIFO oldest-first) -- a cheap approximation of "prioritize what's newly relevant" for a
     queue whose backlog can otherwise take a long time to reach a given job. Enqueueing something
     already queued still dedupes to its existing (older) row, so this only actually reorders
-    genuinely new jobs ahead of the standing backlog, not jobs already waiting."""
+    genuinely new jobs ahead of the standing backlog, not jobs already waiting.
+
+    elevated_workers (ticket 233): that many extra threads, at *normal* CPU/I/O priority even when
+    low_priority is set, that run only jobs with priority > 0 (a user's Rescan). They are not
+    controlled by start()/stop() (the load-adaptive worker toggles those with machine load):
+    enqueueing an elevated job -- or start_elevated_if_pending() at startup -- starts them, and they
+    keep running. With elevated_workers=0 priority only orders the claims."""
     self._db_path = db_path
     self._handlers = handlers
     self._workers = workers
@@ -67,6 +74,11 @@ class JobQueue:
     self._threads = []
     self._wake = threading.Event()
     self._stop = threading.Event()
+    self._elevated_workers = elevated_workers
+    self._elevated_threads = []
+    self._elevated_wake = threading.Event()
+    self._elevated_stop = threading.Event()
+    self._elevated_lock = threading.Lock()
     self._conn_lock = threading.Lock()
     self._conn = db.connect(db_path, busy_timeout=60.0)
 
@@ -77,26 +89,47 @@ class JobQueue:
     can share one low-priority queue/worker, registered as each part of the app sets itself up)."""
     self._handlers[kind] = fn
 
-  def enqueue(self, kind, file_id=None, target=None, options=None):
+  def enqueue(self, kind, file_id=None, target=None, options=None, priority=0):
     """Queue a job unless the same kind+file_id+target is already queued or running.
 
     Most jobs are scoped to a file (file_id); a directory-scoped job (ticket 076's scan_dir)
     passes target instead and leaves file_id None. options (a dict, ticket 208) is stored as JSON
     and is not part of the dedupe key.
+
+    priority (ticket 233): 0 is background work; > 0 is elevated. A duplicate of a still-queued
+    job with a lower priority raises that job's priority instead of adding a row.
     """
+    with self._conn_lock:
+      row = self._conn.execute(
+          "SELECT id, state, priority FROM jobs WHERE kind = ? AND file_id IS ? AND target IS ? "
+          "AND state IN ('queued', 'running')", (kind, file_id, target)).fetchone()
+      if row:
+        if row["state"] == "queued" and priority > row["priority"]:
+          self._conn.execute("UPDATE jobs SET priority = ? WHERE id = ?", (priority, row["id"]))
+          self._conn.commit()
+          job_id = row["id"]
+        else:
+          return row["id"]
+      else:
+        cur = self._conn.execute(
+            "INSERT INTO jobs (kind, file_id, target, state, created_at, options, priority) "
+            "VALUES (?, ?, ?, 'queued', ?, ?, ?)",
+            (kind, file_id, target, _now(), json.dumps(options) if options else None, priority))
+        self._conn.commit()
+        job_id = cur.lastrowid
+    if priority > 0:
+      self._start_elevated()
+      self._elevated_wake.set()
+    self._wake.set()
+    return job_id
+
+  def find_open(self, kind, file_id=None, target=None):
+    """The id of a queued/running job of this exact kind+file_id+target, or None."""
     with self._conn_lock:
       row = self._conn.execute(
           "SELECT id FROM jobs WHERE kind = ? AND file_id IS ? AND target IS ? AND "
           "state IN ('queued', 'running')", (kind, file_id, target)).fetchone()
-      if row:
-        return row["id"]
-      cur = self._conn.execute(
-          "INSERT INTO jobs (kind, file_id, target, state, created_at, options) "
-          "VALUES (?, ?, ?, 'queued', ?, ?)",
-          (kind, file_id, target, _now(), json.dumps(options) if options else None))
-      self._conn.commit()
-    self._wake.set()
-    return cur.lastrowid
+    return row["id"] if row else None
 
   def list(self, limit=100):
     """Every kind in the shared table (like active()/progress()), each row's file_id resolved to
@@ -105,7 +138,7 @@ class JobQueue:
     with self._conn_lock:
       return [dict(r) for r in self._conn.execute(
           "SELECT j.id, j.kind, j.file_id, j.target, j.state, j.error, j.note, j.created_at,"
-          " j.started_at, j.finished_at,"
+          " j.started_at, j.finished_at, j.priority,"
           " (j.kind = 'gphotos_upload' AND j.state = 'done' AND"
           "  COALESCE(json_array_length(j.options, '$.failed'), 0) > 0) AS retryable,"
           " f.path AS path, f.photo_id AS photo_id FROM jobs j"
@@ -195,8 +228,10 @@ class JobQueue:
     # over the life of one process, unlike every other caller, which starts it once.
     self._stop.clear()
     with self._conn_lock:
+      # Only background (priority 0) jobs: start() runs on every idle transition of the
+      # load-adaptive worker, and must not touch an elevated job the elevated worker is running.
       self._conn.execute("UPDATE jobs SET state = 'queued', started_at = NULL "
-                         "WHERE state = 'running'")
+                         "WHERE state = 'running' AND priority = 0")
       self._conn.commit()
     for i in range(self._workers):
       t = threading.Thread(target=self._run, name=f"job-worker-{i}",
@@ -212,17 +247,68 @@ class JobQueue:
       t.join(timeout=10)
     self._threads = []
 
-  def _claim(self, conn):
+  def _start_elevated(self):
+    """Start the elevated worker thread(s) if this queue has any and they are not running."""
+    if not self._elevated_workers:
+      return
+    with self._elevated_lock:
+      self._elevated_threads = [t for t in self._elevated_threads if t.is_alive()]
+      if self._elevated_threads:
+        return
+      self._elevated_stop.clear()
+      for i in range(self._elevated_workers):
+        t = threading.Thread(target=self._run, args=(True,), name=f"job-elevated-{i}",
+                             daemon=True)
+        t.start()
+        self._elevated_threads.append(t)
+    self._elevated_wake.set()
+
+  def start_elevated_if_pending(self):
+    """At startup: start the elevated worker if an elevated job of this queue's kinds is queued."""
+    kinds = tuple(self._handlers)
+    placeholders = ",".join("?" * len(kinds))
+    with self._conn_lock:
+      n = self._conn.execute(
+          f"SELECT COUNT(*) FROM jobs WHERE state = 'queued' AND priority > 0 AND "
+          f"kind IN ({placeholders})", kinds).fetchone()[0]
+    if n:
+      self._start_elevated()
+
+  def fail_interrupted_elevated(self):
+    """At startup: an elevated job still 'running' was cut off by the restart. Mark it failed
+    rather than queueing it again (ticket 233) -- a scan that takes the process down must not
+    crash-loop it; the user can simply ask again. Returns how many were marked."""
+    with self._conn_lock:
+      cur = self._conn.execute(
+          "UPDATE jobs SET state = 'failed', error = 'interrupted by restart', "
+          "finished_at = ? WHERE state = 'running' AND priority > 0", (_now(),))
+      self._conn.commit()
+    return cur.rowcount
+
+  def stop_elevated(self):
+    self._elevated_stop.set()
+    self._elevated_wake.set()
+    for t in self._elevated_threads:
+      t.join(timeout=10)
+    self._elevated_threads = []
+
+  def _claim(self, conn, elevated=False):
     # Scoped to this queue's own handler kinds, so a second JobQueue sharing
     # the same jobs table (a different kind, e.g. a low-priority bulk queue
     # next to the on-demand one) never claims -- and then fails with an
     # unknown-kind error -- a job it has no handler for.
     kinds = tuple(self._handlers)
     placeholders = ",".join("?" * len(kinds))
-    order = "id DESC" if self._newest_first else "id"
+    order = "priority DESC, " + ("id DESC" if self._newest_first else "id")
+    if elevated:
+      scope = "AND priority > 0"
+    elif self._elevated_workers:
+      scope = "AND priority = 0"      # elevated jobs belong to the elevated worker (ticket 233)
+    else:
+      scope = ""
     conn.execute("BEGIN IMMEDIATE")
     row = conn.execute(
-        f"SELECT * FROM jobs WHERE state = 'queued' AND kind IN "
+        f"SELECT * FROM jobs WHERE state = 'queued' {scope} AND kind IN "
         f"({placeholders}) ORDER BY {order} LIMIT 1", kinds).fetchone()
     if row:
       conn.execute("UPDATE jobs SET state = 'running', started_at = ? WHERE id = ?",
@@ -230,18 +316,20 @@ class JobQueue:
     conn.commit()
     return row
 
-  def _run(self):
-    if self._low_priority:
+  def _run(self, elevated=False):
+    if self._low_priority and not elevated:
       _set_low_priority()
+    stop, wake = ((self._elevated_stop, self._elevated_wake) if elevated
+                  else (self._stop, self._wake))
     conn = db.connect(self._db_path, busy_timeout=60.0)
     try:
-      while not self._stop.is_set():
-        job = self._claim(conn)
+      while not stop.is_set():
+        job = self._claim(conn, elevated)
         if job is None:
-          self._wake.wait(timeout=1.0)
-          self._wake.clear()
+          wake.wait(timeout=1.0)
+          wake.clear()
           continue
-        self._wake.set()    # let a sibling look for more work
+        wake.set()    # let a sibling look for more work
         error = None
         try:
           self._handlers[job["kind"]](conn, job)
@@ -266,7 +354,7 @@ class JobQueue:
     finally:
       conn.close()
 
-  def wait_idle(self, timeout=10.0):
+  def wait_idle(self, timeout=10.0, kinds=None):
     """Block until no job of this queue's own kinds is queued or running (for tests).
 
     Scoped to self._handlers like _claim(), unlike counts()/progress(), which deliberately span
@@ -277,7 +365,7 @@ class JobQueue:
     wait_idle() hang forever even though this queue itself has nothing left to do."""
     import time
     deadline = time.time() + timeout
-    kinds = tuple(self._handlers)
+    kinds = tuple(kinds or self._handlers)
     placeholders = ",".join("?" * len(kinds))
     while time.time() < deadline:
       with self._conn_lock:

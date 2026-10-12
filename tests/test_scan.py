@@ -290,8 +290,31 @@ def test_api_scan_recursive_false_reads_only_the_requested_subdir(settings):
   client = TestClient(app)
   assert client.post("/api/scan", params={"dir": "2019", "recursive": 0}).json() == {"started": True}
   app.state.scanner.wait()
-  assert scanned_paths(app) == {"2019/a.DNG", "2019/a.JPG"}
+  # ticket 233: 2019/sub was never scanned, so even a "this folder only" rescan notices it
+  assert scanned_paths(app) == {"2019/a.DNG", "2019/a.JPG", "2019/sub/b.jpg"}
   assert client.get("/api/scan/status").json()["error"] is None
+
+
+def test_api_scan_recursive_false_leaves_known_subdirectories_alone(settings):
+  # ticket 233: only *new* subdirectories are picked up; a known one is not walked again, so a
+  # file added inside it waits for a recursive rescan.
+  from fastapi.testclient import TestClient
+  from photoapp import api, db
+  build_years(settings.pictures_dir)
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  client = TestClient(app)
+  client.post("/api/scan", params={"dir": "2019", "recursive": 1})
+  app.state.scanner.wait()
+  extra = os.path.join(settings.pictures_dir, "2019", "sub", "c.jpg")
+  write_jpeg(extra) if "write_jpeg" in globals() else open(extra, "wb").write(
+      open(os.path.join(settings.pictures_dir, "2019", "sub", "b.jpg"), "rb").read() + b"x")
+  os.makedirs(os.path.join(settings.pictures_dir, "2019", "fresh"))
+  open(os.path.join(settings.pictures_dir, "2019", "fresh", "d.jpg"), "wb").write(
+      open(os.path.join(settings.pictures_dir, "2019", "sub", "b.jpg"), "rb").read() + b"y")
+  client.post("/api/scan", params={"dir": "2019", "recursive": 0})
+  app.state.scanner.wait()
+  assert "2019/fresh/d.jpg" in scanned_paths(app)
+  assert "2019/sub/c.jpg" not in scanned_paths(app)
 
 
 def test_api_scan_recursive_true_reads_the_subdir_subtree(settings):
@@ -313,35 +336,61 @@ def test_api_scan_root_recursive_false_does_not_touch_a_year_directory(settings)
   client = TestClient(app)
   assert client.post("/api/scan", params={"dir": ".", "recursive": 0}).json() == {"started": True}
   app.state.scanner.wait()
-  assert scanned_paths(app) == {"loose.jpg"}
+  # ticket 233: year directories never scanned before are new subdirectories, picked up too
+  assert "loose.jpg" in scanned_paths(app) and "2019/a.JPG" in scanned_paths(app)
   status = client.get("/api/scan/status").json()
-  assert not status["running"] and status["files_seen"] == 1
+  assert not status["running"] and status["files_seen"] >= 1
 
 
 # --- unified worker-status reporting, ticket 140 ------------------------------
 
-def test_scan_manager_sets_current_dir_and_started_at_for_a_plain_directory_scan(settings):
-  from photoapp import db
-  db.open_state(settings.state_dir).close()
+def test_rescan_job_publishes_progress_with_current_dir_and_started_at(settings):
+  from fastapi.testclient import TestClient
+  from photoapp import api, db
   build_years(settings.pictures_dir)
-  mgr = scan.ScanManager(settings.db_path, settings.pictures_dir)
-  mgr.start("2019", recursive=False)
-  # Set synchronously by start() itself, before the background thread does any work, so this is
-  # deterministic regardless of how fast the tiny test tree scans.
-  assert mgr.progress.current_dir == "2019" and mgr.progress.started_at
-  mgr.wait()
-  assert mgr.progress.current_dir is None    # cleared once the run is over
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  seen = []
+  real = scan.scan
+
+  def spy(*args, **kwargs):
+    seen.append((app.state.scanner.progress.current_dir, app.state.scanner.progress.started_at))
+    return real(*args, **kwargs)
+  scan.scan = spy
+  try:
+    app.state.scanner.start("2019", recursive=False)
+    app.state.scanner.wait()
+  finally:
+    scan.scan = real
+  assert seen[0][0] == "2019" and seen[0][1]
+  assert app.state.scanner.progress.current_dir is None    # cleared once the run is over
 
 
-def test_scan_manager_reports_the_whole_library_request_as_the_root(settings):
-  from photoapp import db
-  db.open_state(settings.state_dir).close()
+def test_rescan_is_an_elevated_job_that_runs_while_the_background_worker_is_stopped(settings):
+  from photoapp import api, db
   build_years(settings.pictures_dir)
-  mgr = scan.ScanManager(settings.db_path, settings.pictures_dir)
-  mgr.start(None, recursive=True)
-  assert mgr.progress.current_dir == "."   # overwritten per top-level step once scan_all begins
-  mgr.wait()
-  assert mgr.progress.current_dir is None
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  # background_jobs.start() (the load-adaptive worker's job) is never called here
+  assert app.state.scanner.start(None, True) is True
+  assert app.state.scanner.start(None, True) is False        # already queued/running
+  app.state.scanner.wait()
+  rows = app.state.db.execute("SELECT kind, state, priority FROM jobs").fetchall()
+  assert [(r["kind"], r["state"], r["priority"] > 0) for r in rows] == [("rescan", "done", True)]
+
+
+def test_a_failing_rescan_is_failed_not_requeued_and_can_be_asked_again(settings, monkeypatch):
+  from photoapp import api, db
+  build_years(settings.pictures_dir)
+  app = api.create_app(db.open_state(settings.state_dir), settings)
+  def boom(*a, **k):
+    raise RuntimeError("disk on fire")
+  monkeypatch.setattr(scan, "scan_all", boom)
+  app.state.scanner.start(None, True)
+  app.state.scanner.wait()
+  row = app.state.db.execute("SELECT state, error FROM jobs").fetchone()
+  assert row["state"] == "failed" and "disk on fire" in row["error"]
+  app.state.background_jobs.start(); app.state.background_jobs.stop()   # an idle transition
+  assert app.state.db.execute("SELECT state FROM jobs").fetchone()["state"] == "failed"
+  assert app.state.scanner.start(None, True) is True            # not blocked by the failed row
 
 
 def test_api_jobs_reports_the_scanner_separately_from_the_shared_job_queues(settings):

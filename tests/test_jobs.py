@@ -508,3 +508,60 @@ def test_purge_trash_job_runs_through_the_background_queue(settings):
 
   assert app.state.background_jobs.list()[0]["state"] == "done"
   assert os.path.isfile(os.path.join(d, trash_lib.TRASH_DIRNAME, "a.DNG"))   # too fresh to purge
+
+
+# --- elevated priority, ticket 233 ---------------------------------------------
+
+def test_elevated_jobs_are_claimed_first_and_raised_by_a_duplicate_enqueue(tmp_path):
+  from photoapp import db, jobs
+  path = str(tmp_path / "j.db")
+  db.connect(path).close()
+  ran = []
+  q = jobs.JobQueue(path, {"a": lambda c, j: ran.append(j["target"])}, workers=1)
+  q.enqueue("a", target="old")
+  q.enqueue("a", target="mid")
+  q.enqueue("a", target="urgent", priority=1)
+  q.enqueue("a", target="mid", priority=1)       # same queued job: priority raised, no new row
+  q.start()
+  assert q.wait_idle()
+  q.stop()
+  assert ran == ["mid", "urgent", "old"] or ran == ["urgent", "mid", "old"]
+  assert q.counts() == {"done": 3}
+
+
+def test_elevated_worker_runs_elevated_jobs_without_start_and_background_jobs_wait(tmp_path):
+  from photoapp import db, jobs
+  path = str(tmp_path / "j.db")
+  db.connect(path).close()
+  ran = []
+  q = jobs.JobQueue(path, {"a": lambda c, j: ran.append(j["target"])}, workers=1,
+                    elevated_workers=1)
+  q.enqueue("a", target="background")
+  q.enqueue("a", target="urgent", priority=1)
+  assert q.wait_idle(kinds=("a",), timeout=0.5) is False     # background one still queued
+  assert ran == ["urgent"]
+  q.stop_elevated()
+
+
+def test_a_failed_elevated_job_stays_failed_and_a_restart_fails_a_running_one(tmp_path):
+  from photoapp import db, jobs
+  path = str(tmp_path / "j.db")
+  conn = db.connect(path)
+  def boom(c, j):
+    raise RuntimeError("x")
+  q = jobs.JobQueue(path, {"a": boom}, workers=1, elevated_workers=1)
+  q.enqueue("a", target="t", priority=1)
+  deadline = __import__("time").time() + 5
+  while __import__("time").time() < deadline and q.counts().get("failed") != 1:
+    __import__("time").sleep(0.05)
+  q.stop_elevated()
+  assert q.counts() == {"failed": 1}
+  q.start(); q.stop()                                        # idle transition: not requeued
+  assert q.counts() == {"failed": 1}
+  # a job cut off mid-run by a restart is failed, not run again
+  conn.execute("INSERT INTO jobs (kind, target, state, created_at, priority) "
+               "VALUES ('a', 'u', 'running', '2026-01-01T00:00:00', 1)")
+  conn.commit()
+  q2 = jobs.JobQueue(path, {"a": boom}, workers=1, elevated_workers=1)
+  assert q2.fail_interrupted_elevated() == 1
+  assert q2.counts() == {"failed": 2}

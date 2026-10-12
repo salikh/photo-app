@@ -3,6 +3,7 @@
 import dataclasses
 import functools
 import io
+import datetime
 import json
 import mimetypes
 import os
@@ -190,10 +191,6 @@ def create_app(conn, settings):
   hashes = (fileinfo.load_precomputed_hashes(settings.hashes_db)
             if settings.hashes_db else None)
   on_scan_done = lambda conn: recovery.recover(conn, settings)
-  app.state.scanner = scan_lib.ScanManager(
-      settings.db_path, settings.pictures_dir, hashes, settings.thumbs_dir,
-      on_done=on_scan_done, workers=settings.scan_workers,
-      metadata_cache=settings.write_metadata_json)
 
   def raw_render(conn, job):
     row = conn.execute("SELECT id, path FROM files WHERE id = ?",
@@ -271,8 +268,12 @@ def create_app(conn, settings):
   # never competes for CPU/disk with the on-demand queue above or with interactive use.
   # newest_first (ticket 080): a folder's missing thumbnails, bumped by the /api/photos route
   # below, jump ahead of the standing backlog instead of waiting behind it in enqueue order.
+  # elevated_workers (ticket 233): the user's Rescan is an elevated job, run at once by its own
+  # normal-priority thread whatever the machine load (see JobQueue).
   app.state.background_jobs = jobs.JobQueue(settings.db_path, {}, workers=1, low_priority=True,
-                                            newest_first=True)
+                                            newest_first=True, elevated_workers=1)
+  app.state.background_jobs.fail_interrupted_elevated()
+  app.state.scanner = scan_lib.RescanClient(app.state.background_jobs, settings.pictures_dir)
   app.state.populator = thumb_populate.Populator(
       settings.db_path, settings.pictures_dir, settings.thumbs_dir,
       queue=app.state.background_jobs)
@@ -296,6 +297,44 @@ def create_app(conn, settings):
                  target, progress.files_seen, progress.files_processed)
 
   app.state.background_jobs.add_handler("scan_dir", scan_dir_job)
+
+  def rescan_job(conn, job):
+    """ticket 233: the Rescan button / the first scan of an empty library, an elevated job.
+    target is the directory ('.' = the root), options.recursive as in /api/scan. A recursive
+    root rescan is a whole-library scan_all. A non-recursive one reads the folder's own files and
+    also scans whole any directory directly in it that was never scanned (scan.new_subdirs).
+    Progress is published on app.state.scanner.progress for /api/scan/status and the Jobs page."""
+    target = job["target"] or "."
+    options = json.loads(job["options"]) if job["options"] else {}
+    recursive = bool(options.get("recursive", True))
+    scan_dir = (settings.pictures_dir if target == "."
+               else os.path.join(settings.pictures_dir, target))
+    progress = scan_lib.Progress(
+        running=True, current_dir=target,
+        started_at=datetime.datetime.now().isoformat(timespec="seconds"))
+    app.state.scanner.progress = progress
+    args = (hashes, progress, settings.thumbs_dir, on_scan_done, settings.scan_workers)
+    try:
+      if target == "." and recursive:
+        scan_lib.scan_all(conn, settings.pictures_dir, None, *args,
+                          metadata_cache=settings.write_metadata_json)
+      else:
+        scan_lib.scan(conn, settings.pictures_dir, scan_dir, *args, recursive=recursive,
+                      metadata_cache=settings.write_metadata_json)
+        if not recursive and not progress.error:
+          for new_dir in scan_lib.new_subdirs(conn, settings.pictures_dir, scan_dir):
+            progress.current_dir = scan_lib._rel(settings.pictures_dir, new_dir)
+            scan_lib.scan(conn, settings.pictures_dir, new_dir, *args, recursive=True,
+                          metadata_cache=settings.write_metadata_json)
+            if progress.error:
+              break
+    finally:
+      progress.current_dir = None
+      progress.running = False
+    if progress.error:
+      raise RuntimeError(progress.error)
+
+  app.state.background_jobs.add_handler("rescan", rescan_job)
 
   def prune_jobs_job(conn, job):
     """ticket 075: rides along with the nightly scan (enqueue_nightly_scan) rather than having
