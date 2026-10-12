@@ -1619,6 +1619,31 @@ def test_delete_flow_moves_rejected_photos_to_trash(page, server):
   assert os.path.isfile(os.path.join(server.pictures, ".trash/2024/trip/IMG_0003.jpg.xmp"))
 
 
+def test_loupe_delete_button_only_on_a_rejected_photo_and_trashes_just_it(page, server):
+  # ticket 234: the viewer's bottom bar offers Delete for a rejected photo only; it trashes that
+  # one photo at once and the viewer moves on.
+  ids = photo_ids(server)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0001")
+  expect(page.locator(".hud button.trash-photo")).to_have_count(0)          # not rejected
+  page.keyboard.press("x")                                                  # reject it
+  expect(page.locator(".hud .stars.reject")).to_be_visible()
+  expect(page.locator(".hud button.trash-photo")).to_have_count(1)
+  page.keyboard.press("u")                                                  # undo: button gone
+  expect(page.locator(".hud button.trash-photo")).to_have_count(0)
+
+  rejected = server.app.state.db.execute(
+      "SELECT id FROM photos WHERE rating = -1 LIMIT 1").fetchone()
+  page.goto(f"{server.url}/#/2024/trip?photo={rejected['id']}")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0003")
+  page.locator(".hud button.trash-photo").click()
+  expect(page.locator("#toast")).to_contain_text("moved to trash")
+  assert not os.path.exists(os.path.join(server.pictures, "2024/trip/IMG_0003.jpg"))
+  assert os.path.isfile(os.path.join(server.pictures, ".trash/2024/trip/IMG_0003.jpg"))
+  expect(page.locator(".hud .name")).not_to_contain_text("IMG_0003")        # moved on
+  assert os.path.exists(os.path.join(server.pictures, "2024/trip/IMG_0001.jpg"))   # others kept
+
+
 def test_delete_review_screen_with_nothing_rejected(page, server):
   page.goto(server.url + "/#!delete-review?dir=2024/home")   # nothing rejected there
   expect(page.locator(".status")).to_contain_text("No rejected photos")

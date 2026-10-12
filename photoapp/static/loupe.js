@@ -11,7 +11,7 @@ import {label as filterLabel, primary as filterPrimary, starValues} from './filt
 import * as preloader from './preload.js';
 import {createFilmstrip} from './filmstrip.js';
 import {createZoom} from './zoom.js';
-import {updateCell, refreshCellThumb, settle, reinsertPhotos, loadRest, loadFolder} from './grid.js';
+import {updateCell, refreshCellThumb, settle, removePhotos, reinsertPhotos, loadRest, loadFolder} from './grid.js';
 import {matchesRoute, scheduleCountsRefresh} from './filters.js';
 import {RawTuningSession} from './rawTuning.js';
 import * as exportAction from './export.js';
@@ -389,6 +389,10 @@ function renderHud() {
                       onclick: (e) => { e.stopPropagation(); toggleFilterPicker(); }}) : null,
     ui.tagInput,
     el('div', {class: 'buttons'},
+      // Ticket 234: only a rejected photo offers this; it moves the whole photo to the trash now.
+      p.rating === REJECT ? el('button', {class: 'danger trash-photo', text: 'Delete',
+                    title: 'move this rejected photo (every file and sidecar) to the trash',
+                    onclick: (e) => { e.stopPropagation(); trashCurrentPhoto(); }}) : null,
       el('button', {text: '✖', title: 'reject (X)', class: p.rating === REJECT ? 'on' : '', onclick: () => setRating(afterKey(p.rating, 'x', p.previous_stars))}),
       choices().map(rate),
       el('button', {text: '♥', title: 'fav (F)', class: p.fav ? 'on' : '', onclick: toggleFav}),
@@ -424,10 +428,10 @@ function refresh(photo) {
 // After an edit, take the photo out of the view if it no longer matches the active filter
 // and, if it was the one on screen, move on to the next (or the previous, or close when none
 // is left). Returns the removed entries [{photo, index}] for undo.
-function leaveIfNoLongerMatching(photo) {
+function leaveIfNoLongerMatching(photo, force = false) {
   const at = state.photos.indexOf(photo);
   const wasCurrent = current() === photo;
-  const entries = settle(photo);
+  const entries = force ? removePhotos([photo]) : settle(photo);
   if (!entries.length) return entries;
   if (!isOpen()) return entries;
   if (wasCurrent) {
@@ -510,6 +514,20 @@ function setRating(value) {
     }
     scheduleCountsRefresh();
   });
+}
+
+// Ticket 234: the server re-checks the photo is still rejected; on success it leaves the view like
+// a photo that no longer matches the filter, and the viewer moves on to the next one.
+async function trashCurrentPhoto() {
+  const photo = current();
+  if (!photo || photo.rating !== REJECT) return;
+  try {
+    const r = await post('/api/photos/trash', {ids: [photo.id]});
+    if (r.errors.length) { toast(r.errors[0].error, true); return; }
+    toast('moved to trash');
+    leaveIfNoLongerMatching(photo, true);
+    scheduleCountsRefresh();
+  } catch (e) { toast(e.message, true); }
 }
 
 function rateStep(delta) {

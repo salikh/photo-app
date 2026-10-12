@@ -515,3 +515,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [231](docs/tickets/231.md) Bug: the Google Photos album list looked empty for ~15 s (Google pages ~10 albums per request); listed once when the Export dialog opens (no timers) and cached, loading state in the dialog
 - [x] [232](docs/tickets/232.md) The export dialog's album list comes from a `gphotos_albums` table filled by every upload (and an explicit "Refresh from Google"), not from a Google listing
 - [x] [233](docs/tickets/233.md) Rescan is an elevated-priority job (own normal-priority worker, never requeued on failure); a "this folder only" rescan also picks up new subdirectories
+- [x] [234](docs/tickets/234.md) Loupe: red Delete button in the bottom bar, only for a rejected photo, trashes just that photo at once
