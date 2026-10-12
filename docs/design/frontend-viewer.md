@@ -88,3 +88,8 @@ swipe the instant a second pointer touches down, so a pinch can never be misread
 `touch-action: none` on the photo stage is what stops the *browser's own* page-zoom from firing at all during a
 pinch — without it, iOS/Android would zoom the whole page (header, buttons and all) instead of letting the
 app's own transform-based zoom handle it.
+
+
+### Double-tap zoom level
+
+Double tap (and the `Z` key) zoom to `tapScale(W, H)`: 100% for photos up to 16 megapixels, and for larger ones the same on-screen magnification a 16 MP photo would get (`sqrt(16e6 / (W*H))`). 100% of a 24 MP Huge was too close. Pinch/wheel zoom still go up to `MAX_SCALE`.

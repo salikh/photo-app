@@ -2568,6 +2568,9 @@ def test_zoom_math_pure_functions_in_the_browser(page, server):
     out.anchorBefore = [(400 - -500) / 1, (300 - -300) / 1];
     out.anchorAfter = [(400 - a.x) / 2, (300 - a.y) / 2];
     out.max = z.MAX_SCALE;
+    out.tap16 = z.tapScale(4928, 3264);                                // ~16 MP: 100%
+    out.tap24 = z.tapScale(6000, 4000);                                // 24 MP: same magnification as 16 MP
+    out.tapSmall = z.tapScale(800, 600);                               // small photos: 100%
     return out;
   }""")
   assert (r["fit"], round(r["fitTall"], 6)) == (0.25, 0.2)
@@ -2576,6 +2579,8 @@ def test_zoom_math_pure_functions_in_the_browser(page, server):
   assert (r["bigFar"]["x"], r["bigFar"]["y"]) == (1000 - 3000, 800 - 2000)
   assert (r["bigOk"]["x"], r["bigOk"]["y"]) == (-500, -300)
   assert r["anchorBefore"] == r["anchorAfter"] and r["max"] == 4
+  assert r["tapSmall"] == 1 and 0.99 < r["tap16"] <= 1
+  assert abs(r["tap24"] * 6000 - 4900) < 20                                    # the photo is as wide as 16 MP would be
 
 
 def test_pinch_out_zooms_the_photo_around_the_fingers_and_never_the_page(phone, server):

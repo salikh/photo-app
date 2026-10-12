@@ -352,7 +352,7 @@ function whenShown(fn) {
 
 function toggleZoom() {
   if (ui.zoom.isActive()) ui.zoom.exit();
-  else whenShown(() => ui.zoom.enter({scale: 1}));   // 100%, around the middle
+  else whenShown(() => ui.zoom.enter({scale: 'tap'}));   // the double-tap magnification, around the middle
 }
 
 // ------------------------------------------------------------------- HUD

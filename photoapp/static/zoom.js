@@ -3,7 +3,7 @@
 //
 //   pinch          two fingers zoom around the point between them
 //   drag           one finger (or the mouse) pans a zoomed photo
-//   double tap     toggles between fit-to-screen and 100%, around the tapped point (touch);
+//   double tap     toggles between fit-to-screen and tapScale (100% of a 16 MP photo), around the tapped point (touch);
 //                  a click toggles the same way with a mouse
 //   Ctrl+wheel     zoom around the pointer (a trackpad pinch arrives as Ctrl+wheel)
 //   + / - keys     zoom around the center (handled by the viewer, calling zoomBy)
@@ -13,6 +13,12 @@
 // the page under the stage). Zoom range: from "fit to the stage" up to MAX_SCALE of the original.
 
 export const MAX_SCALE = 4;
+
+// Double tap zooms to a fixed magnification of the photo itself, not to 100% of whatever pixels
+// were loaded: 100% of a 16-megapixel Huge was comfortable, but 100% of a 24-megapixel one is too
+// close. So the target is "as if the photo had 16 megapixels"; smaller photos stay at 100%.
+export const TAP_ZOOM_PIXELS = 16e6;
+export function tapScale(W, H) { return Math.min(1, Math.sqrt(TAP_ZOOM_PIXELS / (W * H))); }
 
 const TAP_MAX_MS = 350;
 const TAP_MAX_MOVE = 10;
@@ -84,7 +90,7 @@ export function createZoom(stage, img, hooks) {
     img.style.transform = `translate(${x}px, ${y}px) scale(${s})`;
   }
 
-  // Start zooming at `scale` (default: 100% of the original pixels) around the stage point (px, py)
+  // Start zooming at `scale` ('tap': the double-tap magnification; default: 100% of the original pixels) around the stage point (px, py)
   // (default: the middle). Returns false if the photo's size is not known.
   function enter({scale = 1, px, py} = {}) {
     const full = hooks.fullSize();
@@ -96,7 +102,8 @@ export function createZoom(stage, img, hooks) {
       s: fit, ...clampOffset(0, 0, fit, W, H, SW, SH),      // the photo as it is shown when fitted
     };
     const {max} = limits();
-    const target = Math.min(max, Math.max(fit, scale));
+    const want = scale === 'tap' ? tapScale(W, H) : scale;
+    const target = Math.min(max, Math.max(fit, want));
     const cx = px ?? SW / 2;
     const cy = py ?? SH / 2;
     const moved_ = zoomAround(start.x, start.y, start.s, target, cx, cy);
@@ -235,7 +242,7 @@ export function createZoom(stage, img, hooks) {
   function onTap(t) {
     const toggle = () => {
       if (active) exit();
-      else enter({scale: 1, px: t.x, py: t.y});
+      else enter({scale: 'tap', px: t.x, py: t.y});
     };
     if (t.type === 'mouse') { toggle(); return; }            // a click toggles
     const now = performance.now();
