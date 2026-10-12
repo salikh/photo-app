@@ -686,7 +686,7 @@ def test_advanced_raw_settings_controls_preview_and_persist(page, server):
   expect(advanced).to_have_count(1)
   advanced.locator("summary").click()   # open the zipper
   saturation = advanced.locator("input[aria-label=saturation]")
-  contrast = advanced.locator("input[aria-label=contrast]")
+  contrast = dng_row.locator(".raw-settings input[aria-label=contrast]")   # basic since ticket 235
   expect(saturation).to_have_value("1")
   expect(contrast).to_have_value("1")
 
@@ -706,7 +706,7 @@ def test_advanced_raw_settings_controls_preview_and_persist(page, server):
   advanced = dng_row.locator(".raw-settings details.advanced")
   advanced.locator("summary").click()
   expect(advanced.locator("input[aria-label=saturation]")).to_have_value("1.05")
-  expect(advanced.locator("input[aria-label=contrast]")).to_have_value("1.05")
+  expect(dng_row.locator(".raw-settings input[aria-label=contrast]")).to_have_value("1.05")
   expect(advanced.locator("select[aria-label='noise reduction']")).to_have_value("2")
   expect(advanced.locator("select[aria-label=demosaic]")).to_have_value("4")
   expect(dng_row.get_by_role("button", name="Reset to default")).to_be_visible()

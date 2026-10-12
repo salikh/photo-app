@@ -245,3 +245,17 @@ unsharp is the only expensive step (~1 s at 24 MP, ~100 ms at 2000 px).
   edits from the original (JPEG draft-decode) into memory only — the same provisional shape as
   `raw_preview` (094); the loupe shows it while hovering the sliders or holding Shift (107).
   Client-side canvas rendering was measured (ticket 224) and is a possible later optimisation only.
+
+### The same adjustments on a RAW (ticket 235)
+
+A RAW file takes the same edit document, applied **after** the RAW conversion (embedded preview or
+demosaic) and after each size's own downscale: baked into every cached size, Huge and exports exactly
+as for a JPG (`render_raw_sizes` and `make` carry `edits`; with edits set the "demosaic Huge once,
+derive the rest" shortcut is skipped, like the derive-from-larger rule). The panel is one for both
+kinds: Brightness / Contrast / Saturation are a single slider each, bound to the RAW conversion's own
+parameter on a RAW and to the edit document on a JPG; black / midtones / white point, monochrome,
+sharpen, auto levels and per-channel levels are the edit document on both. The basic / Advanced split
+matches (advanced = saturation, auto levels, red/green/blue levels, plus noise reduction and demosaic
+on a RAW). The local LibRaw-Wasm preview knows nothing of the edit document, so while any edit is set
+the preview comes from `GET /api/files/{id}/raw_preview?...&edits=<json>` (server render, ~1 s);
+otherwise the local render is used as before.

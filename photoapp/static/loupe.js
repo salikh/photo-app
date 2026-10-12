@@ -744,7 +744,7 @@ function isDirty(values, committed) {
 // Ticket 107: the tuned overlay shows only while the user is asking to compare (hovering the
 // sliders, or holding the Shift fallback) -- never merely because a provisional render loaded.
 function syncTuningVisible() {
-  ui.tuning.hidden = !((pending || editPending) && ui.tuning.src && (sliderHover || shiftHeld));
+  ui.tuning.hidden = !((pending || editStates.size) && ui.tuning.src && (sliderHover || shiftHeld));
 }
 
 function showRowPreview(f) {
@@ -760,6 +760,7 @@ function hideRowPreview() {
 }
 
 function discardPending() {
+  clearTimeout(adjustTimer);
   discardEditPending();
   if (pending) { clearTimeout(pending.timer); if (pending.session) pending.session.dispose(); }
   pending = null;
@@ -767,11 +768,6 @@ function discardPending() {
   previewSeq++;   // ticket 108: invalidate any requestPreview() still in flight
   if (ui.tuning) { ui.tuning.hidden = true; ui.tuning.src = ''; }
   if (ui.tuningBusy) ui.tuningBusy.hidden = true;
-}
-
-function schedulePreview(f) {
-  clearTimeout(pending.timer);
-  pending.timer = setTimeout(() => requestPreview(f), PREVIEW_DEBOUNCE_MS);
 }
 
 // Ticket 108: bumped at the start of every requestPreview() call and compared against on the way
@@ -791,24 +787,65 @@ async function requestPreview(f) {
   ui.tuningBusy.hidden = false;
   const url = await pending.session.render(pending.values);
   if (mySeq === previewSeq) ui.tuningBusy.hidden = true;
-  if (!pending || pending.fileId !== f.id) return;   // superseded while the render was in flight
+  if (!pending || pending.fileId !== f.id || mySeq !== previewSeq) return;   // superseded meanwhile
   if (url) ui.tuning.src = url;
   else requestPreviewNetwork(f);
 }
 
-function requestPreviewNetwork(f) {
+// ------------------------------------------- one adjustment panel for RAW and non-RAW (ticket 235)
+//
+// A RAW file's panel is its own RAW conversion controls (the `pending` values above) *plus* the same
+// adjustments a JPG has (`editStates`, photoapp/edits.py: levels, per-channel levels, auto levels,
+// monochrome, sharpen), applied after the conversion; Brightness/Contrast/Saturation are one slider
+// each, bound to the RAW conversion's own parameter on a RAW and to the edit document on a JPG.
+// Same basic / "Advanced" split in both: basic = brightness, contrast, [RAW: exposure, highlights,
+// shadows, white balance], black point, midtones, white point, monochrome, sharpen; advanced =
+// saturation, auto levels, red/green/blue levels, [RAW: noise reduction, demosaic].
+
+let adjustTimer = null;
+
+function scheduleAdjustPreview(f) {
+  clearTimeout(adjustTimer);
+  adjustTimer = setTimeout(() => requestAdjustPreview(f), PREVIEW_DEBOUNCE_MS);
+}
+
+function requestAdjustPreview(f) {
+  if (!f.is_raw) return requestEditPreview(f);
+  if (!pending || pending.fileId !== f.id) return;
+  const st = editStates.get(f.id);
+  const doc = st ? editDocument(st.values) : {};
+  // The local LibRaw-Wasm render knows nothing of the edits: with any edit set, the server renders
+  // the preview (RAW conversion + edits), otherwise the fast local path as before.
+  if (Object.keys(doc).length) { previewSeq++; return requestPreviewNetwork(f, doc); }
+  return requestPreview(f);
+}
+
+function requestPreviewNetwork(f, doc) {
   const qs = new URLSearchParams({size: 'Medium'});
   for (const [k, v] of Object.entries(pending.values)) if (v != null) qs.set(k, v);
+  if (doc && Object.keys(doc).length) qs.set('edits', JSON.stringify(doc));
+  ui.tuningBusy.hidden = false;
+  const done = () => { ui.tuningBusy.hidden = true; };
+  ui.tuning.addEventListener('load', done, {once: true});
+  ui.tuning.addEventListener('error', done, {once: true});
   ui.tuning.src = `/api/files/${f.id}/raw_preview?${qs}`;   // onload -> syncTuningVisible
 }
 
-async function saveRawSettings(f) {
-  const values = pending.values;
-  let res;
+async function saveAdjustments(f) {
+  const rawDirty = f.is_raw && pending && pending.fileId === f.id &&
+                   isDirty(pending.values, committedValues(f));
+  const st = editStates.get(f.id);
+  const editDirty = st && JSON.stringify(st.values) !== JSON.stringify(editValues(f.edits));
+  let res = null;
   try {
-    res = await post(`/api/files/${f.id}/raw_settings`, values);
+    if (editDirty) {
+      const doc = editDocument(st.values);
+      res = await post(`/api/files/${f.id}/edits`, {edits: Object.keys(doc).length ? doc : null});
+    }
+    if (rawDirty) res = await post(`/api/files/${f.id}/raw_settings`, pending.values);
     toast('saved; thumbnails will regenerate on next view');
   } catch (e) { return; }   // post() already showed a toast for a server error
+  if (!res) return;
   setRevision(f.id, res.rev);   // ticket 119: future imgUrl() calls fetch the fresh render
   if (current().file_id === f.id) current().rev = res.rev;
   discardPending();
@@ -823,146 +860,161 @@ async function saveRawSettings(f) {
   if (filesOpen) openFiles();
 }
 
-function rawSettingsControls(f) {
-  if (!pending || pending.fileId !== f.id) {
+function adjustControls(f) {
+  if (f.is_raw && (!pending || pending.fileId !== f.id)) {
     if (pending && pending.session) pending.session.dispose();   // ticket 105: don't leak a worker
     pending = {fileId: f.id, values: committedValues(f), timer: null};
   }
+  // One edit state per file: a photo's panel lists every file's controls (a RAW and its JPG).
+  if (!editStates.has(f.id)) editStates.set(f.id, {fileId: f.id, values: editValues(f.edits)});
   // Ticket 107: hovering the sliders block is one of the two ways to reveal the tuned overlay
-  // (the other is holding Shift). Attached to this outer container, which renderRawSettingsBody
+  // (the other is holding Shift). Attached to this outer container, which renderAdjustBody
   // repopulates in place via setChildren -- so the listener survives every slider tick's re-render.
   const container = el('div', {
-    class: 'raw-settings',
+    class: f.is_raw ? 'raw-settings' : 'edit-settings',
     onmouseenter: () => { sliderHover = true; syncTuningVisible(); },
     onmouseleave: () => { sliderHover = false; syncTuningVisible(); },
   });
-  renderRawSettingsBody(f, container);
+  renderAdjustBody(f, container);
   return container;
 }
 
-function renderRawSettingsBody(f, container) {
-  const values = pending.values;
-  const committed = committedValues(f);
-  const wbMode = values.wb_mode || 'camera';
-  const bright = values.bright ?? 1.0;
-  const highlight = values.highlight ?? 0;
-  const brightLabel = el('span', {class: 'meta', text: bright.toFixed(2)});
-  const highlightLabel = el('span', {class: 'meta', text: String(highlight)});
-  const exposureLabel = el('span', {class: 'meta', text: (values.exposure ?? 1.0).toFixed(2)});
-  const shadowLabel = el('span', {class: 'meta', text: (values.shadow ?? 0.0).toFixed(2)});
-  const saturationLabel = el('span', {class: 'meta', text: (values.saturation ?? 1.0).toFixed(2)});
-  const contrastLabel = el('span', {class: 'meta', text: (values.contrast ?? 1.0).toFixed(2)});
-  const saveBtn = el('button', {class: 'primary', text: 'Save', onclick: () => saveRawSettings(f)});
+function renderAdjustBody(f, container) {
+  const raw = f.is_raw;
+  const rawValues = raw ? pending.values : null;
+  const edit = editStates.get(f.id);
+  const editVals = edit.values;
+  const rawCommitted = raw ? committedValues(f) : null;
+  const editCommitted = editValues(f.edits);
+  const saveBtn = el('button', {class: 'primary', text: 'Save', onclick: () => saveAdjustments(f)});
   const discardBtn = el('button', {text: 'Discard changes', onclick: () => {
     discardPending();
-    pending = {fileId: f.id, values: committedValues(f), timer: null};
-    renderRawSettingsBody(f, container);
+    if (raw) pending = {fileId: f.id, values: committedValues(f), timer: null};
+    editStates.set(f.id, {fileId: f.id, values: editValues(f.edits)});
+    renderAdjustBody(f, container);
   }});
+  const isDirtyNow = () => (raw && isDirty(rawValues, rawCommitted)) ||
+                           JSON.stringify(editVals) !== JSON.stringify(editCommitted);
   const syncButtons = () => {
-    const dirty = isDirty(values, committed);
-    saveBtn.disabled = !dirty;
-    discardBtn.hidden = !dirty;
+    saveBtn.disabled = !isDirtyNow();
+    discardBtn.hidden = !isDirtyNow();
   };
   syncButtons();
-  const onTick = (key, label, fmt) => (e) => {
-    values[key] = Number(e.target.value);
-    label.textContent = fmt(values[key]);
-    syncButtons();
-    schedulePreview(f);
+  const two = (v) => v.toFixed(2);
+  // values: rawValues or editVals; `def` is what a null (RAW "default") value shows.
+  const slider = (values, label, key, min, max, step, fmt = String, def = 0) => {
+    const out = el('span', {class: 'meta', text: fmt(values[key] ?? def)});
+    return el('div', {class: 'row'},
+      el('label', {text: label}),
+      el('input', {type: 'range', min, max, step, value: values[key] ?? def,
+                 'aria-label': label.toLowerCase(),
+                 oninput: (e) => {
+                   values[key] = Number(e.target.value);
+                   out.textContent = fmt(values[key]);
+                   syncButtons();
+                   scheduleAdjustPreview(f);
+                 }}),
+      out);
   };
-  return setChildren(container,
-    el('div', {class: 'row'},
-      el('label', {text: 'Brightness'}),
-      el('input', {type: 'range', min: '0.25', max: '3', step: '0.05', value: bright,
-                 'aria-label': 'brightness', oninput: onTick('bright', brightLabel, (v) => v.toFixed(2))}),
-      brightLabel),
-    el('div', {class: 'row'},
-      el('label', {text: 'Highlight recovery'}),
-      el('input', {type: 'range', min: '0', max: '9', step: '1', value: highlight,
-                 'aria-label': 'highlight recovery', oninput: onTick('highlight', highlightLabel, String)}),
-      highlightLabel),
+  const toggle = (label, key) => el('div', {class: 'row'},
+    el('label', {text: label}),
+    el('input', {type: 'checkbox', checked: editVals[key], 'aria-label': label.toLowerCase(),
+               onchange: (e) => { editVals[key] = e.target.checked; syncButtons(); scheduleAdjustPreview(f); }}));
+  const channelLevels = (c, name) => [
+    slider(editVals, `${name} black`, `${c}_black`, 0, 254, 1),
+    slider(editVals, `${name} gamma`, `${c}_gamma`, 0.2, 5, 0.05, two),
+    slider(editVals, `${name} white`, `${c}_white`, 1, 255, 1)];
+  const wbMode = raw ? (rawValues.wb_mode || 'camera') : null;
+  // Brightness / Contrast / Saturation: the RAW conversion's own parameter on a RAW (a multiplier,
+  // ticket 085/112), the edit document's on a JPG.
+  const brightness = raw ? slider(rawValues, 'Brightness', 'bright', 0.25, 3, 0.05, two, 1.0)
+                         : slider(editVals, 'Brightness', 'brightness', -100, 100, 1);
+  const contrast = raw ? slider(rawValues, 'Contrast', 'contrast', 0.5, 2.0, 0.05, two, 1.0)
+                       : slider(editVals, 'Contrast', 'contrast', 0.5, 2, 0.05, two, 1);
+  const saturation = raw ? slider(rawValues, 'Saturation', 'saturation', 0.0, 2.0, 0.05, two, 1.0)
+                         : slider(editVals, 'Saturation', 'saturation', 0, 2, 0.05, two, 1);
+  const rawBasic = !raw ? [] : [
+    slider(rawValues, 'Exposure', 'exposure', 0.25, 8.0, 0.05, two, 1.0),
+    slider(rawValues, 'Highlight recovery', 'highlight', 0, 9, 1, String, 0),
+    slider(rawValues, 'Shadow pull', 'shadow', 0.0, 0.5, 0.01, two, 0.0),
     el('div', {class: 'row'},
       el('label', {text: 'White balance'}),
       WB_MODES.map((m) => el('button', {
         class: wbMode === m ? 'on' : '', text: m,
         onclick: () => {
-          Object.assign(values, m === 'manual'
-            ? {wb_mode: m, wb_r: values.wb_r ?? DEFAULT_WB.r, wb_g: values.wb_g ?? DEFAULT_WB.g,
-               wb_b: values.wb_b ?? DEFAULT_WB.b}
+          Object.assign(rawValues, m === 'manual'
+            ? {wb_mode: m, wb_r: rawValues.wb_r ?? DEFAULT_WB.r, wb_g: rawValues.wb_g ?? DEFAULT_WB.g,
+               wb_b: rawValues.wb_b ?? DEFAULT_WB.b}
             : {wb_mode: m, wb_r: null, wb_g: null, wb_b: null});
-          schedulePreview(f);
-          renderRawSettingsBody(f, container);
+          scheduleAdjustPreview(f);
+          renderAdjustBody(f, container);
         },
       }))),
     wbMode === 'manual' ? el('div', {class: 'row'},
       ['r', 'g', 'b'].map((c) => el('input', {
         type: 'number', step: '0.1', min: '0.1', class: 'wb-multiplier',
-        value: values[`wb_${c}`] ?? DEFAULT_WB[c], 'aria-label': `white balance ${c}`,
-        onchange: (e) => { values[`wb_${c}`] = Number(e.target.value); syncButtons(); schedulePreview(f); }}))) : null,
+        value: rawValues[`wb_${c}`] ?? DEFAULT_WB[c], 'aria-label': `white balance ${c}`,
+        onchange: (e) => { rawValues[`wb_${c}`] = Number(e.target.value); syncButtons(); scheduleAdjustPreview(f); }}))) : null];
+  const rawAdvanced = !raw ? [] : [
     el('div', {class: 'row'},
-      el('label', {text: 'Exposure'}),
-      el('input', {type: 'range', min: '0.25', max: '8.0', step: '0.05', value: values.exposure ?? 1.0,
-                 'aria-label': 'exposure', oninput: onTick('exposure', exposureLabel, (v) => v.toFixed(2))}),
-      exposureLabel),
+      el('label', {text: 'Noise reduction'}),
+      el('select', {'aria-label': 'noise reduction', onchange: (e) => {
+        const v = Number(e.target.value);
+        rawValues.noise = v === 0 ? null : v;   // off is the default -> back to NULL
+        syncButtons();
+        scheduleAdjustPreview(f);
+      }}, NOISE_MODES.map(([v, text]) => el('option', {value: v, text,
+            selected: Number(v) === (rawValues.noise ?? 0)})))),
     el('div', {class: 'row'},
-      el('label', {text: 'Shadow pull'}),
-      el('input', {type: 'range', min: '0.0', max: '0.5', step: '0.01', value: values.shadow ?? 0.0,
-                 'aria-label': 'shadow pull', oninput: onTick('shadow', shadowLabel, (v) => v.toFixed(2))}),
-      shadowLabel),
-    // Ticket 112: the advanced controls (saturation, contrast, noise reduction, demosaic
-    // algorithm) live behind a zipper so the loupe stays uncluttered for the common sliders above.
+      el('label', {text: 'Demosaic'}),
+      el('select', {'aria-label': 'demosaic', onchange: (e) => {
+        const v = Number(e.target.value);
+        rawValues.demosaic = v === 3 ? null : v;   // AHD is the default -> back to NULL
+        syncButtons();
+        scheduleAdjustPreview(f);
+      }}, DEMOSAIC_MODES.map(([v, text]) => el('option', {value: v, text,
+            selected: Number(v) === (rawValues.demosaic ?? 3)}))))];
+  const atDefault = JSON.stringify(editVals) === JSON.stringify(EDIT_DEFAULTS) &&
+                    (!raw || Object.values(rawValues).every((v) => v == null));
+  return setChildren(container,
+    raw ? null : el('div', {class: 'row'}, el('label', {text: 'Edit (JPG)'}),
+       el('span', {class: 'meta', text: 'the original file is never changed'})),
+    brightness,
+    contrast,
+    rawBasic,
+    slider(editVals, 'Black point', 'black', 0, 254, 1),
+    slider(editVals, 'Midtones', 'gamma', 0.2, 5, 0.05, two, 1),
+    slider(editVals, 'White point', 'white', 1, 255, 1, String, 255),
+    toggle('Monochrome', 'mono'),
+    slider(editVals, 'Sharpen', 'sharpen_amount', 0, 300, 5),
+    slider(editVals, 'Sharpen radius', 'sharpen_radius', 0.2, 40, 0.1, (v) => v.toFixed(1), 2),
+    // Ticket 112/235: the advanced controls live behind a zipper so the loupe stays uncluttered.
     el('details', {class: 'advanced'},
       el('summary', {text: 'Advanced'}),
-      el('div', {class: 'row'},
-        el('label', {text: 'Saturation'}),
-        el('input', {type: 'range', min: '0.0', max: '2.0', step: '0.05',
-                   value: values.saturation ?? 1.0, 'aria-label': 'saturation',
-                   oninput: onTick('saturation', saturationLabel, (v) => v.toFixed(2))}),
-        saturationLabel),
-      el('div', {class: 'row'},
-        el('label', {text: 'Contrast'}),
-        el('input', {type: 'range', min: '0.5', max: '2.0', step: '0.05',
-                   value: values.contrast ?? 1.0, 'aria-label': 'contrast',
-                   oninput: onTick('contrast', contrastLabel, (v) => v.toFixed(2))}),
-        contrastLabel),
-      el('div', {class: 'row'},
-        el('label', {text: 'Noise reduction'}),
-        el('select', {'aria-label': 'noise reduction', onchange: (e) => {
-          const v = Number(e.target.value);
-          values.noise = v === 0 ? null : v;   // off is the default -> back to NULL
-          syncButtons();
-          schedulePreview(f);
-        }}, NOISE_MODES.map(([v, text]) => el('option', {value: v, text,
-              selected: Number(v) === (values.noise ?? 0)})))),
-      el('div', {class: 'row'},
-        el('label', {text: 'Demosaic'}),
-        el('select', {'aria-label': 'demosaic', onchange: (e) => {
-          const v = Number(e.target.value);
-          values.demosaic = v === 3 ? null : v;   // AHD is the default -> back to NULL
-          syncButtons();
-          schedulePreview(f);
-        }}, DEMOSAIC_MODES.map(([v, text]) => el('option', {value: v, text,
-              selected: Number(v) === (values.demosaic ?? 3)}))))),
+      saturation,
+      toggle('Auto levels', 'auto_levels'),
+      channelLevels('r', 'Red'), channelLevels('g', 'Green'), channelLevels('b', 'Blue'),
+      rawAdvanced),
     el('div', {class: 'row'}, saveBtn, discardBtn,
-      Object.values(values).every((v) => v == null) ? null : el('button', {
+      atDefault ? null : el('button', {
         text: 'Reset to default', onclick: () => {
-          Object.assign(values, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null, exposure: null, shadow: null, saturation: null, contrast: null, noise: null, demosaic: null});
-          syncButtons();
-          schedulePreview(f);
-          renderRawSettingsBody(f, container);
+          edit.values = {...EDIT_DEFAULTS};
+          if (raw) Object.assign(rawValues, {bright: null, wb_mode: null, wb_r: null, wb_g: null, wb_b: null, highlight: null, exposure: null, shadow: null, saturation: null, contrast: null, noise: null, demosaic: null});
+          renderAdjustBody(f, container);
+          scheduleAdjustPreview(f);
         },
       })));
 }
 
 // ------------------------------------------- non-destructive edits for non-RAW stills (epic 222)
 //
-// The same shape as the RAW sliders above (tickets 094/107/108): dragging only updates `editPending`
+// The same shape as the RAW sliders above (tickets 094/107/108): dragging only updates `editStates`
 // and asks the server for a provisional render (GET /api/files/{id}/edit_preview, never stored)
 // shown in the shared `ui.tuning` overlay while hovering the sliders or holding Shift; Save POSTs the
 // document (the server bakes it into every cached size), Discard/closing the panel drops it. The
 // original file is never touched. photoapp/edits.py is the single definition of the maths.
 
-let editPending = null;   // {fileId, values, timer, seq} for the file whose edit controls are open
+const editStates = new Map();   // fileId -> {fileId, values}: the open (unsaved) edit controls
 let editPreviewSeq = 0;
 let editBlobUrl = null;
 
@@ -1006,24 +1058,19 @@ function editDocument(v) {
 }
 
 function discardEditPending() {
-  if (editPending) clearTimeout(editPending.timer);
-  editPending = null;
+  editStates.clear();
   editPreviewSeq++;
   if (ui.tuning && !pending) { ui.tuning.hidden = true; ui.tuning.src = ''; }
   if (ui.tuningBusy && !pending) ui.tuningBusy.hidden = true;
   if (editBlobUrl) { URL.revokeObjectURL(editBlobUrl); editBlobUrl = null; }
 }
 
-function scheduleEditPreview(f) {
-  clearTimeout(editPending.timer);
-  editPending.timer = setTimeout(() => requestEditPreview(f), PREVIEW_DEBOUNCE_MS);
-}
-
 async function requestEditPreview(f) {
-  if (!editPending || editPending.fileId !== f.id) return;
+  const st = editStates.get(f.id);
+  if (!st) return;
   const mySeq = ++editPreviewSeq;
   ui.tuningBusy.hidden = false;
-  const qs = new URLSearchParams({size: 'Medium', edits: JSON.stringify(editDocument(editPending.values))});
+  const qs = new URLSearchParams({size: 'Medium', edits: JSON.stringify(editDocument(st.values))});
   let url = null;
   try {
     const res = await fetch(`/api/files/${f.id}/edit_preview?${qs}`);
@@ -1035,100 +1082,6 @@ async function requestEditPreview(f) {
   if (editBlobUrl) URL.revokeObjectURL(editBlobUrl);
   editBlobUrl = url;
   ui.tuning.src = url;
-}
-
-async function saveEdits(f) {
-  const doc = editDocument(editPending.values);
-  let res;
-  try {
-    res = await post(`/api/files/${f.id}/edits`, {edits: Object.keys(doc).length ? doc : null});
-    toast('saved; thumbnails will regenerate on next view');
-  } catch (e) { return; }
-  setRevision(f.id, res.rev);
-  if (current().file_id === f.id) current().rev = res.rev;
-  discardEditPending();
-  if (current().file_id === f.id) {
-    ui.img.src = imgUrl('Medium', f.id);
-    retryOnce(ui.img, current());
-    refreshCellThumb(current().id, f.id);
-    ui.strip.refreshThumb(current().id, f.id);
-  }
-  if (filesOpen) openFiles();
-}
-
-function editControls(f) {
-  if (!editPending || editPending.fileId !== f.id) {
-    editPending = {fileId: f.id, values: editValues(f.edits), timer: null};
-  }
-  const container = el('div', {
-    class: 'edit-settings',
-    onmouseenter: () => { sliderHover = true; syncTuningVisible(); },
-    onmouseleave: () => { sliderHover = false; syncTuningVisible(); },
-  });
-  renderEditBody(f, container);
-  return container;
-}
-
-function renderEditBody(f, container) {
-  const values = editPending.values;
-  const committed = editValues(f.edits);
-  const saveBtn = el('button', {class: 'primary', text: 'Save', onclick: () => saveEdits(f)});
-  const discardBtn = el('button', {text: 'Discard changes', onclick: () => {
-    editPending.values = editValues(f.edits);
-    renderEditBody(f, container);
-    scheduleEditPreview(f);
-  }});
-  const syncButtons = () => {
-    const dirty = JSON.stringify(values) !== JSON.stringify(committed);
-    saveBtn.disabled = !dirty;
-    discardBtn.hidden = !dirty;
-  };
-  syncButtons();
-  const slider = (label, key, min, max, step, fmt = (v) => String(v)) => {
-    const out = el('span', {class: 'meta', text: fmt(values[key])});
-    return el('div', {class: 'row'},
-      el('label', {text: label}),
-      el('input', {type: 'range', min, max, step, value: values[key], 'aria-label': label.toLowerCase(),
-                 oninput: (e) => {
-                   values[key] = Number(e.target.value);
-                   out.textContent = fmt(values[key]);
-                   syncButtons();
-                   scheduleEditPreview(f);
-                 }}),
-      out);
-  };
-  const two = (v) => v.toFixed(2);
-  const toggle = (label, key) => el('div', {class: 'row'},
-    el('label', {text: label}),
-    el('input', {type: 'checkbox', checked: values[key], 'aria-label': label.toLowerCase(),
-               onchange: (e) => { values[key] = e.target.checked; syncButtons(); scheduleEditPreview(f); }}));
-  const channelLevels = (c, name) => [
-    slider(`${name} black`, `${c}_black`, 0, 254, 1),
-    slider(`${name} gamma`, `${c}_gamma`, 0.2, 5, 0.05, two),
-    slider(`${name} white`, `${c}_white`, 1, 255, 1)];
-  const dirtyFromDefault = JSON.stringify(values) !== JSON.stringify(EDIT_DEFAULTS);
-  return setChildren(container,
-    el('div', {class: 'row'}, el('label', {text: 'Edit (JPG)'}),
-       el('span', {class: 'meta', text: 'the original file is never changed'})),
-    slider('Brightness', 'brightness', -100, 100, 1),
-    slider('Contrast', 'contrast', 0.5, 2, 0.05, two),
-    slider('Black point', 'black', 0, 254, 1),
-    slider('Midtones', 'gamma', 0.2, 5, 0.05, two),
-    slider('White point', 'white', 1, 255, 1),
-    toggle('Monochrome', 'mono'),
-    slider('Sharpen', 'sharpen_amount', 0, 300, 5),
-    slider('Sharpen radius', 'sharpen_radius', 0.2, 40, 0.1, (v) => v.toFixed(1)),
-    el('details', {class: 'advanced'},
-      el('summary', {text: 'Advanced'}),
-      slider('Saturation', 'saturation', 0, 2, 0.05, two),
-      toggle('Auto levels', 'auto_levels'),
-      channelLevels('r', 'Red'), channelLevels('g', 'Green'), channelLevels('b', 'Blue')),
-    el('div', {class: 'row'}, saveBtn, discardBtn,
-      dirtyFromDefault ? el('button', {text: 'Reset to default', onclick: () => {
-        editPending.values = {...EDIT_DEFAULTS};
-        renderEditBody(f, container);
-        scheduleEditPreview(f);
-      }}) : null));
 }
 
 // ------------------------------------------- store / apply adjustments (ticket 230)
@@ -1155,14 +1108,17 @@ async function storeAdjustments() {
   const name = f.path.split('/').pop();
   if (f.is_raw) {
     const values = pending && pending.fileId === f.id ? pending.values : committedValues(f);
-    adjustmentClipboard = {kind: 'raw', value: {...values}, from: name};
+    // Ticket 235: a RAW's adjustments are its conversion settings plus the shared edit document.
+    const doc = editStates.has(f.id) ? editDocument(editStates.get(f.id).values) : (f.edits || {});
+    adjustmentClipboard = {kind: 'raw', value: {...values}, edits: doc, from: name};
   } else {
-    const doc = editPending && editPending.fileId === f.id ? editDocument(editPending.values) : (f.edits || {});
+    const doc = editStates.has(f.id) ? editDocument(editStates.get(f.id).values) : (f.edits || {});
     adjustmentClipboard = {kind: 'edits', value: doc, from: name};
   }
   try { sessionStorage.setItem('adjustmentClipboard', JSON.stringify(adjustmentClipboard)); } catch (e) { /* ok */ }
   const empty = adjustmentClipboard.kind === 'raw'
-    ? Object.values(adjustmentClipboard.value).every((v) => v == null)
+    ? Object.values(adjustmentClipboard.value).every((v) => v == null) &&
+      Object.keys(adjustmentClipboard.edits || {}).length === 0
     : Object.keys(adjustmentClipboard.value).length === 0;
   toast(empty ? `stored: no adjustments (from ${name})` : `stored adjustments from ${name}`);
 }
@@ -1178,10 +1134,16 @@ async function applyAdjustments() {
   }
   let res;
   try {
-    res = adjustmentClipboard.kind === 'raw'
-      ? await post(`/api/files/${f.id}/raw_settings`, adjustmentClipboard.value)
-      : await post(`/api/files/${f.id}/edits`,
-                   {edits: Object.keys(adjustmentClipboard.value).length ? adjustmentClipboard.value : null});
+    if (adjustmentClipboard.kind === 'raw') {
+      res = await post(`/api/files/${f.id}/raw_settings`, adjustmentClipboard.value);
+      const doc = adjustmentClipboard.edits || {};     // (older clipboards had none: leave edits alone)
+      if (adjustmentClipboard.edits !== undefined) {
+        res = await post(`/api/files/${f.id}/edits`, {edits: Object.keys(doc).length ? doc : null});
+      }
+    } else {
+      res = await post(`/api/files/${f.id}/edits`,
+                       {edits: Object.keys(adjustmentClipboard.value).length ? adjustmentClipboard.value : null});
+    }
   } catch (e) { return; }   // post() already toasted the server's complaint
   toast(`applied adjustments from ${adjustmentClipboard.from}; thumbnails will regenerate`);
   setRevision(f.id, res.rev);
@@ -1463,8 +1425,7 @@ async function openFiles() {
       cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
       f.ai_score != null ? el('div', {class: 'meta ai-rating', text: 'AI rating ' + f.ai_score.toFixed(1),
                                       title: aiAnswersText(f.ai_answers)}) : null,
-      f.is_raw && !f.missing ? rawSettingsControls(f) : null,
-      f.is_editable && !f.missing ? editControls(f) : null,   // epic 222
+      f.is_editable && !f.missing ? adjustControls(f) : null,   // epic 222, ticket 235
       el('div', {class: 'row'},
         f.id === detail.representative_file_id ? el('span', {class: 'ok', text: 'shown'}) :
           el('button', {text: 'Show this', onclick: () => setRepresentative(detail, f.id)}),

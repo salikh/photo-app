@@ -211,13 +211,47 @@ def test_edits_api_roundtrip_clears_thumbs_and_serves_the_edited_image(conn, set
   assert sha(path) == digest
 
 
-def test_edits_api_refuses_raw_and_missing_files(conn, settings):
-  open(os.path.join(settings.pictures_dir, "x.DNG"), "wb").write(b"raw")
+def test_edits_api_refuses_videos_and_unknown_files(conn, settings):
+  open(os.path.join(settings.pictures_dir, "x.mp4"), "wb").write(b"video")
   scan.scan(conn, settings.pictures_dir)
   c = client(conn, settings)
   fid = conn.execute("SELECT id FROM files").fetchone()[0]
   assert c.post(f"/api/files/{fid}/edits", json={"edits": {"brightness": 5}}).status_code == 400
   assert c.post("/api/files/9999/edits", json={"edits": {"brightness": 5}}).status_code == 404
+
+
+def test_edits_apply_to_a_raw_file_in_thumbnails_and_raw_preview(conn, settings, monkeypatch):
+  # ticket 235: a RAW takes the same adjustments as a JPG, applied after the RAW conversion --
+  # baked into every cached size, and into the provisional raw_preview.
+  import io
+  import json
+  from photoapp import previews
+  open(os.path.join(settings.pictures_dir, "x.DNG"), "wb").write(b"raw")
+  scan.scan(conn, settings.pictures_dir)
+  c = client(conn, settings)
+  fid, photo_id = conn.execute("SELECT id, photo_id FROM files").fetchone()
+  gradient = os.path.join(settings.state_dir, "g.jpg")
+  make_gradient(gradient, (600, 400))
+  monkeypatch.setattr(previews, "embedded_preview", lambda source: Image.open(gradient).convert("RGB"))
+  monkeypatch.setattr(previews, "render",
+                      lambda source, pending, half_size=False: Image.open(gradient).convert("RGB"))
+  def small():
+    return Image.open(io.BytesIO(c.get(f"/img/Small/{fid}").content))
+  base = mean(small())
+  r = c.post(f"/api/files/{fid}/edits", json={"edits": {"mono": True, "levels": {"black": 20, "gamma": 1, "white": 200}}})
+  assert r.status_code == 200 and "mono" in r.json()["edits"]
+  edited = mean(small())
+  assert abs(edited[0] - edited[2]) < 2 and abs(base[0] - base[2]) > 20          # monochrome baked in
+  f = c.get(f"/api/photos/{photo_id}").json()["files"][0]
+  assert f["is_raw"] and f["is_editable"] and "mono" in f["edits"]
+  preview = c.get(f"/api/files/{fid}/raw_preview",
+                  params={"size": "Small", "edits": json.dumps({"mono": True})})
+  px = mean(Image.open(io.BytesIO(preview.content)))
+  assert abs(px[0] - px[2]) < 2
+  plain = mean(Image.open(io.BytesIO(c.get(f"/api/files/{fid}/raw_preview",
+                                          params={"size": "Small"}).content)))
+  assert abs(plain[0] - plain[2]) > 20
+  assert c.get(f"/api/files/{fid}/raw_preview", params={"edits": "{bad"}).status_code == 400
 
 
 def test_edit_preview_is_provisional_and_never_persisted(conn, settings):

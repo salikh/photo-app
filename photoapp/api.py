@@ -201,7 +201,8 @@ def create_app(conn, settings):
     file_crop = crop_lib.get(conn, row["id"])           # ticket 115: Thumb/Small rendered cropped
     file_rotation = rotation_lib.get(conn, row["id"])   # ticket 129: every size, applied last
     made = thumbs.render_raw_sizes(settings.pictures_dir, settings.thumbs_dir,
-                                   row["path"], file_settings, file_crop, file_rotation)
+                                   row["path"], file_settings, file_crop, file_rotation,
+                                   edits_lib.get(conn, row["id"]))      # ticket 235
     if not made:
       raise RuntimeError("LibRaw could not decode the file")
     for size, path in made.items():
@@ -829,11 +830,12 @@ def create_app(conn, settings):
     return {"file_id": file_id, "cleared": cleared, "rotation": current, "rev": rev}
 
   def editable_row(file_id):
-    """file_row, 400 unless it is a still the edits apply to (not RAW, not video)."""
+    """file_row, 400 unless it is a still the edits apply to (a JPG/PNG/..., or since ticket 235 a
+    RAW, where they are applied after the RAW conversion; not a video)."""
     row = file_row(file_id)
     name = row["path"]
-    if fileinfo.is_raw(name) or fileinfo.is_video(name) or not fileinfo.is_image(name):
-      raise HTTPException(400, "edits are only for non-RAW still images")
+    if fileinfo.is_video(name) or not (fileinfo.is_raw(name) or fileinfo.is_image(name)):
+      raise HTTPException(400, "edits are only for still images")
     return row
 
   @app.post("/api/files/{file_id}/edits")
@@ -1150,7 +1152,7 @@ def create_app(conn, settings):
                         highlight: int | None = None, exposure: float | None = None,
                         shadow: float | None = None, saturation: float | None = None,
                         contrast: float | None = None, noise: int | None = None,
-                        demosaic: int | None = None):
+                        demosaic: int | None = None, edits: str = ""):
     """Ticket 094: a provisional render of file_id with these *pending* settings, for the tuning
     UI to preview before committing anything. Unlike set_raw_settings, this never writes to
     files.raw_* or the thumbs cache -- rendered fresh into memory and returned directly, so there
@@ -1170,6 +1172,10 @@ def create_app(conn, settings):
     pending = raw_settings.to_columns(bright, wb_mode, wb_r, wb_g, wb_b, highlight,
                                       exposure=exposure, shadow=shadow, saturation=saturation,
                                       contrast=contrast, noise=noise, demosaic=demosaic)
+    try:      # ticket 235: the shared (JPG) edits, applied after the RAW conversion
+      doc = edits_lib.normalize(json.loads(edits) if edits else None)
+    except (ValueError, edits_lib.EditsError) as e:
+      raise HTTPException(400, f"bad edits: {e}")
     full_path = os.path.join(settings.pictures_dir, row["path"])
 
     def render():
@@ -1178,10 +1184,7 @@ def create_app(conn, settings):
     img = await run_in_threadpool(render)
     if img is None:
       raise HTTPException(404, "could not render a preview with these settings")
-    long_edge = thumbs.LONG_EDGE[size]
-    if long_edge:
-      img = img.copy()
-      img.thumbnail((long_edge, long_edge), Image.LANCZOS)
+    img = thumbs.resize_and_edit(img, thumbs.LONG_EDGE[size], doc)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=thumbs.JPEG_QUALITY)
     return Response(content=buf.getvalue(), media_type="image/jpeg",

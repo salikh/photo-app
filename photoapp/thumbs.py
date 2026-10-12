@@ -193,7 +193,7 @@ def render(source, dest, long_edge, settings=None, crop=None, rotation=None, edi
 
 
 def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=None,
-                     rotation=None):
+                     rotation=None, edits=None):
   """Demosaic a RAW and write Thumb/Small (cropped) and Medium (full). Returns {size: path}.
 
   Slow (about a second); used by the background job when a RAW has no usable embedded preview
@@ -202,7 +202,8 @@ def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=No
   preview and no tuned settings has no fast way to get a full-size Huge either -- left to the
   next on-demand request, same as before this ticket). Returns {} if the file cannot be decoded.
   Ticket 115: the demosaic is of the full frame; Thumb/Small are cropped from it, Medium is not.
-  Ticket 129: rotation is applied last, to every size.
+  Ticket 129: rotation is applied last, to every size. Ticket 235: edits (the shared adjustment
+  document) are applied after each size's own downscale, as for any other file.
   """
   img = previews.render(os.path.join(pictures_dir, file_path), settings, half_size=True)
   if img is None:
@@ -214,7 +215,7 @@ def render_raw_sizes(pictures_dir, thumbs_dir, file_path, settings=None, crop=No
       continue
     source = _apply_crop(img, crop) if size in CROPPED_SIZES else img
     source = rotation_lib.apply(source, rotation)
-    made[size] = save(source, thumb_path(thumbs_dir, size, file_path), LONG_EDGE[size])
+    made[size] = save(source, thumb_path(thumbs_dir, size, file_path), LONG_EDGE[size], edits)
   logging.vlog(5, "%s: full-decode rendered %s", file_path, ", ".join(made))
   return made
 
@@ -296,7 +297,7 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, ro
   rendering from the original; a larger cached size already has it baked in, so the
   downscale-from-larger step must NOT apply it again (hence `source_rotation` below).
 
-  Ticket 227: edits is file_path's edits.get() document (a non-RAW still). An edited file is
+  Ticket 227: edits is file_path's edits.get() document (since ticket 235 a RAW's too). An edited file is
   always rendered straight from the original, one decode per size -- never derived from a larger
   cached size, which already has the edits baked in and (for sharpening) would get them twice --
   and the edits are applied after each size's own downscale. An unedited file is untouched by this.
@@ -336,7 +337,7 @@ def make(pictures_dir, thumbs_dir, file_path, size, settings=None, crop=None, ro
              for s in SIZES[SIZES.index(size) + 1:]]
   sources = [s for s in sources if s and not edits]
   original = os.path.join(pictures_dir, file_path)
-  if (not sources and size != "Huge" and fileinfo.is_raw(original)
+  if (not sources and size != "Huge" and fileinfo.is_raw(original) and not edits
       and settings and not raw_settings.is_default(settings)):
     huge_dest = thumb_path(thumbs_dir, "Huge", file_path)
     try:

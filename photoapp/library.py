@@ -330,8 +330,8 @@ def photo_detail(conn, photo_id, ai_model=None):
     f["is_raw"] = fileinfo.is_raw(f["path"])   # ticket 085: only a RAW file gets settings sliders
     f["is_video"] = fileinfo.is_video(f["path"])   # ticket 185
     f["edits"] = json.loads(f["edits"]) if f["edits"] else None   # ticket 226 (epic 222)
-    f["is_editable"] = (not f["is_raw"] and not f["is_video"]      # only a non-RAW still
-                        and fileinfo.is_image(f["path"]))
+    f["is_editable"] = (not f["is_video"]                          # any still; ticket 235: RAW too
+                        and (f["is_raw"] or fileinfo.is_image(f["path"])))
     f["has_anim"] = bool(conn.execute(              # ticket 191
         "SELECT 1 FROM thumbs WHERE file_id = ? AND size = 'AnimThumb'", (f["id"],)).fetchone())
     # Ticket 099: "exported from" jump-to-original -- dir + photo_id of the source Photo, so the

@@ -95,3 +95,47 @@ def test_s_stores_and_a_applies_adjustments_between_files(page, server):
   page.keyboard.press("a")
   expect(page.locator("#toast")).to_contain_text("applied adjustments")
   assert api(server, f"/api/photos/{ids[0]}")["files"][0]["edits"] == {"brightness": -50.0}
+
+
+def test_raw_panel_has_the_same_adjustments_as_a_jpg_and_saves_them(page, server, monkeypatch):
+  # ticket 235: a RAW offers every adjustment a JPG does (same labels, same Advanced split), and
+  # Save stores the edit document next to the RAW conversion settings.
+  from photoapp import previews
+  monkeypatch.setattr(previews, "embedded_preview", lambda path: Image.new("RGB", (1600, 1200), "red"))
+  monkeypatch.setattr(previews, "render",
+                      lambda path, settings=None, half_size=False: Image.new("RGB", (1600, 1200), "blue"))
+  open(os.path.join(server.pictures, "2024/trip", "IMG_0001.DNG"), "wb").write(b"x")
+  server.app.state.scanner.start()
+  server.app.state.scanner.wait()
+  ids = photo_ids(server)
+  edit_requests = []
+  page.on("request", lambda r: edit_requests.append(r.url) if "raw_preview?" in r.url else None)
+  page.goto(f"{server.url}/#/2024/trip?photo={ids[0]}")
+  expect(page.locator(".hud .name")).to_contain_text("+1 files")
+  page.keyboard.press("i")
+  row = page.locator(".files-panel .file", has_text="IMG_0001.DNG")
+  jpg = page.locator(".files-panel .file", has_text="IMG_0001.jpg")
+  expect(row.locator(".raw-settings")).to_be_visible()
+  jpg.locator("input[aria-label]").first.wait_for(state="attached") if jpg.locator("input[aria-label]").count() else None
+  def labels(r, advanced):
+    scope = r.locator("details.advanced") if advanced else r
+    return {el.get_attribute("aria-label") for el in scope.locator("input[aria-label]").all()}
+  raw_basic = labels(row, False) - labels(row, True)
+  jpg_basic = labels(jpg, False) - labels(jpg, True)
+  assert jpg_basic <= raw_basic, jpg_basic - raw_basic      # every basic JPG control is also basic in RAW
+  assert labels(jpg, True) <= labels(row, True), labels(jpg, True) - labels(row, True)
+  assert {"black point", "midtones", "white point", "monochrome", "sharpen"} <= raw_basic
+  assert {"auto levels", "red black", "blue white"} <= labels(row, True)
+
+  row.locator("input[aria-label=monochrome]").check()
+  row.locator("input[aria-label='black point']").evaluate(
+      "(el) => { el.value = 30; el.dispatchEvent(new Event('input', {bubbles: true})); }")
+  expect(page.locator(".stage img.tuning:not(.row-preview)")).to_have_attribute(
+      "src", re.compile(r"raw_preview\?.*edits="), timeout=15000)
+  row.get_by_role("button", name="Save", exact=True).click()
+  expect(page.locator("#toast")).to_contain_text("saved")
+  fid = server.app.state.db.execute("SELECT id FROM files WHERE path LIKE '%.DNG'").fetchone()[0]
+  stored = api(server, f"/api/photos/{ids[0]}")["files"]
+  dng = [f for f in stored if f["id"] == fid][0]
+  assert "mono" in dng["edits"] and dng["edits"]["levels"]["black"] == 30
+  page.errors.clear()      # the fake one-byte DNG legitimately has no image (404)
