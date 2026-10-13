@@ -120,6 +120,7 @@ main { padding: 12px max(12px, env(safe-area-inset-left)); }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--cell), 1fr));
   gap: 6px;
+  touch-action: pan-x pan-y;   /* a two-finger pinch steps the magnification (gridzoom.js), not the page */
 }
 .cell {
   position: relative; display: block; aspect-ratio: 3 / 2;

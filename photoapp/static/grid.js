@@ -7,6 +7,7 @@ import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {matchesRoute, scheduleCountsRefresh} from './filters.js';
 import * as moveAction from './move.js';
+import {gridImgUrl} from './gridzoom.js';
 
 const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
 
@@ -89,11 +90,11 @@ export function updateCell(photo) {
 // browser's HTTP cache (Cache-Control: max-age=3600 on /img/*) still holds the old response.
 export function refreshCellThumb(photoId, fileId) {
   const img = document.querySelector(`.cell[data-id="${photoId}"] img`);
-  if (img) img.src = imgUrl('Thumb', fileId);
+  if (img) { delete img.dataset.retryBase; img.src = gridImgUrl(fileId); }
 }
 
 export function makeCell(photo) {
-  const img = el('img', {src: imgUrl('Thumb', photo.file_id), loading: 'lazy', alt: photo.name, decoding: 'async'});
+  const img = el('img', {src: gridImgUrl(photo.file_id), dataset: {fid: photo.file_id}, loading: 'lazy', alt: photo.name, decoding: 'async'});
   retryImage(img, photo.is_video ? 120 : 6);   // ticket 202: a video's still is made by a queued job
   const check = el('button', {class: 'check', 'aria-label': 'select', text: '✓', onclick: (e) => {
     e.preventDefault(); e.stopPropagation();

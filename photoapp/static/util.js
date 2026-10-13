@@ -56,7 +56,8 @@ export function retryImage(img, attempts = 6) {
   img.addEventListener('error', () => {
     if (n >= attempts) return;
     n++;
-    setTimeout(() => { img.src = base + (base.includes('?') ? '&' : '?') + 'r=' + n; }, Math.min(1500 * n, 8000));
+    const b = img.dataset.retryBase || base;
+    setTimeout(() => { img.src = b + (b.includes('?') ? '&' : '?') + 'r=' + n; }, Math.min(1500 * n, 8000));
   });
 }
 

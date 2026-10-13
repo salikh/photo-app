@@ -3055,3 +3055,43 @@ def test_pinch_start_does_not_move_the_image_with_the_files_panel_open(page, ser
     assert abs((after["x"] + after["w"] / 2) - cx) < 4 and abs((after["y"] + after["h"] / 2) - cy) < 4, (
         panel, before, after)
     page.keyboard.press("Escape") if not panel else page.keyboard.press("i")
+
+
+# ---- ticket 241: grid magnification levels ----
+
+def tile_info(page):
+  return page.evaluate("""() => {
+    const c = document.querySelector('#grid .cell'); const i = c.querySelector('img');
+    return {w: c.getBoundingClientRect().width, size: i.getAttribute('src').split('/')[2],
+            nat: i.naturalWidth};}""")
+
+
+def test_grid_plus_minus_steps_through_four_levels_without_upsampling(page, server):
+  page.goto(f"{server.url}/#/2024/trip")
+  expect(page.locator("#grid .cell")).to_have_count(6)
+  page.evaluate("localStorage.clear()")
+  widths = []
+  for _ in range(5):                                      # the fifth press is a no-op at the top
+    page.keyboard.press("+")
+    page.wait_for_timeout(100)
+    widths.append(tile_info(page))
+  assert [w["w"] for w in widths[:3]] == sorted(w["w"] for w in widths[:3])
+  assert widths[2]["w"] == widths[3]["w"] == widths[4]["w"] > widths[0]["w"]
+  for info in widths:                                     # Thumb only while the tile is <= 300 px
+    assert info["size"] == ("Small" if info["w"] > 300 else "Thumb"), info
+  page.keyboard.press("-")
+  page.wait_for_timeout(100)
+  assert tile_info(page)["w"] < widths[-1]["w"]
+
+
+def test_grid_ctrl_wheel_zooms_and_does_not_open_help_or_browser_zoom(page, server):
+  page.goto(f"{server.url}/#/2024/trip")
+  expect(page.locator("#grid .cell")).to_have_count(6)
+  page.evaluate("localStorage.clear()")
+  before = tile_info(page)["w"]
+  page.mouse.move(400, 400)
+  page.keyboard.down("Control")
+  page.mouse.wheel(0, -100)
+  page.keyboard.up("Control")
+  page.wait_for_timeout(200)
+  assert tile_info(page)["w"] > before

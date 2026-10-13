@@ -8,6 +8,7 @@ import {el} from './util.js';
 const BROWSE = [
   ['Shift+A', 'filter: All'], ['Shift+X', 'filter: Rejected'], ['Shift+0', 'filter: Unrated'],
   ['Shift+1..5', 'filter: exactly N stars (click a star button again to cycle ≥ / ≤)'],
+  ['+ / -', 'bigger / smaller thumbnails (also Ctrl+scroll, trackpad or two-finger pinch)'],
   ['U', 'undo'], ['Esc', 'clear selection'],
 ];
 const VIEWER = [

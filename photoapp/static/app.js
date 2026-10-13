@@ -10,6 +10,7 @@ import * as pages from './pages.js';
 import {configure} from './rating.js';
 import * as filters from './filters.js';
 import * as help from './help.js';
+import * as gridZoom from './gridzoom.js';
 import * as exportAction from './export.js';
 import * as aiRate from './aiRate.js';
 import * as renameAction from './rename.js';
@@ -268,3 +269,4 @@ window.addEventListener('unhandledrejection', (e) => {
 window.addEventListener('hashchange', render);
 // The rating presentation depends on server settings, so load them first.
 get('/api/config').then(configure).catch(() => {}).finally(render);
+gridZoom.init();   // ticket 241: '+' / '-', Ctrl+wheel and pinch change the grid's magnification
