@@ -1619,6 +1619,7 @@ def test_delete_flow_moves_rejected_photos_to_trash(page, server):
   expect(page.locator(".review-grid .cell")).to_have_count(1)
   expect(page.locator(".review-grid img")).to_have_attribute(
       "src", re.compile(r"^/img/Medium/"))
+  expect(page.locator(".review-grid img")).to_have_css("object-fit", "contain")   # ticket 243
   confirm = page.locator(".delete-confirm button.danger")
   expect(confirm).to_have_text("Move 1 photo(s) to trash")
 
