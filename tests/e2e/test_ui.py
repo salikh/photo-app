@@ -3095,3 +3095,17 @@ def test_grid_ctrl_wheel_zooms_and_does_not_open_help_or_browser_zoom(page, serv
   page.keyboard.up("Control")
   page.wait_for_timeout(200)
   assert tile_info(page)["w"] > before
+
+
+def test_grid_shows_whole_picture_with_black_margins_above_smallest_level(page, server):
+  page.goto(f"{server.url}/#/2024/trip")
+  expect(page.locator("#grid .cell")).to_have_count(6)
+  page.evaluate("localStorage.clear()")
+  fit = "getComputedStyle(document.querySelector('#grid .cell img')).objectFit"
+  bg = "getComputedStyle(document.querySelector('#grid .cell')).backgroundColor"
+  page.keyboard.press("-")
+  assert page.evaluate(fit) == "cover"
+  page.keyboard.press("+")
+  assert page.evaluate(fit) == "contain" and page.evaluate(bg) == "rgb(0, 0, 0)"
+  page.keyboard.press("-")
+  assert page.evaluate(fit) == "cover"

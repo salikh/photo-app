@@ -32,6 +32,7 @@ export function currentLevel() { return level; }
 
 function apply() {
   document.documentElement.style.setProperty('--cell', nominalWidth() + 'px');
+  document.documentElement.classList.toggle('grid-fit', level > 0);   // ticket 242
   const first = document.querySelector('#grid .cell');
   measured = first ? first.getBoundingClientRect().width : 0;
   for (const img of document.querySelectorAll('#grid .cell img[data-fid]')) {
