@@ -51,7 +51,7 @@ def test_stabilize_makes_a_linked_tuning_with_a_description(lib, settings):
   assert tuning["tuning_note"].startswith("stabilized (strong)") and tuning["video_codec"] == "h264"
   assert by_path["t/MOV_1.mkv"]["tuning_note"] is None
   assert (tuning["width"], tuning["height"]) == (160, 120)
-  job = [j for j in client.get("/api/jobs").json()["jobs"] if j["kind"] == "stabilize"][0]
+  job = [j for j in client.get("/api/jobs").json()["jobs"] if j["kind"] == "video_stabilize"][0]
   assert job["state"] == "done" and job["note"].startswith("pass 2")
 
 

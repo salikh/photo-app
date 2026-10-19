@@ -210,6 +210,25 @@ def test_selection_and_batch_rating_and_undo(page, server):
   expect(page.locator(".badges .stars", has_text="5")).to_have_count(0)
 
 
+def test_escape_leaves_select_mode_and_ctrl_a_selects_everything(page, server):
+  # ticket 254
+  page.goto(server.url + "/#/2024/trip")
+  expect(page.locator(".cell")).to_have_count(6)
+  page.keyboard.press("Control+a")
+  expect(page.locator(".selection-bar")).to_contain_text("6 selected")
+  expect(page.locator(".cell.selected")).to_have_count(6)
+  expect(page.get_by_role("button", name="Select", exact=True)).to_have_class("on")
+  page.keyboard.press("Escape")
+  expect(page.locator(".selection-bar")).to_have_count(0)
+  expect(page.locator(".cell.selected")).to_have_count(0)
+  expect(page.get_by_role("button", name="Select", exact=True)).not_to_have_class("on")
+  # Escape in select mode with nothing selected also leaves it
+  page.get_by_role("button", name="Select", exact=True).click()
+  expect(page.get_by_role("button", name="Select", exact=True)).to_have_class("on")
+  page.keyboard.press("Escape")
+  expect(page.get_by_role("button", name="Select", exact=True)).not_to_have_class("on")
+
+
 def test_shift_click_selects_range_from_the_anchor(page, server):
   page.goto(server.url + "/#/2024/trip")
   expect(page.locator(".cell")).to_have_count(6)

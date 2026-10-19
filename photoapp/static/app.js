@@ -157,12 +157,14 @@ function renderHeader(route) {
   if (browsing) { filters.applyCounts(state.counts); filters.applyTags(state.tags); }
 }
 
-function toggleSelecting() {
-  state.selecting = !state.selecting;
-  document.getElementById('grid')?.classList.toggle('selecting', state.selecting);
+function setSelecting(on) {
+  state.selecting = on;
+  document.getElementById('grid')?.classList.toggle('selecting', on);
   renderHeader(state.route);
-  if (!state.selecting) grid.clearSelection();
+  if (!on) grid.clearSelection();
 }
+
+function toggleSelecting() { setSelecting(!state.selecting); }
 
 // ticket 140: progress is reported on the Jobs page (auto-updating there), not polled into a
 // header status span on whatever page the button happened to be clicked from.
@@ -237,7 +239,24 @@ document.addEventListener('keydown', (e) => {
     render();
     e.preventDefault();
   } else if (e.key === 'u' || e.key === 'U') { loupe.undo(); e.preventDefault(); }
-  else if (e.key === 'Escape' && state.selected.size) { grid.clearSelection(); e.preventDefault(); }
+  else if (e.key === 'Escape' && (state.selected.size || state.selecting)) {
+    // Ticket 254: Esc leaves select mode altogether (and drops the selection).
+    if (document.querySelector('.confirm-modal')) return;
+    if (state.selecting) setSelecting(false); else grid.clearSelection();
+    e.preventDefault();
+  }
+});
+
+// Ticket 254: Ctrl+A (Cmd+A on a Mac) enters select mode and selects every photo of the view.
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform || '');
+document.addEventListener('keydown', async (e) => {
+  if (e.key !== 'a' && e.key !== 'A') return;
+  if (!(isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) || e.altKey || e.shiftKey) return;
+  if (loupe.isOpen() || isTyping(e.target) || document.querySelector('.confirm-modal')) return;
+  if (!state.route || state.route.page !== 'browse') return;
+  e.preventDefault();       // not the browser's own select-all-text
+  if (!state.selecting) setSelecting(true);
+  await grid.selectAll();
 });
 
 // Help overlay (ticket 091): a third, always-on listener -- works from both the browse view and

@@ -1,4 +1,4 @@
-"""The 'stabilize' job (ticket 249, epic 246): make a stabilized tuning of a video.
+"""The 'video_stabilize' job (ticket 249, epic 246): make a stabilized tuning of a video.
 
 The result is `<stem>.stabilized-<level>.mp4` next to the original, imported into the library,
 described by `files.tuning_note` and linked (manual link, role 'tuning') to the Photo of the

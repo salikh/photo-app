@@ -361,6 +361,10 @@ MIGRATIONS = [
     -- (e.g. the stabilization level and vidstab parameters); NULL for ordinary files.
     ALTER TABLE files ADD COLUMN tuning_note TEXT;
     """,
+    """
+    -- Ticket 255: the stabilization job kind was renamed 'stabilize' -> 'video_stabilize'.
+    UPDATE jobs SET kind = 'video_stabilize' WHERE kind = 'stabilize';
+    """,
 ]
 
 

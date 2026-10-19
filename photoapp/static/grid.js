@@ -177,6 +177,16 @@ function selectRange(id) {
   renderSelectionBar();
 }
 
+// Ticket 254: every photo of the current view (all pages loaded first), replacing the selection.
+export async function selectAll() {
+  await loadRest(state.route);
+  state.selected = new Set(state.photos.map((p) => p.id));
+  document.querySelectorAll('.cell').forEach((cell) => {
+    cell.classList.toggle('selected', state.selected.has(Number(cell.dataset.id)));
+  });
+  renderSelectionBar();
+}
+
 function selectionBar() {
   let bar = document.querySelector('.selection-bar');
   if (!bar) {

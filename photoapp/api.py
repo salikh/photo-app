@@ -268,7 +268,7 @@ def create_app(conn, settings):
       conn.commit()
     stabilize_job_lib.run(conn, settings, job, video.default_tools(), set_note)
 
-  app.state.medium_jobs.add_handler("stabilize", stabilize_job)
+  app.state.medium_jobs.add_handler("video_stabilize", stabilize_job)
 
   def gphotos_upload_job(conn, job):
     """Ticket 212: see photoapp.gphotos_upload."""
@@ -811,7 +811,7 @@ def create_app(conn, settings):
       elif src is None:
         skipped.append({"photo_id": photo_id, "reason": "no video to stabilize"})
       else:
-        job_id = app.state.medium_jobs.enqueue("stabilize", src["id"], target=body.level,
+        job_id = app.state.medium_jobs.enqueue("video_stabilize", src["id"], target=body.level,
                                                options=options)
         queued.append({"photo_id": photo_id, "job_id": job_id, "file_id": src["id"]})
     return {"queued": queued, "skipped": skipped, "level": body.level,

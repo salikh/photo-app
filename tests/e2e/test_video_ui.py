@@ -200,8 +200,8 @@ def test_stabilize_button_is_video_only_and_queues_the_chosen_level(page, vserve
   page.locator(".stabilize-modal label", has_text="Weak").click()
   page.locator(".stabilize-go").click()
   expect(page.locator(".stabilize-modal")).to_have_count(0)
-  wait_for(lambda: [j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "stabilize"])
-  job = [j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "stabilize"][0]
+  wait_for(lambda: [j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "video_stabilize"])
+  job = [j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "video_stabilize"][0]
   assert job["path"] == "clips/a.mp4"
   # a still photo has no such button
   still = [p for p in api(vserver, "/api/photos?dir=.&limit=5")["photos"] if not p["is_video"]]
@@ -249,4 +249,4 @@ def test_selection_bar_stabilizes_the_selected_videos(page, vserver):
   bar.get_by_role("button", name="Stabilize").click()
   expect(page.locator(".stabilize-modal h3")).to_have_text("Stabilize 2 videos")
   page.locator(".stabilize-go").click()
-  wait_for(lambda: len([j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "stabilize"]) == 2)
+  wait_for(lambda: len([j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "video_stabilize"]) == 2)
