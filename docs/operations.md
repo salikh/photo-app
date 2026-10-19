@@ -249,6 +249,19 @@ is the file's ctime (bumped by the move itself, unlike mtime, which a same-files
 — confirmed empirically before relying on it). Restoring a file before that window closes is still a manual
 `mv` back to its original location (then rescan).
 
+## Stabilizing videos (epic 246)
+
+The loupe's `stabilize` button (videos only) asks for a level (Weak / Strong) and queues a job on the
+medium-priority queue (one worker, nice 10). It needs an ffmpeg built with `libvidstab` and `libx264`
+(Debian/Ubuntu `ffmpeg` has both; the button reports a clear error otherwise). The result is a normal
+file `<name>.stabilized-<level>.mp4` (H.264 + AAC, CRF 23, `+faststart`, plays on Android/iOS/browsers)
+next to the original, linked to it as a manual-link tuning. Run the same level again and that file is
+overwritten; the other level is a second file. The Files pane lists the file with its description
+(`files.tuning_note`: level and vidstab/x264 parameters, also stored in the MP4's `comment` tag),
+"Show this" selects which one the grid, loupe and player use, and either can be deleted. Parameters:
+`photoapp/video_stabilize.py` (`BASE`, `LEVELS`, `PARAMS`). Back up: the stabilized files are real
+files in the library; the link lives in `manual_links` / `manual_links.jsonl` as usual.
+
 ## What is in the state directory, and what to back up
 
 | Path | Rebuildable from disk? | Back it up? |

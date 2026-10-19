@@ -15,6 +15,7 @@ from photoapp import grouping
 from photoapp import manual_links
 from photoapp import paths
 from photoapp import scan
+from photoapp import thumb_populate
 from photoapp import thumbs
 from photoapp import video_stabilize
 
@@ -59,5 +60,9 @@ def run(conn, settings, job, tools, set_note=None):
   source_photo = conn.execute("SELECT photo_id FROM files WHERE id = ?", (src["id"],)).fetchone()
   if row["photo_id"] != source_photo["photo_id"]:
     manual_links.link(conn, settings.state_dir, dest_rel, src["path"], "tuning")
+  try:     # still + animated thumbnails now, so choosing this tuning shows a real tile at once
+    thumb_populate.populate_file(conn, settings.pictures_dir, settings.thumbs_dir, file_id, dest_rel)
+  except Exception:      # noqa: BLE001 -- the tuning itself is done; thumbnails fill in lazily
+    logging.exception("stabilize: thumbnails of %s", dest_rel)
   logging.info("stabilize %s -> %s (%s)", src["path"], dest_rel, note)
   return file_id

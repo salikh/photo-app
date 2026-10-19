@@ -163,25 +163,38 @@ def regroup(conn, rel_dirs=None):
   return created
 
 
-def fix_representatives(conn):
-  """Reset representatives that are no longer members of their Photo.
+def _default_representative(conn, photo_id, original_id):
+  """The default representative of a Photo: the live camera JPG, else the original, and (ticket
+  251) when those are gone -- a deleted unstabilized video, say -- the first live member, original
+  first. Falls back to the original when nothing is live."""
+  camera = conn.execute(
+      "SELECT id FROM files WHERE photo_id = ? AND role = 'camera' AND missing = 0 "
+      "ORDER BY path", (photo_id,)).fetchone()
+  if camera:
+    return camera["id"]
+  live = conn.execute(
+      "SELECT id FROM files WHERE photo_id = ? AND missing = 0 "
+      "ORDER BY (id = ?) DESC, (role = 'tuning'), path", (photo_id, original_id)).fetchone()
+  return live["id"] if live else original_id
 
-  Happens when a file is detached or moved to another Photo. The new
-  representative is the default: the camera JPG if there is one, else the
-  original.
+
+def fix_representatives(conn):
+  """Reset representatives that are no longer members of their Photo, or (ticket 251) are missing
+  while another member is live.
+
+  Happens when a file is detached or moved to another Photo, or deleted. The new representative
+  is the default (_default_representative).
   """
   bad = conn.execute(
       "SELECT p.id, p.original_file_id FROM photos p "
       "LEFT JOIN files f ON f.id = p.representative_file_id "
-      "WHERE f.photo_id IS NOT p.id").fetchall()
+      "WHERE f.photo_id IS NOT p.id OR (f.missing = 1 AND EXISTS "
+      "  (SELECT 1 FROM files x WHERE x.photo_id = p.id AND x.missing = 0))").fetchall()
   for r in bad:
-    camera = conn.execute(
-        "SELECT id FROM files WHERE photo_id = ? AND role = 'camera' "
-        "ORDER BY path", (r["id"],)).fetchone()
     conn.execute(
         "UPDATE photos SET representative_file_id = ?, "
         "representative_source = 'auto' WHERE id = ?",
-        (camera["id"] if camera else r["original_file_id"], r["id"]))
+        (_default_representative(conn, r["id"], r["original_file_id"]), r["id"]))
 
 
 def _delete_empty_photos(conn):

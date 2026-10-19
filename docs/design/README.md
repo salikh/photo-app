@@ -62,3 +62,4 @@ the default is what is running today unless a linked ticket says otherwise:
 - **Sidecars catch up to a newer database rating only on the Photo's next edit**, not proactively — confirmed
   (ticket 065). An explicit batch-sync command for Photos that are never edited again is
   `python -m photoapp.sync_sidecars` (ticket 068).
+- [video-tunings.md](video-tunings.md) — stabilized videos as tunings: queue tier, naming, linking, deletion

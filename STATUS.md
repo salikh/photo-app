@@ -526,3 +526,14 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [243](docs/tickets/243.md) Delete-review tiles show the whole uncropped picture with black margins
 - [x] [244](docs/tickets/244.md) Loupe hides the previous photo's render until the new one has loaded
 - [x] [245](docs/tickets/245.md) deploy.sh health check reads the host from service.args despite its comment line
+
+## Video stabilization (user request 2026-10-19, done)
+
+- [x] [246](docs/tickets/246.md) Epic: stabilize videos with vidstab as a tuning — design in `docs/design/video-tunings.md`
+  - [x] [247](docs/tickets/247.md) Medium-priority job queue
+  - [x] [248](docs/tickets/248.md) ffmpeg two-pass stabilizer module
+  - [x] [249](docs/tickets/249.md) Stabilize job, tuning link, description, API
+  - [x] [250](docs/tickets/250.md) Loupe "stabilize" button and options modal
+  - [x] [251](docs/tickets/251.md) Files pane: choose and delete video tunings
+  - [x] [252](docs/tickets/252.md) Docs and wrap-up
+

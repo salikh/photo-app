@@ -19,6 +19,8 @@ import time
 
 from absl import logging
 
+from photoapp import grouping
+
 TRASH_DIRNAME = ".trash"
 
 # ticket 081: how long a file sits in .trash/ before purge_trash deletes it for good.
@@ -130,6 +132,7 @@ def trash_file(conn, settings, file_id):
     raise TrashError(f"no such live file: {file_id}")
   moved, errors = _move_file_and_sidecars(conn, settings, file_id, row["path"])
   conn.execute("UPDATE files SET missing = 1 WHERE id = ?", (file_id,))
+  grouping.fix_representatives(conn)     # ticket 251: the shown file went away -> another member
   conn.commit()
   logging.info("trash_file %d: moved %d file(s) to %s, %d error(s)",
                file_id, len(moved), trash_dir(settings.pictures_dir), len(errors))

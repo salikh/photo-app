@@ -1487,6 +1487,8 @@ async function openFiles() {
       f.exported_from ? el('div', {class: 'meta'},
         'exported from: ', el('a', {href: href({dir: f.exported_from.dir, photo: f.exported_from.photo_id}),
                                     text: f.exported_from.path})) : null,
+      // Ticket 251: how a derived video was made (the stabilization level and parameters).
+      f.tuning_note ? el('div', {class: 'meta tuning-note', text: f.tuning_note}) : null,
       cameraMetaText(f) ? el('div', {class: 'meta', text: cameraMetaText(f)}) : null,
       f.ai_score != null ? el('div', {class: 'meta ai-rating', text: 'AI rating ' + f.ai_score.toFixed(1),
                                       title: aiAnswersText(f.ai_answers)}) : null,
@@ -1604,15 +1606,19 @@ async function switchViewTo(change) {
 async function setRepresentative(detail, fileId) {
   const photo = current();
   try {
-    const d = await post(`/api/photos/${photo.id}/representative`, {file_id: fileId});
-    seedRevisions(d.files);   // ticket 119: the new representative's revision
-    photo.file_id = d.representative_file_id;
-    const rep = d.files.find((f) => f.id === d.representative_file_id);
-    if (rep) { photo.path = rep.path; photo.name = rep.path.split('/').pop(); }
-    show(index);
-    const cell = document.querySelector(`.cell[data-id="${photo.id}"] img`);
-    if (cell) cell.src = imgUrl('Thumb', photo.file_id);
+    applyRepresentative(photo, await post(`/api/photos/${photo.id}/representative`, {file_id: fileId}));
   } catch (e) { toast(e.message, true); }
+}
+
+// The Photo's detail `d` names its representative file: point the loupe (and the grid tile) at it.
+function applyRepresentative(photo, d) {
+  seedRevisions(d.files);   // ticket 119: the new representative's revision
+  photo.file_id = d.representative_file_id;
+  const rep = d.files.find((f) => f.id === d.representative_file_id);
+  if (rep) { photo.path = rep.path; photo.name = rep.path.split('/').pop(); }
+  show(index);
+  const cell = document.querySelector(`.cell[data-id="${photo.id}"] img`);
+  if (cell) cell.src = imgUrl('Thumb', photo.file_id);
 }
 
 async function cycleRepresentative() {
@@ -1691,10 +1697,15 @@ function closeDeleteModal() {
 
 async function deleteFile(file) {
   try {
-    await post(`/api/files/${file.id}/trash`);
+    const result = await post(`/api/files/${file.id}/trash`);
     closeDeleteModal();
     toast('moved to trash');
     state.dirty = true;
+    // Ticket 251: deleting the file on screen makes the server pick another representative.
+    const photo = current();
+    if (photo && result.photo && photo.file_id !== result.photo.representative_file_id) {
+      applyRepresentative(photo, result.photo);
+    }
     if (filesOpen) openFiles();
   } catch (e) { toast(e.message, true); }
 }

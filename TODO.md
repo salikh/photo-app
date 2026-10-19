@@ -8,7 +8,7 @@ Tickets live in `docs/tickets/NNN.md`. Check an item off here (and move its poin
 
 ## Open tickets
 
-Epic 246 (stabilize videos with vidstab as a tuning, 247-252) is in progress: [246](docs/tickets/246.md).
+Epic 246 (video stabilization as a tuning, 247-252) is done.
 
 Epic 222 (non-destructive edits for non-RAW stills, 223-229) is done. Epic 217 (Fujifilm RAF support, 218-221) is done.
 

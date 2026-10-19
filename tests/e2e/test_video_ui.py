@@ -209,3 +209,29 @@ def test_stabilize_button_is_video_only_and_queues_the_chosen_level(page, vserve
     page.goto(f"{vserver.url}/#/?photo={still[0]['id']}")
     expect(page.locator(".loupe")).to_be_visible()
     expect(page.get_by_role("button", name="stabilize", exact=True)).to_have_count(0)
+
+
+def test_files_pane_lists_the_stabilized_tuning_and_switches_playback_to_it(page, vserver):
+  # tickets 249/251: stabilize for real, then show it, play it, and delete the original
+  from photoapp import stabilize_job
+  pid = photos(vserver)["a.mp4"]["id"]
+  conn = db.open_state(vserver.settings.state_dir)
+  src = conn.execute("SELECT id FROM files WHERE path = 'clips/a.mp4'").fetchone()[0]
+  job = {"file_id": src, "options": json.dumps({"level": "weak"})}
+  new_id = stabilize_job.run(conn, vserver.settings, job, video.default_tools())
+  conn.close()
+  page.goto(f"{vserver.url}/#/clips?photo={pid}")
+  expect(page.locator("video.main-video")).to_be_visible()
+  page.keyboard.press("i")
+  rows = page.locator(".files-panel .file")
+  expect(rows).to_have_count(2)
+  expect(page.locator(".files-panel .tuning-note")).to_contain_text("stabilized (weak)")
+  expect(page.locator(".files-panel .file", has_text="stabilized-weak").locator("text=tuning")).to_have_count(1)
+  page.locator(".files-panel .file", has_text="stabilized-weak").get_by_role("button", name="Show this").click()
+  wait_for(lambda: page.evaluate("document.querySelector('video.main-video').src").endswith(f"/video/{new_id}"))
+  # delete the unstabilized original from the pane: the stabilized one stays on screen
+  page.locator(".files-panel .file", has_text="a.mp4").get_by_role("button", name="Delete").first.click()
+  page.get_by_role("button", name="Move to trash").click()
+  expect(page.locator(".files-panel .file", has_text="MISSING")).to_have_count(1)
+  assert page.evaluate("document.querySelector('video.main-video').src").endswith(f"/video/{new_id}")
+  assert api(vserver, f"/api/photos/{pid}")["representative_file_id"] == new_id

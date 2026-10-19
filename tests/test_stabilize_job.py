@@ -101,3 +101,36 @@ def test_the_same_level_is_not_queued_twice(lib):
   b = client.post(f"/api/photos/{photo_id}/stabilize", json={"level": "weak"}).json()
   c = client.post(f"/api/photos/{photo_id}/stabilize", json={"level": "strong"}).json()
   assert a["job_id"] == b["job_id"] != c["job_id"]
+
+
+def test_deleting_the_original_or_the_shown_tuning_leaves_a_sane_photo(lib, settings, conn):
+  """Ticket 251: either tuning can be deleted; the Photo keeps showing a live file, also after a
+  rescan."""
+  from photoapp import trash
+  client, app, photo_id = lib
+  run_stabilize(client, app, photo_id, "weak")
+  ids = {r["path"]: r["id"] for r in conn.execute("SELECT id, path FROM files")}
+  tuning, original = ids["t/MOV_1.stabilized-weak.mp4"], ids["t/MOV_1.mkv"]
+
+  def detail():
+    return client.get(f"/api/photos/{photo_id}").json()
+
+  assert client.post(f"/api/photos/{photo_id}/representative", json={"file_id": tuning}).status_code == 200
+  assert client.post(f"/api/files/{tuning}/trash").status_code == 200      # the shown one goes
+  assert detail()["representative_file_id"] == original
+  # bring a fresh tuning back, show it, then delete the unstabilized original
+  conn.execute("UPDATE files SET missing = 0 WHERE id = ?", (tuning,))
+  os.replace(os.path.join(settings.pictures_dir, ".trash/t/MOV_1.stabilized-weak.mp4"),
+             os.path.join(settings.pictures_dir, "t/MOV_1.stabilized-weak.mp4"))
+  conn.commit()
+  client.post(f"/api/photos/{photo_id}/representative", json={"file_id": original})
+  assert client.post(f"/api/files/{original}/trash").status_code == 200
+  assert detail()["representative_file_id"] == tuning
+  scan.scan(conn, settings.pictures_dir)
+  d = detail()
+  assert d["representative_file_id"] == tuning
+  assert [f["path"] for f in d["files"] if not f["missing"]] == ["t/MOV_1.stabilized-weak.mp4"]
+  listed = client.get("/api/photos", params={"dir": "t"}).json()["photos"]
+  assert [p["file_id"] for p in listed if p["id"] == photo_id] == [tuning]
+  # no source left to stabilize again -> a clear error, not a crash
+  assert client.post(f"/api/photos/{photo_id}/stabilize", json={}).status_code == 400
