@@ -182,3 +182,30 @@ def test_video_is_centered_with_and_without_the_files_pane_on_tablet_sizes(page,
     right = page.locator(".files-panel").bounding_box()["x"] if pane else s["x"] + s["width"]
     assert abs(v["x"] - s["x"]) < 2 and abs(v["x"] + v["width"] - right) < 2, (pane, v, s, right)
     assert abs(v["y"] - s["y"]) < 2 and abs(v["height"] - s["height"]) < 2
+
+
+def test_stabilize_button_is_video_only_and_queues_the_chosen_level(page, vserver):
+  # ticket 250
+  pid = photos(vserver)["a.mp4"]["id"]
+  page.goto(f"{vserver.url}/#/clips?photo={pid}")
+  btn = page.get_by_role("button", name="stabilize", exact=True)
+  expect(btn).to_be_visible()
+  btn.click()
+  expect(page.locator(".stabilize-modal")).to_be_visible()
+  expect(page.locator(".stabilize-modal input[name=stabilize-level]")).to_have_count(2)
+  assert page.locator("input[name=stabilize-level]:checked").get_attribute("value") == "strong"
+  page.keyboard.press("Escape")
+  expect(page.locator(".stabilize-modal")).to_have_count(0)
+  btn.click()
+  page.locator(".stabilize-modal label", has_text="Weak").click()
+  page.locator(".stabilize-go").click()
+  expect(page.locator(".stabilize-modal")).to_have_count(0)
+  wait_for(lambda: [j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "stabilize"])
+  job = [j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "stabilize"][0]
+  assert job["path"] == "clips/a.mp4"
+  # a still photo has no such button
+  still = [p for p in api(vserver, "/api/photos?dir=.&limit=5")["photos"] if not p["is_video"]]
+  if still:
+    page.goto(f"{vserver.url}/#/?photo={still[0]['id']}")
+    expect(page.locator(".loupe")).to_be_visible()
+    expect(page.get_by_role("button", name="stabilize", exact=True)).to_have_count(0)

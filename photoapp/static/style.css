@@ -491,3 +491,8 @@ h2 { margin: 16px 0 8px; }
 .raw-settings input[type="range"], .edit-settings input[type="range"] { min-width: 0; flex: 1 1 0; }
 .adj-step { align-self: center; }
 .raw-settings .row .meta, .edit-settings .row .meta { flex: 0 0 3em; text-align: right; }
+
+/* ticket 250: the stabilize popover (reuses .actions-modal placement) */
+.stabilize-modal .stabilize-level { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; align-items: center; padding: 6px 0; cursor: pointer; }
+.stabilize-modal .stabilize-level .hint { grid-column: 2; font-size: 12px; color: var(--text-dim); }
+.stabilize-modal .stabilize-level .label { font-weight: 600; }

@@ -15,6 +15,7 @@ import {updateCell, refreshCellThumb, settle, removePhotos, reinsertPhotos, load
 import {matchesRoute, scheduleCountsRefresh} from './filters.js';
 import {RawTuningSession} from './rawTuning.js';
 import * as exportAction from './export.js';
+import * as stabilizeAction from './stabilize.js';
 
 
 let root = null;
@@ -158,6 +159,7 @@ export function close() {
   closeFilterPicker();
   closeDeleteModal();
   closeActionsMenu();   // ticket 196
+  stabilizeAction.close();   // ticket 250
   exitCropMode();   // ticket 115: leaving the viewer drops an unsaved crop
   stopVideo();      // ticket 193
   ui.zoom.reset();
@@ -414,6 +416,9 @@ function renderHud() {
                     onclick: (e) => { e.stopPropagation(); toggleCropMode(); }}),
       p.is_video ? null : el('button', {text: '⟲', title: 'rotate left 90° (R)',
                     onclick: (e) => { e.stopPropagation(); rotateLeft(); }}),
+      // Ticket 250: stabilization is for videos only.
+      p.is_video ? el('button', {class: 'stabilize', text: 'stabilize', title: 'queue a stabilized copy of this video',
+                    onclick: (e) => { e.stopPropagation(); stabilizeAction.open(current(), e.currentTarget); }}) : null,
       el('button', {text: 'files', title: 'files / tunings (I)', class: filesOpen ? 'on' : '', onclick: () => filesOpen ? closeFiles() : openFiles()}),
       brokenFileId === p.file_id
         ? el('button', {class: 'broken-thumb', title: 'this thumbnail failed to load -- click to re-render it',
@@ -1697,6 +1702,7 @@ async function deleteFile(file) {
 // -------------------------------------------------------------- keyboard
 
 function onKey(e) {
+  if (stabilizeAction.isOpen()) { if (e.key === 'Escape') stabilizeAction.close(); return; }   // ticket 250
   if (ui.deleteModal) { if (e.key === 'Escape') closeDeleteModal(); return; }
   if (ui.actionsModal) { if (e.key === 'Escape') closeActionsMenu(); return; }   // ticket 196
   // Ticket 115: crop mode swallows the normal hotkeys (an accidental rating key while dragging a
