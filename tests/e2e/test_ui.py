@@ -3110,3 +3110,19 @@ def test_grid_shows_whole_picture_with_black_margins_above_smallest_level(page, 
   assert page.evaluate(fit) == "contain" and page.evaluate(bg) == "rgb(0, 0, 0)"
   page.keyboard.press("-")
   assert page.evaluate(fit) == "cover"
+
+
+def test_loupe_never_shows_the_previous_photo_while_the_next_one_loads(page, server):
+  # ticket 244: an <img> keeps painting its old picture until the new URL arrives; the loupe hides it.
+  open_loupe(page, server)
+  held, release = [], []
+  page.route(re.compile(r"/img/Medium/"),
+             lambda route: route.continue_() if release else held.append(route))
+  page.keyboard.press("ArrowRight")
+  expect(page.locator(".hud .name")).to_contain_text("IMG_0002")
+  wait_for(lambda: held)
+  assert page.evaluate("getComputedStyle(document.querySelector('.stage img.main')).visibility") == "hidden"
+  release.append(1)
+  for route in held:
+    route.continue_()
+  expect(page.locator(".stage img.main")).to_be_visible()

@@ -524,3 +524,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [241](docs/tickets/241.md) Grid magnification: 4 levels (+/-, Ctrl+wheel, pinch), Thumb/Small chosen so nothing is upsampled
 - [x] [242](docs/tickets/242.md) Grid: whole picture with black margins above the smallest magnification
 - [x] [243](docs/tickets/243.md) Delete-review tiles show the whole uncropped picture with black margins
+- [x] [244](docs/tickets/244.md) Loupe hides the previous photo's render until the new one has loaded

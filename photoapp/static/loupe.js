@@ -37,7 +37,7 @@ function build() {
   if (root) return;
   window.__preloadedUrls = preloader.urls;      // test hook: what is being held ahead of time
   ui.img = el('img', {class: 'main', alt: '', draggable: 'false',
-                      onload: () => updateCropShade()});
+                      onload: () => { ui.img.style.visibility = ''; updateCropShade(); }});
   // Ticket 115: a dark shading layer over the cropped-out part of the frame, shown for a file
   // with a crop while viewing the full-frame Medium/Huge (the cropped Thumb/Small are rendered
   // server-side instead). Pointer-events none; purely visual.
@@ -183,7 +183,11 @@ function show(i) {
   requestAnimationFrame(() => { ui.img.style.transition = ''; });
   brokenFileId = null;
   discardPending();   // ticket 094: never let a provisional render leak past navigating away
-  ui.img.src = imgUrl('Medium', photo.file_id);
+  // Ticket 244: an <img> keeps painting its previous picture until the new URL has loaded, which
+  // showed the last photo's render under the new photo's name. Hide it until the new one is there.
+  const url = imgUrl('Medium', photo.file_id);
+  if (ui.img.getAttribute('src') !== url) ui.img.style.visibility = 'hidden';   // same URL: no load event follows
+  ui.img.src = url;
   ui.img.alt = photo.name;
   updateCropShade();
   retryOnce(ui.img, photo);
