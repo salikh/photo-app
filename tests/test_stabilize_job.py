@@ -153,3 +153,16 @@ def test_batch_endpoint_queues_one_job_per_video_and_skips_stills(lib, settings,
   assert len(body["queued"]) == 2 and len({q["job_id"] for q in body["queued"]}) == 2
   assert sorted(s["reason"] for s in body["skipped"]) == ["no such photo", "no video to stabilize"]
   assert client.post("/api/photos/stabilize", json={"ids": ids, "level": "x"}).status_code == 400
+
+
+def test_batch_skips_an_existing_level_but_the_single_request_redoes_it(lib):
+  """Ticket 258."""
+  client, app, photo_id = lib
+  run_stabilize(client, app, photo_id, "weak")
+  app.state.medium_jobs.stop()
+  r = client.post("/api/photos/stabilize", json={"ids": [photo_id], "level": "weak"}).json()
+  assert r["queued"] == [] and r["skipped"] == [
+      {"photo_id": photo_id, "reason": "already stabilized (weak)"}]
+  other = client.post("/api/photos/stabilize", json={"ids": [photo_id], "level": "strong"}).json()
+  assert len(other["queued"]) == 1                      # another level is not "existing"
+  assert client.post(f"/api/photos/{photo_id}/stabilize", json={"level": "weak"}).status_code == 200

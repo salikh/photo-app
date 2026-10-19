@@ -798,10 +798,12 @@ def create_app(conn, settings):
             "levels": [{"level": name, "description": video_stabilize.describe({"level": name})}
                        for name in video_stabilize.levels()]}
 
-  def queue_stabilize(photo_ids, body):
+  def queue_stabilize(photo_ids, body, skip_existing=False):
     """Ticket 249/253: queue one stabilize job per Photo that has a video; returns
     {"queued": [{photo_id, job_id, file_id}], "skipped": [{photo_id, reason}], "description"}.
-    The same level already queued or running for a video is not queued twice."""
+    The same level already queued or running for a video is not queued twice. skip_existing
+    (ticket 258, the grid's batch): a video that already has this level's file is skipped rather
+    than redone; the single-video request leaves it False and overwrites."""
     options = {**body.options, "level": body.level}
     try:
       video_stabilize.resolve(options)
@@ -818,6 +820,9 @@ def create_app(conn, settings):
         skipped.append({"photo_id": photo_id, "reason": "no such photo"})
       elif src is None:
         skipped.append({"photo_id": photo_id, "reason": "no video to stabilize"})
+      elif skip_existing and os.path.exists(os.path.join(
+          settings.pictures_dir, video_stabilize.output_name(src["path"], body.level))):
+        skipped.append({"photo_id": photo_id, "reason": f"already stabilized ({body.level})"})
       else:
         job_id = app.state.medium_jobs.enqueue("video_stabilize", src["id"], target=body.level,
                                                options=options)
@@ -841,7 +846,7 @@ def create_app(conn, settings):
   @db_route
   def stabilize_many(body: StabilizeManyBody):
     """Ticket 253: the grid's selection; non-video Photos are skipped and reported, not an error."""
-    return queue_stabilize(body.ids, body)
+    return queue_stabilize(body.ids, body, skip_existing=True)
 
   @app.post("/api/files/{file_id}/rerender_thumbs")
   @db_route

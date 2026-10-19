@@ -45,9 +45,9 @@ export async function open(ids, anchor, onQueued) {
       const r = await post('/api/photos/stabilize', {ids, level, options});
       const n = r.queued.length;
       toast(n ? `stabilization (${level}) queued for ${n} video${n > 1 ? 's' : ''}` +
-                (r.skipped.length ? `, ${r.skipped.length} skipped (not a video)` : '') +
+                (r.skipped.length ? `, ${r.skipped.length} skipped (not a video, or already stabilized at this level)` : '') +
                 '; each result appears as a second file of its video'
-              : 'nothing to stabilize: no video among them', !n);
+              : 'nothing to stabilize: no video, or all already stabilized at this level', !n);
       close();
       if (n && onQueued) onQueued(r);
       return r;
