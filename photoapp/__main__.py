@@ -19,6 +19,10 @@ def main(argv):
   for module in ["TiffImagePlugin.py"]:
     # Set the noisy module to WARNING or higher to silence its DEBUG/INFO logs
     py_logging.getLogger(module.strip()).setLevel(logging.WARNING)
+  # Ticket 257: the Jobs page polls /api/jobs every 1.5 s; its access-log line is VLOG(1) noise.
+  def quiet_jobs_poll(record):
+    return "/api/jobs" not in record.getMessage() or logging.get_verbosity() >= 1
+  py_logging.getLogger("uvicorn.access").addFilter(quiet_jobs_poll)
   settings = config.Settings.load()
   logging.info("config file: %s; pictures %s, thumbnails %s", settings.config_file or "none",
                settings.pictures_dir, settings.thumbs_dir)

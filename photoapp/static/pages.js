@@ -78,7 +78,9 @@ function workerStatusText(active) {
   const items = active.running.map((r) => {
     const what = r.path || (r.target ? `folder ${r.target}` : null) || `file #${r.file_id}`;
     const since = fmtDuration(r.duration_seconds);
-    return `${r.kind} ${what}${since ? ` (${since})` : ''}`;
+    // Ticket 257: "(running, pass 2/2: ..., 12s)" -- the job's state, its progress note, the elapsed time
+    const detail = [r.state || 'running', r.note, since].filter(Boolean).join(', ');
+    return `${r.kind} ${what} (${detail})`;
   });
   return `Worker: Active — ${items.join('; ')}`;
 }

@@ -297,6 +297,7 @@ def test_jobs_page_worker_status_auto_updates_from_active_to_idle(page, server):
   server.app.state.jobs.enqueue("e2e_block", target="probe")
   assert started.wait(5)
   expect(worker_status).to_contain_text("Worker: Active")
+  expect(worker_status).to_contain_text("(running,")       # ticket 257
   release.set()
   expect(worker_status).to_contain_text("Worker: Idle", timeout=5000)
 

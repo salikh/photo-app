@@ -193,6 +193,7 @@ def test_active_reports_the_running_job_and_its_duration(settings):
     r = a["running"][0]
     assert r["kind"] == "block" and r["file_id"] == 5 and r["target"] is None
     assert r["started_at"] and r["duration_seconds"] is not None
+    assert r["state"] == "running" and "note" in r
   finally:
     release.set()
     assert q.wait_idle(10)

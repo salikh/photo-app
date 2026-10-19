@@ -189,7 +189,7 @@ class JobQueue:
     now = datetime.datetime.now()
     with self._conn_lock:
       rows = list(self._conn.execute(
-          "SELECT j.id, j.kind, j.file_id, j.target, j.created_at, j.started_at,"
+          "SELECT j.id, j.kind, j.file_id, j.target, j.created_at, j.started_at, j.state, j.note,"
           " f.path AS file_path FROM jobs j LEFT JOIN files f ON f.id = j.file_id"
           " WHERE j.state = 'running' ORDER BY j.id"))
     running = []
@@ -203,7 +203,7 @@ class JobQueue:
           duration = None
       running.append({
           "id": r["id"], "kind": r["kind"], "file_id": r["file_id"],
-          "target": r["target"], "path": r["file_path"],
+          "target": r["target"], "path": r["file_path"], "state": r["state"], "note": r["note"],
           "created_at": r["created_at"], "started_at": r["started_at"],
           "duration_seconds": round(duration, 1) if duration is not None else None})
     return {"busy": bool(running), "running": running}
