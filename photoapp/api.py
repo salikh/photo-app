@@ -266,6 +266,9 @@ def create_app(conn, settings):
     def set_note(text):
       conn.execute("UPDATE jobs SET note = ? WHERE id = ?", (text, job["id"]))
       conn.commit()
+      path = conn.execute("SELECT path FROM files WHERE id = ?", (job["file_id"],)).fetchone()
+      logging.info("job #%d video_stabilize %s: %s", job["id"], path["path"] if path else "?",
+                   text)       # ticket 256
     stabilize_job_lib.run(conn, settings, job, video.default_tools(), set_note)
 
   app.state.medium_jobs.add_handler("video_stabilize", stabilize_job)
@@ -320,6 +323,8 @@ def create_app(conn, settings):
                  on_scan_done, settings.scan_workers, recursive=(target != "."))
     if progress.error:
       raise RuntimeError(progress.error)
+    logging.info("scan_dir %s: %d files seen, %d read", target, progress.files_seen,
+                 progress.files_processed)       # ticket 256
     logging.vlog(5, "scan_dir %s: done (%d files seen, %d read)",
                  target, progress.files_seen, progress.files_processed)
 
@@ -358,6 +363,9 @@ def create_app(conn, settings):
     finally:
       progress.current_dir = None
       progress.running = False
+    logging.info("rescan %s (recursive=%s): %d files seen, %d read%s", target, recursive,
+                 progress.files_seen, progress.files_processed,
+                 f", error: {progress.error}" if progress.error else "")       # ticket 256
     if progress.error:
       raise RuntimeError(progress.error)
 

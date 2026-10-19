@@ -583,3 +583,24 @@ def test_a_failed_elevated_job_stays_failed_and_a_restart_fails_a_running_one(tm
   q2 = jobs.JobQueue(path, {"a": boom}, workers=1, elevated_workers=1)
   assert q2.fail_interrupted_elevated() == 1
   assert q2.counts() == {"failed": 2}
+
+
+def test_every_job_logs_start_and_finish_at_info(settings, caplog):
+  """Ticket 256: start+finish for ordinary kinds, finish only for the per-file bulk kinds."""
+  import logging
+  db.open_state(settings.state_dir).close()
+  q = jobs.JobQueue(settings.db_path, {"video_stabilize": lambda c, j: None,
+                                       "populate_thumb": lambda c, j: None,
+                                       "boom": lambda c, j: 1 / 0}, workers=1)
+  q.enqueue("video_stabilize", 7, target="strong", options={"level": "strong"})
+  q.enqueue("populate_thumb", 8)
+  q.enqueue("boom", 9)
+  with caplog.at_level(logging.INFO):
+    q.start()
+    assert q.wait_idle()
+    q.stop()
+  text = "\n".join(r.getMessage() for r in caplog.records)
+  assert "job start: #1 video_stabilize file 7 target=strong" in text and '"level": "strong"' in text
+  assert "job done: #1 video_stabilize" in text
+  assert "job start: #2 populate_thumb" not in text and "job done: #2 populate_thumb" in text
+  assert "job FAILED: #3 boom" in text and "ZeroDivisionError" in text

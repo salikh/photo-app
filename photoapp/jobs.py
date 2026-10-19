@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 
 from absl import logging
 
@@ -21,6 +22,27 @@ from photoapp import db
 
 def _now():
   return datetime.datetime.now().isoformat(timespec="seconds")
+
+
+# Ticket 256: every job logs its finish at INFO; these per-file kinds are so numerous (a populate
+# run is thousands) that their start line is only logged at verbosity 2 -- everything else (rescan,
+# scan_dir, video_stabilize, export, uploads, ...) logs both start and finish at INFO.
+QUICK_KINDS = frozenset({"populate_thumb", "raw_render", "video_thumb", "ai_rate"})
+
+
+def _describe(conn, job):
+  """'#12 video_stabilize file 7 (t/a.mp4) target=strong options={...}' for the log."""
+  parts = [f"#{job['id']} {job['kind']}"]
+  if job["file_id"] is not None:
+    row = conn.execute("SELECT path FROM files WHERE id = ?", (job["file_id"],)).fetchone()
+    parts.append(f"file {job['file_id']}" + (f" ({row['path']})" if row else ""))
+  if job["target"] is not None:
+    parts.append(f"target={job['target']}")
+  if job["options"]:
+    parts.append(f"options={job['options']}")
+  if job["priority"]:
+    parts.append(f"priority={job['priority']}")
+  return " ".join(parts)
 
 
 def _set_low_priority(niceness=19, idle_io=True):
@@ -340,11 +362,21 @@ class JobQueue:
           continue
         wake.set()    # let a sibling look for more work
         error = None
+        what = _describe(conn, job)
+        started = time.monotonic()
+        if job["kind"] in QUICK_KINDS:
+          logging.vlog(2, "job start: %s", what)
+        else:
+          logging.info("job start: %s", what)
         try:
           self._handlers[job["kind"]](conn, job)
         except Exception as e:   # a failing job must not kill the worker
           logging.exception("job %d (%s) failed", job["id"], job["kind"])
           error = f"{type(e).__name__}: {e}"
+        note = conn.execute("SELECT note FROM jobs WHERE id = ?", (job["id"],)).fetchone()
+        logging.info("job %s: %s in %.1fs%s%s", "FAILED" if error else "done", what,
+                     time.monotonic() - started, f": {error}" if error else "",
+                     f" [{note['note']}]" if note and note["note"] else "")
         conn.execute(
             "UPDATE jobs SET state = ?, error = ?, finished_at = ? "
             "WHERE id = ?", ("failed" if error else "done", error, _now(),
