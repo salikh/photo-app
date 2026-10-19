@@ -356,6 +356,11 @@ MIGRATIONS = [
     -- Rescan): claimed first and run by the elevated worker whatever the machine load.
     ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0;
     """,
+    """
+    -- Ticket 249: a one-line human-readable description of how a derived video was made
+    -- (e.g. the stabilization level and vidstab parameters); NULL for ordinary files.
+    ALTER TABLE files ADD COLUMN tuning_note TEXT;
+    """,
 ]
 
 

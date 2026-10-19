@@ -47,7 +47,9 @@ from photoapp import scan as scan_lib
 from photoapp import raw_settings
 from photoapp import rotation as rotation_lib
 from photoapp import thumb_populate
+from photoapp import stabilize_job as stabilize_job_lib
 from photoapp import video
+from photoapp import video_stabilize
 from photoapp import video_thumbs
 from photoapp import thumbs
 from photoapp import trash
@@ -92,6 +94,12 @@ class RepresentativeBody(pydantic.BaseModel):
 class LinkBody(pydantic.BaseModel):
   target_file_id: int
   role: str = "tuning"
+
+
+class StabilizeBody(pydantic.BaseModel):
+  """level plus any video_stabilize.PARAMS override (ticket 249); validated by video_stabilize."""
+  level: str = video_stabilize.DEFAULT_LEVEL
+  options: dict = {}
 
 
 class TagsBody(pydantic.BaseModel):
@@ -248,6 +256,15 @@ def create_app(conn, settings):
   # must not slow the interactive queue above (nice 0) but should not wait for an idle machine
   # like the background queue below (nice 19, load-adaptive). One worker, nice 10.
   app.state.medium_jobs = jobs.JobQueue(settings.db_path, {}, workers=1, niceness=10)
+
+  def stabilize_job(conn, job):
+    """Ticket 249: see photoapp.stabilize_job; the job's note shows the current pass."""
+    def set_note(text):
+      conn.execute("UPDATE jobs SET note = ? WHERE id = ?", (text, job["id"]))
+      conn.commit()
+    stabilize_job_lib.run(conn, settings, job, video.default_tools(), set_note)
+
+  app.state.medium_jobs.add_handler("stabilize", stabilize_job)
 
   def gphotos_upload_job(conn, job):
     """Ticket 212: see photoapp.gphotos_upload."""
@@ -760,6 +777,38 @@ def create_app(conn, settings):
         return result
       except trash.TrashError as e:
         raise HTTPException(404 if e.args[0].startswith("no such") else 400, str(e))
+
+  @app.get("/api/stabilize/levels")
+  def stabilize_levels():
+    """Ticket 249/250: what the stabilize modal offers (and whether this ffmpeg can do it)."""
+    return {"available": video_stabilize.available(video.default_tools()),
+            "default": video_stabilize.DEFAULT_LEVEL,
+            "levels": [{"level": name, "description": video_stabilize.describe({"level": name})}
+                       for name in video_stabilize.levels()]}
+
+  @app.post("/api/photos/{photo_id}/stabilize")
+  @db_route
+  def stabilize(photo_id: int, body: StabilizeBody):
+    """Ticket 249: queue a stabilization of the Photo's original video on the medium-priority
+    queue. The same level already queued or running is not queued twice; a different level is a
+    separate job (and file)."""
+    options = {**body.options, "level": body.level}
+    try:
+      video_stabilize.resolve(options)
+    except video_stabilize.StabilizeError as e:
+      raise HTTPException(400, str(e))
+    with app.state.db_lock:
+      if app.state.db.execute("SELECT 1 FROM photos WHERE id = ?", (photo_id,)).fetchone() is None:
+        raise HTTPException(404, f"no such photo: {photo_id}")
+      src = stabilize_job_lib.source_for(app.state.db, photo_id)
+    if src is None:
+      raise HTTPException(400, "this photo has no video to stabilize")
+    if not video_stabilize.available(video.default_tools()):
+      raise HTTPException(503, "ffmpeg with libvidstab and libx264 is not installed")
+    job_id = app.state.medium_jobs.enqueue("stabilize", src["id"], target=body.level,
+                                           options=options)
+    return {"job_id": job_id, "file_id": src["id"], "level": body.level,
+            "description": video_stabilize.describe(options)}
 
   @app.post("/api/files/{file_id}/rerender_thumbs")
   @db_route

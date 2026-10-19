@@ -114,6 +114,13 @@ def is_stabilized_name(path):
 
 def available(tools):
   """True when ffmpeg is present and was built with libvidstab and libx264."""
+  cached = getattr(tools, "_vidstab_ok", None)    # two ffmpeg runs; the answer cannot change
+  if cached is None:
+    cached = tools._vidstab_ok = _probe_available(tools)
+  return cached
+
+
+def _probe_available(tools):
   if not tools.available():
     return False
   try:
