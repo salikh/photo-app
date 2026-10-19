@@ -525,3 +525,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
 - [x] [242](docs/tickets/242.md) Grid: whole picture with black margins above the smallest magnification
 - [x] [243](docs/tickets/243.md) Delete-review tiles show the whole uncropped picture with black margins
 - [x] [244](docs/tickets/244.md) Loupe hides the previous photo's render until the new one has loaded
+- [x] [245](docs/tickets/245.md) deploy.sh health check reads the host from service.args despite its comment line

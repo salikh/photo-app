@@ -45,7 +45,11 @@ def listen(config_path, args_text):
     host, port = cfg.get("host", host), int(cfg.get("port", port))
   except OSError:
     pass
-  toks = shlex.split(args_text.split("=", 1)[1] if args_text.startswith("PHOTOS_ARGS=") else args_text)
+  # service.args is EnvironmentFile text: comment lines, then PHOTOS_ARGS=... (ticket 245).
+  lines = [l.strip() for l in args_text.splitlines() if l.strip() and not l.strip().startswith("#")]
+  toks = []
+  for l in lines:
+    toks += shlex.split(l.split("=", 1)[1] if l.startswith("PHOTOS_ARGS=") else l)
   i = 0
   while i < len(toks):
     t = toks[i].lstrip("-")

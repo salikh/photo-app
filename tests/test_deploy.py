@@ -30,6 +30,12 @@ def test_listen_args_override_config(tmp_path):
   assert helper.listen(str(cfg), "") == ("0.0.0.0", 9000)
 
 
+def test_listen_reads_the_seeded_service_args_file_with_its_comment_line(tmp_path):
+  # ticket 245: the comment header made the parser ignore the whole file and report 0.0.0.0
+  text = "# Command-line flags of photos.service\nPHOTOS_ARGS=--host 192.168.1.11 --port 8080 --v=5\n"
+  assert helper.listen(str(tmp_path / "missing.toml"), text) == ("192.168.1.11", 8080)
+
+
 def test_render_fills_placeholders_and_rejects_leftovers():
   assert helper.render("a @X@ b", {"X": "1"}) == "a 1 b"
   with pytest.raises(SystemExit):
