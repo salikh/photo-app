@@ -235,3 +235,18 @@ def test_files_pane_lists_the_stabilized_tuning_and_switches_playback_to_it(page
   expect(page.locator(".files-panel .file", has_text="MISSING")).to_have_count(1)
   assert page.evaluate("document.querySelector('video.main-video').src").endswith(f"/video/{new_id}")
   assert api(vserver, f"/api/photos/{pid}")["representative_file_id"] == new_id
+
+
+def test_selection_bar_stabilizes_the_selected_videos(page, vserver):
+  # ticket 253: a.mp4 + b.avi selected -> two jobs; the bar offers it only with a video selected
+  page.goto(f"{vserver.url}/#/clips")
+  cells = page.locator(".cell")
+  expect(cells).to_have_count(2)
+  cells.nth(0).click(modifiers=["Control"])
+  cells.nth(1).click(modifiers=["Control"])
+  bar = page.locator(".selection-bar")
+  expect(bar).to_contain_text("2 selected")
+  bar.get_by_role("button", name="Stabilize").click()
+  expect(page.locator(".stabilize-modal h3")).to_have_text("Stabilize 2 videos")
+  page.locator(".stabilize-go").click()
+  wait_for(lambda: len([j for j in api(vserver, "/api/jobs")["jobs"] if j["kind"] == "stabilize"]) == 2)

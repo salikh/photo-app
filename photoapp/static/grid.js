@@ -7,6 +7,7 @@ import {label, REJECT, display, choices} from './rating.js';
 import {state} from './state.js';
 import {matchesRoute, scheduleCountsRefresh} from './filters.js';
 import * as moveAction from './move.js';
+import * as stabilizeAction from './stabilize.js';
 import {gridImgUrl} from './gridzoom.js';
 
 const PAGE = window.__pageSize || 1000;   // (the override is a test hook)
@@ -201,6 +202,12 @@ export function renderSelectionBar() {
     // -- moving a photo to another folder has no equivalent safety precondition).
     el('button', {text: 'Move to folder', title: 'move selected photos to another folder',
                   onclick: () => moveAction.open(ids, removePhotos, clearSelection)}),
+    // Ticket 253: stabilize the selected videos (one job each); shown when any is a video.
+    state.photos.some((p) => state.selected.has(p.id) && p.is_video)
+      ? el('button', {class: 'stabilize', text: 'Stabilize', title: 'queue stabilized copies of the selected videos',
+                      onclick: (e) => stabilizeAction.open(
+                        state.photos.filter((p) => state.selected.has(p.id) && p.is_video).map((p) => p.id),
+                        e.currentTarget)}) : null,
     // Trashing is rating-gated server-side (trash.py's trash_photo: only a rejected Photo can be
     // moved to .trash, an intentional safety rail from ticket 072/081) -- only offer it here when
     // every selected Photo would actually be eligible, i.e. the Rejected filter is active, same

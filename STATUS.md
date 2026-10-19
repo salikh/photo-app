@@ -536,4 +536,4 @@ newest-wins), 015 (JSONL mirror), 023 (write both sidecars, newest-wins), 024 (r
   - [x] [250](docs/tickets/250.md) Loupe "stabilize" button and options modal
   - [x] [251](docs/tickets/251.md) Files pane: choose and delete video tunings
   - [x] [252](docs/tickets/252.md) Docs and wrap-up
-
+  - [x] [253](docs/tickets/253.md) Stabilize a selection of videos from the grid

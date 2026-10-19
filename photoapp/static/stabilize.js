@@ -17,7 +17,8 @@ export function close() {
   if (modal) { modal.remove(); modal = null; }
 }
 
-export async function open(photo, anchor) {
+// `ids`: the Photos to stabilize (non-videos among them are skipped by the server).
+export async function open(ids, anchor, onQueued) {
   close();
   let info;
   try { info = await get('/api/stabilize/levels'); } catch (e) { toast(e.message, true); return; }
@@ -41,15 +42,20 @@ export async function open(photo, anchor) {
       if (input.value !== '') options[key] = type === 'number' ? Number(input.value) : input.value;
     }
     try {
-      const r = await post(`/api/photos/${photo.id}/stabilize`, {level, options});
-      toast(`stabilization (${level}) queued; the result appears as a second file of this video`);
+      const r = await post('/api/photos/stabilize', {ids, level, options});
+      const n = r.queued.length;
+      toast(n ? `stabilization (${level}) queued for ${n} video${n > 1 ? 's' : ''}` +
+                (r.skipped.length ? `, ${r.skipped.length} skipped (not a video)` : '') +
+                '; each result appears as a second file of its video'
+              : 'nothing to stabilize: no video among them', !n);
       close();
+      if (n && onQueued) onQueued(r);
       return r;
     } catch (e) { toast(e.message, true); }
   };
   modal = el('div', {class: 'confirm-modal actions-modal stabilize-modal', onclick: close},
     el('div', {class: 'confirm-card', role: 'dialog', onclick: (e) => e.stopPropagation()},
-      el('h3', {text: 'Stabilize video'}),
+      el('h3', {text: ids.length > 1 ? `Stabilize ${ids.length} videos` : 'Stabilize video'}),
       radios, extras,
       el('div', {class: 'meta', text: 'Runs in the background at medium priority; the result is saved next to the original as a second file.'}),
       el('div', {class: 'row'},

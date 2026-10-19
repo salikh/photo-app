@@ -418,7 +418,7 @@ function renderHud() {
                     onclick: (e) => { e.stopPropagation(); rotateLeft(); }}),
       // Ticket 250: stabilization is for videos only.
       p.is_video ? el('button', {class: 'stabilize', text: 'stabilize', title: 'queue a stabilized copy of this video',
-                    onclick: (e) => { e.stopPropagation(); stabilizeAction.open(current(), e.currentTarget); }}) : null,
+                    onclick: (e) => { e.stopPropagation(); stabilizeAction.open([current().id], e.currentTarget); }}) : null,
       el('button', {text: 'files', title: 'files / tunings (I)', class: filesOpen ? 'on' : '', onclick: () => filesOpen ? closeFiles() : openFiles()}),
       brokenFileId === p.file_id
         ? el('button', {class: 'broken-thumb', title: 'this thumbnail failed to load -- click to re-render it',

@@ -134,3 +134,22 @@ def test_deleting_the_original_or_the_shown_tuning_leaves_a_sane_photo(lib, sett
   assert [p["file_id"] for p in listed if p["id"] == photo_id] == [tuning]
   # no source left to stabilize again -> a clear error, not a crash
   assert client.post(f"/api/photos/{photo_id}/stabilize", json={}).status_code == 400
+
+
+def test_batch_endpoint_queues_one_job_per_video_and_skips_stills(lib, settings, conn):
+  """Ticket 253."""
+  from tests.conftest import make_jpeg
+  client, app, photo_id = lib
+  app.state.medium_jobs.stop()
+  make_jpeg(os.path.join(settings.pictures_dir, "t", "p.jpg"))
+  make_video = os.path.join(settings.pictures_dir, "t", "MOV_2.mkv")
+  make_clip(video.Tools(), make_video, seconds=1)
+  scan.scan(conn, settings.pictures_dir)
+  pid = lambda p: conn.execute("SELECT photo_id FROM files WHERE path = ?", (p,)).fetchone()[0]
+  ids = [photo_id, pid("t/MOV_2.mkv"), pid("t/p.jpg"), 99999]
+  r = client.post("/api/photos/stabilize", json={"ids": ids, "level": "weak"})
+  assert r.status_code == 200, r.text
+  body = r.json()
+  assert len(body["queued"]) == 2 and len({q["job_id"] for q in body["queued"]}) == 2
+  assert sorted(s["reason"] for s in body["skipped"]) == ["no such photo", "no video to stabilize"]
+  assert client.post("/api/photos/stabilize", json={"ids": ids, "level": "x"}).status_code == 400

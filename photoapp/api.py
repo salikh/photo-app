@@ -102,6 +102,10 @@ class StabilizeBody(pydantic.BaseModel):
   options: dict = {}
 
 
+class StabilizeManyBody(StabilizeBody):
+  ids: list[int]
+
+
 class TagsBody(pydantic.BaseModel):
   add: list[str] = []
   remove: list[str] = []
@@ -786,29 +790,50 @@ def create_app(conn, settings):
             "levels": [{"level": name, "description": video_stabilize.describe({"level": name})}
                        for name in video_stabilize.levels()]}
 
-  @app.post("/api/photos/{photo_id}/stabilize")
-  @db_route
-  def stabilize(photo_id: int, body: StabilizeBody):
-    """Ticket 249: queue a stabilization of the Photo's original video on the medium-priority
-    queue. The same level already queued or running is not queued twice; a different level is a
-    separate job (and file)."""
+  def queue_stabilize(photo_ids, body):
+    """Ticket 249/253: queue one stabilize job per Photo that has a video; returns
+    {"queued": [{photo_id, job_id, file_id}], "skipped": [{photo_id, reason}], "description"}.
+    The same level already queued or running for a video is not queued twice."""
     options = {**body.options, "level": body.level}
     try:
       video_stabilize.resolve(options)
     except video_stabilize.StabilizeError as e:
       raise HTTPException(400, str(e))
-    with app.state.db_lock:
-      if app.state.db.execute("SELECT 1 FROM photos WHERE id = ?", (photo_id,)).fetchone() is None:
-        raise HTTPException(404, f"no such photo: {photo_id}")
-      src = stabilize_job_lib.source_for(app.state.db, photo_id)
-    if src is None:
-      raise HTTPException(400, "this photo has no video to stabilize")
     if not video_stabilize.available(video.default_tools()):
       raise HTTPException(503, "ffmpeg with libvidstab and libx264 is not installed")
-    job_id = app.state.medium_jobs.enqueue("stabilize", src["id"], target=body.level,
-                                           options=options)
-    return {"job_id": job_id, "file_id": src["id"], "level": body.level,
+    queued, skipped = [], []
+    for photo_id in photo_ids:
+      with app.state.db_lock:
+        exists = app.state.db.execute("SELECT 1 FROM photos WHERE id = ?", (photo_id,)).fetchone()
+        src = stabilize_job_lib.source_for(app.state.db, photo_id) if exists else None
+      if not exists:
+        skipped.append({"photo_id": photo_id, "reason": "no such photo"})
+      elif src is None:
+        skipped.append({"photo_id": photo_id, "reason": "no video to stabilize"})
+      else:
+        job_id = app.state.medium_jobs.enqueue("stabilize", src["id"], target=body.level,
+                                               options=options)
+        queued.append({"photo_id": photo_id, "job_id": job_id, "file_id": src["id"]})
+    return {"queued": queued, "skipped": skipped, "level": body.level,
             "description": video_stabilize.describe(options)}
+
+  @app.post("/api/photos/{photo_id}/stabilize")
+  @db_route
+  def stabilize(photo_id: int, body: StabilizeBody):
+    """Ticket 249: queue a stabilization of the Photo's original video on the medium-priority
+    queue. A different level is a separate job (and file)."""
+    r = queue_stabilize([photo_id], body)
+    if r["skipped"]:
+      raise HTTPException(404 if r["skipped"][0]["reason"] == "no such photo" else 400,
+                          r["skipped"][0]["reason"] if r["skipped"][0]["reason"] != "no such photo"
+                          else f"no such photo: {photo_id}")
+    return {**r["queued"][0], "level": body.level, "description": r["description"]}
+
+  @app.post("/api/photos/stabilize")
+  @db_route
+  def stabilize_many(body: StabilizeManyBody):
+    """Ticket 253: the grid's selection; non-video Photos are skipped and reported, not an error."""
+    return queue_stabilize(body.ids, body)
 
   @app.post("/api/files/{file_id}/rerender_thumbs")
   @db_route
