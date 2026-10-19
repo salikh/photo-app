@@ -244,6 +244,11 @@ def create_app(conn, settings):
                                  settings.job_workers)
   app.state.jobs.add_handler("export", export_job)
 
+  # Ticket 247: the medium tier -- user-requested long jobs (video stabilization, ticket 249) that
+  # must not slow the interactive queue above (nice 0) but should not wait for an idle machine
+  # like the background queue below (nice 19, load-adaptive). One worker, nice 10.
+  app.state.medium_jobs = jobs.JobQueue(settings.db_path, {}, workers=1, niceness=10)
+
   def gphotos_upload_job(conn, job):
     """Ticket 212: see photoapp.gphotos_upload."""
     creds = app.state.gphotos_credentials

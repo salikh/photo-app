@@ -371,6 +371,24 @@ def test_low_priority_worker_lowers_only_its_own_thread(settings):
   assert os.getpriority(os.PRIO_PROCESS, os.getpid()) == before   # unaffected outside the worker
 
 
+def test_niceness_worker_lowers_cpu_priority_by_that_much_only_for_its_own_thread(settings):
+  """Ticket 247: the medium tier (nice +10, no idle I/O class)."""
+  db.open_state(settings.state_dir).close()
+  observed = {}
+
+  def handler(conn, job):
+    observed["nice"] = os.getpriority(os.PRIO_PROCESS, threading.get_native_id())
+
+  q = jobs.JobQueue(settings.db_path, {"mid": handler}, workers=1, niceness=10)
+  before = os.getpriority(os.PRIO_PROCESS, os.getpid())
+  q.enqueue("mid", 1)
+  q.start()
+  assert q.wait_idle()
+  q.stop()
+  assert observed["nice"] == min(19, before + 10)
+  assert os.getpriority(os.PRIO_PROCESS, os.getpid()) == before
+
+
 def test_populate_thumb_jobs_appear_on_the_running_apps_jobs_page(settings, monkeypatch):
   """The populate queue writes to the same jobs table the running app reads, so its
   progress shows on the existing /api/jobs endpoint (and Jobs page) without any

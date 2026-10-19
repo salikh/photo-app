@@ -23,8 +23,8 @@ def _now():
   return datetime.datetime.now().isoformat(timespec="seconds")
 
 
-def _set_low_priority():
-  """Best-effort: make the *calling thread* low priority for CPU and I/O.
+def _set_low_priority(niceness=19, idle_io=True):
+  """Best-effort: make the *calling thread* low priority for CPU and (optionally) I/O.
 
   On Linux, setpriority()/ioprio_set() with pid 0 (or nice()) act on the
   calling thread, not the whole process (threads are separate schedulable
@@ -33,9 +33,11 @@ def _set_low_priority():
   raises: a platform or a missing 'ionice' just means no effect.
   """
   try:
-    os.nice(19)
+    os.nice(niceness)
   except OSError:
     pass
+  if not idle_io:
+    return
   try:
     tid = threading.get_native_id()
     subprocess.run(["ionice", "-c3", "-p", str(tid)], check=False,
@@ -54,8 +56,12 @@ class JobQueue:
   """
 
   def __init__(self, db_path, handlers, workers=2, low_priority=False, newest_first=False,
-               elevated_workers=0):
-    """newest_first (ticket 080): claim the most recently enqueued job first (instead of the
+               elevated_workers=0, niceness=None):
+    """niceness (ticket 247): lower the CPU priority of this queue's worker threads by that much
+    (e.g. 10 for the medium tier that runs video stabilization) without the idle I/O class that
+    low_priority adds. Ignored when low_priority is set (that is niceness 19 plus idle I/O).
+
+    newest_first (ticket 080): claim the most recently enqueued job first (instead of the
     usual FIFO oldest-first) -- a cheap approximation of "prioritize what's newly relevant" for a
     queue whose backlog can otherwise take a long time to reach a given job. Enqueueing something
     already queued still dedupes to its existing (older) row, so this only actually reorders
@@ -70,6 +76,7 @@ class JobQueue:
     self._handlers = handlers
     self._workers = workers
     self._low_priority = low_priority
+    self._niceness = niceness
     self._newest_first = newest_first
     self._threads = []
     self._wake = threading.Event()
@@ -319,6 +326,8 @@ class JobQueue:
   def _run(self, elevated=False):
     if self._low_priority and not elevated:
       _set_low_priority()
+    elif self._niceness and not elevated:
+      _set_low_priority(self._niceness, idle_io=False)
     stop, wake = ((self._elevated_stop, self._elevated_wake) if elevated
                   else (self._stop, self._wake))
     conn = db.connect(self._db_path, busy_timeout=60.0)

@@ -71,3 +71,14 @@ backlog. Ticket 140 gave `/api/jobs` a `scan` key (`app.state.scanner.progress`,
 can keep that line saying "Active" for a long time on its own, which would otherwise bury whether the user's
 own rescan specifically was still running. The Jobs page shows both lines (`Scan: ...` and `Worker: ...`),
 polling `/api/jobs` every 1.5s while open.
+
+## Three priority tiers (ticket 247)
+
+| Tier | Queue | CPU nice | Runs |
+|---|---|---|---|
+| interactive | `app.state.jobs` (`job_workers` threads) | 0 | on-demand RAW/video stills, export, uploads; plus the Rescan's own elevated thread in `background_jobs` |
+| medium | `app.state.medium_jobs` (1 thread, `niceness=10`) | +10, normal I/O | user-requested long jobs: video stabilization (epic 246) |
+| background | `app.state.background_jobs` (`low_priority`) | +19, idle I/O class | batch thumbnail population, nightly scans; only while the load-adaptive worker says the machine is idle |
+
+The medium tier never waits for an idle machine (the user asked for it) but a multi-minute ffmpeg run
+must not starve the interactive tier, hence its own single worker rather than a slot in `jobs`.

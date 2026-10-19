@@ -32,6 +32,7 @@ def main(argv):
   logging.info("database %s, schema version %d", settings.db_path, db.schema_version(conn))
   application = api.create_app(conn, settings)
   application.state.jobs.start()
+  application.state.medium_jobs.start()   # ticket 247
   if conn.execute("SELECT 1 FROM files LIMIT 1").fetchone() is None:
     # A new installation: read the library now instead of showing an empty page until Rescan.
     logging.info("empty database: scanning %s (progress: /api/scan/status)", settings.pictures_dir)
